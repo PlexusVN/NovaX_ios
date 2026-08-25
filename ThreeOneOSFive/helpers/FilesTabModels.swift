@@ -19,6 +19,15 @@ struct FilesTabSession {
         selectedTabID = tabs[0].id
     }
 
+    var activeTab: FilesTabState? {
+        tabs.first { $0.id == selectedTabID }
+    }
+
+    mutating func setActiveNavigationPath(_ path: [FileBrowserDestination]) {
+        guard let idx = tabs.firstIndex(where: { $0.id == selectedTabID }) else { return }
+        tabs[idx].navigationPath = path
+    }
+
     mutating func openTab(navigationPath: [FileBrowserDestination] = []) {
         let newTab = FilesTabState(navigationPath: navigationPath)
         tabs.append(newTab)
@@ -50,7 +59,7 @@ struct FilesTabSession {
 
 struct FileBrowserDestination: Hashable {
     let containerPath: String
-    let startPath: String?
+    let startPath: String
     let title: String
     let bundleID: String?
 
