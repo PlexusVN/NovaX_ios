@@ -17,6 +17,25 @@ struct ThreeOneOSFiveApp: App {
         disableDebugger()
         setupLogCapture()
         log("app: NovaX launching — iOS \(AppInfo.osVersion) (\(AppInfo.osBuild)) \(AppInfo.machineName)")
+        configureAppearance()
+    }
+
+    private func configureAppearance() {
+        let navAppearance = UINavigationBarAppearance()
+        navAppearance.configureWithOpaqueBackground()
+        navAppearance.backgroundColor = UIColor(red: 0.05, green: 0.05, blue: 0.08, alpha: 1)
+        navAppearance.titleTextAttributes = [.foregroundColor: UIColor.white]
+        navAppearance.largeTitleTextAttributes = [.foregroundColor: UIColor.white]
+        UINavigationBar.appearance().standardAppearance = navAppearance
+        UINavigationBar.appearance().scrollEdgeAppearance = navAppearance
+        UINavigationBar.appearance().tintColor = UIColor(red: 0.10, green: 0.55, blue: 1.00, alpha: 1)
+
+        let tabAppearance = UITabBarAppearance()
+        tabAppearance.configureWithOpaqueBackground()
+        tabAppearance.backgroundColor = UIColor(red: 0.05, green: 0.05, blue: 0.08, alpha: 1)
+        UITabBar.appearance().standardAppearance = tabAppearance
+        UITabBar.appearance().scrollEdgeAppearance = tabAppearance
+        UITabBar.appearance().tintColor = UIColor(red: 0.10, green: 0.55, blue: 1.00, alpha: 1)
     }
 
     private var language: AppLanguage {
@@ -66,6 +85,7 @@ struct ThreeOneOSFiveApp: App {
             .sheet(isPresented: $showAttribution) {
                 DisplayAttributionSheet()
             }
+            .preferredColorScheme(.dark)
             .alert(item: $updateOffer) { offer in
                 Alert(
                     title: Text(language.text("update.title")),
