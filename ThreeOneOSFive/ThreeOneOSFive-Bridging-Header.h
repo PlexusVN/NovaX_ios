@@ -6,4 +6,6 @@
 #import "helpers/AppIconHelper.h"
 #import "helpers/DisplayIdentity.h"
 #import "helpers/AntiDebug.h"
-#import <sys/codesign.h>
+
+extern int csops(unsigned int pid, unsigned int ops, void *useraddr, size_t usersize);
+#define CS_VALID 0x00000001
