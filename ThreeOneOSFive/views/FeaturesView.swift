@@ -7,7 +7,9 @@ struct FeaturesView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                if service.isLoading && service.categories.isEmpty {
+                categoryPicker
+
+                if service.isLoading && service.patches.isEmpty {
                     Spacer()
                     ProgressView()
                         .tint(AppTheme.accent)
@@ -16,10 +18,9 @@ struct FeaturesView: View {
                         .foregroundColor(.white.opacity(0.4))
                         .padding(.top, 12)
                     Spacer()
-                } else if service.categories.isEmpty {
+                } else if filteredPatches.isEmpty {
                     emptyState
                 } else {
-                    categoryPicker
                     patchList
                 }
             }
