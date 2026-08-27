@@ -240,7 +240,6 @@ final class AuthManager: ObservableObject {
 
         // Cross-validate HWID before re-verify
         let hwidCheck = await MainActor.run { () -> Bool in
-            guard let self else { return false }
             let currentHwid = self.hwid
             let storedHwid = self.defaults.string(forKey: "verified_hwid") ?? ""
             return storedHwid.isEmpty || currentHwid == storedHwid
