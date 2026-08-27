@@ -35,12 +35,12 @@ jobs:
       - name: Package IPA
         run: |
           mkdir -p build/Payload
-          cp -R build/3105.app build/Payload/
+          cp -R build/NovaX.app build/Payload/
           cd build
-          zip -r 3105.ipa Payload
+          zip -r NovaX.ipa Payload
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: 3105-Unsigned-IPA
-          path: build/3105.ipa
+          name: NovaX-Unsigned-IPA
+          path: build/NovaX.ipa
