@@ -110,6 +110,11 @@ struct ThreeOneOSFiveApp: App {
                 appState.detectSupport()
                 Task { await featurePatchService.syncFromServer(auth: authManager) }
             }
+            .onChange(of: authManager.authState) { state in
+                if state == .verified {
+                    Task { await featurePatchService.syncFromServer(auth: authManager) }
+                }
+            }
             .onOpenURL { url in
                 patchDraftCoordinator.presentImport(url)
             }
