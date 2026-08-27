@@ -30,18 +30,17 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            CONFIGURATION_BUILD_DIR="$(pwd)/build" \
-            PRODUCT_NAME=NovaX
+            CONFIGURATION_BUILD_DIR="$(pwd)/build"
 
       - name: Package IPA
         run: |
           mkdir -p build/Payload
-          cp -R build/NovaX.app build/Payload/
+          cp -R build/3105.app build/Payload/
           cd build
-          zip -r NovaX.ipa Payload
+          zip -r 3105.ipa Payload
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NovaX-Unsigned-IPA
-          path: build/NovaX.ipa
+          name: 3105-Unsigned-IPA
+          path: build/3105.ipa
