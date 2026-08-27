@@ -185,23 +185,22 @@ struct SplashScreen: View {
 
         let stepDuration = totalDuration / Double(loadingSteps.count)
 
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            for (index, step) in self.loadingSteps.enumerated() {
+        Task { @MainActor in
+            for (index, step) in loadingSteps.enumerated() {
                 try? await Task.sleep(nanoseconds: UInt64(stepDuration * Double(index) * 1_000_000_000))
                 guard !Task.isCancelled else { return }
                 withAnimation(.easeInOut(duration: 0.3)) {
-                    self.statusText = step
-                    self.statusOpacity = 1.0
-                    self.lineWidth = CGFloat(index + 1) / CGFloat(self.loadingSteps.count) * 200
+                    statusText = step
+                    statusOpacity = 1.0
+                    lineWidth = CGFloat(index + 1) / CGFloat(loadingSteps.count) * 200
                 }
             }
 
             try? await Task.sleep(nanoseconds: UInt64((totalDuration + 0.3) * 1_000_000_000))
             guard !Task.isCancelled else { return }
-            if !self.didComplete {
-                self.didComplete = true
-                self.onComplete()
+            if !didComplete {
+                didComplete = true
+                onComplete()
             }
         }
     }
