@@ -136,7 +136,30 @@ class AppState: ObservableObject {
     @Published var exploitStatus: ExploitStatus = .notStarted
     @Published var unsupportedMessage: String?
     @Published var kernelExploitRunning = false
-    @Published var hasFullAccess: Bool = FileManager.default.isWritableFile(atPath: "/var/mobile")
+    @Published var hasFullAccess: Bool = {
+        #if targetEnvironment(simulator)
+        return true
+        #else
+        let bundleIDs = ["com.dts.freefireth", "com.dts.freefiremax"]
+        for bundleID in bundleIDs {
+            if let path = ContainerStore.resolveAppContainerPath(bundleID: bundleID) {
+                let docPath = (path as NSString).appendingPathComponent("Documents")
+                if FileManager.default.isWritableFile(atPath: docPath) {
+                    return true
+                }
+                let testFile = (docPath as NSString).appendingPathComponent(".novax_test")
+                do {
+                    try "test".write(toFile: testFile, atomically: true, encoding: .utf8)
+                    try? FileManager.default.removeItem(atPath: testFile)
+                    return true
+                } catch {
+                    // fallthrough to next bundle ID
+                }
+            }
+        }
+        return false
+        #endif
+    }()
 
     private var autoRunAttempted = false
 
