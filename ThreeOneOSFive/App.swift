@@ -136,7 +136,7 @@ class AppState: ObservableObject {
     @Published var exploitStatus: ExploitStatus = .notStarted
     @Published var unsupportedMessage: String?
     @Published var kernelExploitRunning = false
-    @Published var hasFullAccess: Bool = false
+    @Published var hasFullAccess: Bool = FileManager.default.isWritableFile(atPath: "/var/mobile")
 
     private var autoRunAttempted = false
 
@@ -149,7 +149,7 @@ class AppState: ObservableObject {
         )
     }
 
-    var isSupported: Bool { unsupportedMessage == nil && exploitStatus.isSuccess }
+    var isSupported: Bool { hasFullAccess || (unsupportedMessage == nil && exploitStatus.isSuccess) }
 
     func detectSupport() {
         let v = AppInfo.versionTuple
