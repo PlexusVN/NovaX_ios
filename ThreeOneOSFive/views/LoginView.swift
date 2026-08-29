@@ -508,8 +508,8 @@ struct LoginView: View {
     // MARK: - OS Support Card
 
     private var osSupportCard: some View {
-        let v = ProcessInfo.processInfo.operatingSystemVersion
-        let isSupported = ExploitSupportPolicy.supportsKernelExploit(major: v.majorVersion, minor: v.minorVersion, patch: v.patchVersion)
+        let v = AppInfo.versionTuple
+        let isSupported = ExploitSupportPolicy.isSupported(major: v.major, minor: v.minor, patch: v.patch, build: AppInfo.osBuild)
         
         return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
