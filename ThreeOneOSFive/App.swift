@@ -175,6 +175,8 @@ class AppState: ObservableObject {
     }
 
     var isSupported: Bool { hasDirectDirectoryAccess || hasSandboxAccess || (unsupportedMessage == nil && exploitStatus.isSuccess) }
+    
+    var hasFullAccess: Bool { hasDirectDirectoryAccess && hasSandboxAccess && exploitStatus.isSuccess }
 
     var accessLevelDescription: String {
         var features: [String] = []
