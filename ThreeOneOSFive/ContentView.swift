@@ -275,7 +275,9 @@ private extension AppSection {
         case .profile: return "person.fill"
         }
     }
-    
+}
+
+extension ContentView {
     // MARK: - Login Success Popup
     
     @ViewBuilder
