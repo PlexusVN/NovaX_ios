@@ -59,14 +59,15 @@ class NextDNSManager: ObservableObject {
                 // Nhưng trong cấu hình Apple NEDNSSettingsManager, serverURL là endpoint DoH chính.
             }
             
+            self.manager.localizedDescription = "NextDNS"
             self.manager.dnsSettings = dohSettings
-            self.manager.isEnabled = true
             
-            self.manager.saveToPreferences { saveError in
+            self.manager.saveToPreferences { [weak self] saveError in
                 DispatchQueue.main.async {
+                    guard let self = self else { return }
                     self.isActivating = false
                     if let saveError = saveError {
-                        self.errorMessage = "Không thể lưu hồ sơ DNS (Bạn đã từ chối quyền?): \(saveError.localizedDescription)"
+                        self.errorMessage = "Không thể lưu hồ sơ DNS: \(saveError.localizedDescription)"
                         self.isEnabled = false
                     } else {
                         self.isEnabled = true
@@ -80,26 +81,15 @@ class NextDNSManager: ObservableObject {
         isActivating = true
         errorMessage = nil
         
-        manager.loadFromPreferences { [weak self] error in
-            guard let self = self else { return }
-            
-            if let error = error {
-                DispatchQueue.main.async {
-                    self.errorMessage = "Lỗi: \(error.localizedDescription)"
-                    self.isActivating = false
-                }
-                return
-            }
-            
-            self.manager.isEnabled = false
-            self.manager.saveToPreferences { saveError in
-                DispatchQueue.main.async {
-                    self.isActivating = false
-                    if let saveError = saveError {
-                        self.errorMessage = "Lỗi tắt DNS: \(saveError.localizedDescription)"
-                    } else {
-                        self.isEnabled = false
-                    }
+        manager.removeFromPreferences { [weak self] error in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.isActivating = false
+                if let error = error {
+                    self.errorMessage = "Lỗi tắt DNS: \(error.localizedDescription)"
+                } else {
+                    self.isEnabled = false
+                    self.manager.loadFromPreferences { _ in }
                 }
             }
         }
