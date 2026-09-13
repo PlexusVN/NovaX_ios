@@ -6,6 +6,7 @@ import Security
 enum PatchPackageCodec {
     private static let magic = Data("3105PATCH\0".utf8)
     static let latestSchemaVersion = 3
+    static let maximumSupportedSchemaVersion = 99
     private static let minimumSchemaVersion = 1
 
     private struct Envelope: Codable {
@@ -72,7 +73,7 @@ enum PatchPackageCodec {
         kdfIterations: Int
     ) throws -> EncodedPatchPackage {
         try validate(project)
-        guard (minimumSchemaVersion...latestSchemaVersion).contains(schemaVersion) else {
+        guard (minimumSchemaVersion...maximumSupportedSchemaVersion).contains(schemaVersion) else {
             throw PatchPackageError.unsupportedVersion
         }
         let contentKey = try randomData(count: 32)
@@ -207,7 +208,7 @@ enum PatchPackageCodec {
         }
         try validate(project)
         let schemaVersion = requestedSchemaVersion ?? oldEnvelope.schemaVersion
-        guard (minimumSchemaVersion...latestSchemaVersion).contains(schemaVersion) else {
+        guard (minimumSchemaVersion...maximumSupportedSchemaVersion).contains(schemaVersion) else {
             throw PatchPackageError.unsupportedVersion
         }
         guard !project.isPrivate || oldEnvelope.isPasswordProtected else {
@@ -379,7 +380,7 @@ enum PatchPackageCodec {
         } catch {
             throw PatchPackageError.invalidPasswordOrCorruptedPackage
         }
-        guard (minimumSchemaVersion...latestSchemaVersion).contains(envelope.schemaVersion) else {
+        guard (minimumSchemaVersion...maximumSupportedSchemaVersion).contains(envelope.schemaVersion) else {
             throw PatchPackageError.unsupportedVersion
         }
         guard envelope.keyFingerprint.count == 32,
@@ -389,7 +390,7 @@ enum PatchPackageCodec {
         }
         if envelope.isPasswordProtected {
             guard envelope.publicContentKey == nil,
-                  (minimumSchemaVersion...latestSchemaVersion).contains(
+                  (minimumSchemaVersion...maximumSupportedSchemaVersion).contains(
                     envelope.keyAADVersion ?? envelope.schemaVersion
                   ),
                   envelope.kdfSalt?.count == 16,
