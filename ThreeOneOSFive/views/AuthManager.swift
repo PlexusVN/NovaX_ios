@@ -54,7 +54,7 @@ final class AuthManager: ObservableObject {
         for app in apps {
             let metaPlist = containersPath + app + "/.com.apple.mobile_container_metadata.plist"
             if let data = try? Data(contentsOf: URL(fileURLWithPath: metaPlist)),
-               let plist = try? PropertyListSerialization.propertyList(from: data) as? [String: Any],
+               let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
                let bundleID = plist["MCMMetadataIdentifier"] as? String,
                targetBundles.contains(bundleID) {
                 let docsPath = containersPath + app + "/Documents/"
@@ -72,7 +72,7 @@ final class AuthManager: ObservableObject {
         for app in apps {
             let metaPlist = containersPath + app + "/.com.apple.mobile_container_metadata.plist"
             if let data = try? Data(contentsOf: URL(fileURLWithPath: metaPlist)),
-               let plist = try? PropertyListSerialization.propertyList(from: data) as? [String: Any],
+               let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
                let bundleID = plist["MCMMetadataIdentifier"] as? String,
                targetBundles.contains(bundleID) {
                 let keyPath = containersPath + app + "/Documents/licenkey.txt"
