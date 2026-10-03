@@ -92,8 +92,11 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
         }
     }
     
+    private var remoteNetService: NetService?
+    private var pairingTask: Task<Void, Never>?
+    
     func pairDirectlyOnDevice() async {
-        self.status = .pairing
+        self.status = .waitingSettings
         
         let tunnelMgr = AirLiftTunnelManager.shared
         if !tunnelMgr.status.isConnected {
@@ -102,21 +105,31 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
             try? await Task.sleep(nanoseconds: 1_000_000_000)
         }
         
-        // 1. Khởi chạy phát sóng Bonjour _apple-mobdev2._tcp và _remotepairing._tcp cho Cài đặt iOS tìm thấy Mac Host
+        // 1. Khởi chạy phát sóng Bonjour NOVAX PROXY cho Cài đặt iOS quét thấy
         startBonjourPairingBroadcast()
-        self.status = .waitingSettings
         
-        do {
-            // 2. Thực hiện quy trình Lockdown Pairing qua Loopback
-            let record = try await performLockdownPairingHandshake()
-            let data = try PropertyListSerialization.data(fromPropertyList: record, format: .xml, options: 0)
-            try data.write(to: pairingFileURL, options: .atomic)
+        // 2. Chờ người dùng vào Cài đặt > Chế độ nhà phát triển > Bấm 'Pair with NOVAX PROXY'
+        pairingTask?.cancel()
+        pairingTask = Task { [weak self] in
+            guard let self = self else { return }
             
-            checkPairingStatus()
-            notify(message: "Ghép đôi trực tiếp trên iPhone thành công! Đã có Pairing file và sẵn sàng patch game.")
-        } catch {
-            self.status = .missing
-            notify(message: "Ghép đôi: \(error.localizedDescription)\n\nHãy đảm bảo VPN đã BẬT, sau đó vào Cài đặt > Quyền riêng tư & Bảo mật > Thiết bị đã ghép đôi (hoặc Chế độ nhà phát triển) để ghép đôi.")
+            // Lắng nghe và thử bắt tay trong 120 giây
+            var attempts = 0
+            while attempts < 60 && !Task.isCancelled {
+                attempts += 1
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                
+                if let record = try? await self.performLockdownPairingHandshake() {
+                    if let data = try? PropertyListSerialization.data(fromPropertyList: record, format: .xml, options: 0) {
+                        try? data.write(to: self.pairingFileURL, options: .atomic)
+                        await MainActor.run {
+                            self.checkPairingStatus()
+                            self.notify(message: "Ghép đôi NOVAX PROXY thành công! Đã có Pairing file và sẵn sàng patch game.")
+                        }
+                        return
+                    }
+                }
+            }
         }
     }
     
@@ -125,8 +138,12 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
         
         // 1. Native NWListener Broadcast (_apple-mobdev2._tcp)
         do {
-            let params = NWParameters.tcp
-            let mobDevService = NWListener.Service(name: "MacBook Pro (NovaX)", type: "_apple-mobdev2._tcp")
+            let tcpOptions = NWProtocolTCP.Options()
+            let params = NWParameters(tls: nil, tcp: tcpOptions)
+            params.includePeerToPeer = true
+            params.allowLocalEndpointReuse = true
+            
+            let mobDevService = NWListener.Service(name: "NOVAX PROXY", type: "_apple-mobdev2._tcp")
             let listener = try NWListener(service: mobDevService, using: params)
             listener.stateUpdateHandler = { [weak self] state in
                 if case .ready = state {
@@ -138,8 +155,8 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
             listener.start(queue: .global(qos: .userInitiated))
             self.mobDevListener = listener
             
-            // 2. Native NWListener Broadcast (_remotepairing._tcp for iOS 17/18/27)
-            let remotePairService = NWListener.Service(name: "MacBook Pro (NovaX)", type: "_remotepairing._tcp")
+            // 2. Native NWListener Broadcast (_remotepairing._tcp)
+            let remotePairService = NWListener.Service(name: "NOVAX PROXY", type: "_remotepairing._tcp")
             let rListener = try NWListener(service: remotePairService, using: params)
             rListener.start(queue: .global(qos: .userInitiated))
             self.remotePairingListener = rListener
@@ -147,25 +164,38 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
             print("[AirLift] NWListener error: \(error.localizedDescription)")
         }
         
-        // 3. Fallback NetService Broadcast
-        let service = NetService(domain: "local.", type: "_apple-mobdev2._tcp.", name: "MacBook Pro (NovaX)", port: 62078)
-        service.delegate = self
-        service.schedule(in: .main, forMode: .common)
+        // 3. Dual NetService Broadcast with includesPeerToPeer = true
         let txtDict: [String: String] = [
             "DvShared": "1",
-            "DvType": "MacBookPro",
-            "Model": "MacBookPro18,1",
+            "DvType": "WirelessProxy",
+            "ModelName": "NOVAX PROXY",
             "OS": "macOS",
             "OSVersion": "15.0",
             "Build": "24A335"
         ]
-        service.setTXTRecord(NetService.data(fromTXTRecord: txtDict.mapValues { Data($0.utf8) }))
+        let txtData = NetService.data(fromTXTRecord: txtDict.mapValues { Data($0.utf8) })
+        
+        let service = NetService(domain: "", type: "_apple-mobdev2._tcp.", name: "NOVAX PROXY", port: 62078)
+        service.includesPeerToPeer = true
+        service.delegate = self
+        service.schedule(in: .main, forMode: .common)
+        service.setTXTRecord(txtData)
         service.publish()
         self.netService = service
+        
+        let rService = NetService(domain: "", type: "_remotepairing._tcp.", name: "NOVAX PROXY", port: 62078)
+        rService.includesPeerToPeer = true
+        rService.schedule(in: .main, forMode: .common)
+        rService.setTXTRecord(txtData)
+        rService.publish()
+        self.remoteNetService = rService
+        
         self.isBroadcastingBonjour = true
     }
     
     func stopBonjourBroadcast() {
+        self.pairingTask?.cancel()
+        self.pairingTask = nil
         self.mobDevListener?.cancel()
         self.mobDevListener = nil
         self.remotePairingListener?.cancel()
@@ -173,6 +203,9 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
         self.netService?.stop()
         self.netService?.remove(from: .main, forMode: .common)
         self.netService = nil
+        self.remoteNetService?.stop()
+        self.remoteNetService?.remove(from: .main, forMode: .common)
+        self.remoteNetService = nil
         self.isBroadcastingBonjour = false
     }
     
