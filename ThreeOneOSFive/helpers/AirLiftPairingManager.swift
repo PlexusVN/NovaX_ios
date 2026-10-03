@@ -11,6 +11,7 @@ import UIKit
 import Security
 import Network
 
+@MainActor
 final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegate {
     static let shared = AirLiftPairingManager()
     
@@ -129,7 +130,9 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
             let listener = try NWListener(service: mobDevService, using: params)
             listener.stateUpdateHandler = { [weak self] state in
                 if case .ready = state {
-                    DispatchQueue.main.async { self?.isBroadcastingBonjour = true }
+                    Task { @MainActor [weak self] in
+                        self?.isBroadcastingBonjour = true
+                    }
                 }
             }
             listener.start(queue: .global(qos: .userInitiated))
@@ -168,7 +171,7 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
         self.remotePairingListener?.cancel()
         self.remotePairingListener = nil
         self.netService?.stop()
-        self.netService?.removeFromRunLoop(.main, forMode: .common)
+        self.netService?.remove(from: .main, forMode: .common)
         self.netService = nil
         self.isBroadcastingBonjour = false
     }
@@ -259,7 +262,7 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
                     let host = "10.7.0.1"
                     let port: UInt16 = 62078
                     
-                    var sock: Int32 = socket(AF_INET, SOCK_STREAM, 0)
+                    let sock: Int32 = socket(AF_INET, SOCK_STREAM, 0)
                     if sock >= 0 {
                         var tv = timeval(tv_sec: 2, tv_usec: 0)
                         setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
@@ -361,7 +364,6 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
     
     private static func createSelfSignedCertificate(publicKeyData: Data, privateKey: SecKey, isCA: Bool) -> Data {
         // X.509 DER Certificate Generator
-        var der = Data([0x30, 0x82]) // Sequence placeholder
         var tbs = Data()
         
         // Version 3 (0x02, 0x01, 0x02)
