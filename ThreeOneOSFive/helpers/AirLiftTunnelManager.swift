@@ -46,9 +46,17 @@ final class AirLiftTunnelManager: ObservableObject {
         status = .checking
         do {
             let managers = try await NETunnelProviderManager.loadAllFromPreferences()
-            if let existing = managers.first(where: {
-                ($0.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier == tunnelBundleID
-            }) ?? managers.first {
+            
+            // 1. Tìm manager chính của NovaX hoặc LocalDevVPN
+            let matchingManager = managers.first(where: {
+                let bundleId = ($0.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier ?? ""
+                return bundleId == self.tunnelBundleID || bundleId.contains("LocalDevVPN") || bundleId.contains("TunnelProv")
+            }) ?? managers.first(where: {
+                let srv = ($0.protocolConfiguration as? NETunnelProviderProtocol)?.serverAddress ?? ""
+                return srv == "10.7.0.1" || srv == "10.7.1.1"
+            })
+            
+            if let existing = matchingManager {
                 self.tunnelManager = existing
                 self.isEnabled = existing.isEnabled
                 self.updateStatus(from: existing.connection.status)
