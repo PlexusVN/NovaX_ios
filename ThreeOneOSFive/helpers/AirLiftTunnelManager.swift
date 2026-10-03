@@ -31,6 +31,9 @@ final class AirLiftTunnelManager: ObservableObject {
     @Published var isEnabled: Bool = false
     @Published var lastErrorMessage: String?
     
+    private var tunnelManager: NETunnelProviderManager?
+    private var cancellables = Set<AnyCancellable>()
+    
     private var tunnelBundleID: String {
         let mainID = Bundle.main.bundleIdentifier ?? "com.apple.mobile.MobileHouseArrest"
         return "\(mainID).TunnelProv"
