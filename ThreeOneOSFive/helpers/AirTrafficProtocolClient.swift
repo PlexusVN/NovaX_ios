@@ -35,6 +35,7 @@ enum AirLiftError: Error, LocalizedError {
     }
 }
 
+@MainActor
 final class AirTrafficProtocolClient {
     static let shared = AirTrafficProtocolClient()
     
@@ -46,13 +47,13 @@ final class AirTrafficProtocolClient {
     /// Executes a file write/replace into a sandbox container using the AirLift ATAirlock exploit.
     func writeFile(data: Data, targetPath: String) async throws {
         // 1. Verify tunnel and pairing status
-        let tunnel = await AirLiftTunnelManager.shared
+        let tunnel = AirLiftTunnelManager.shared
         if !tunnel.status.isConnected {
             try await tunnel.startTunnel()
             try await Task.sleep(nanoseconds: 500_000_000)
         }
         
-        let pairing = await AirLiftPairingManager.shared
+        let pairing = AirLiftPairingManager.shared
         guard pairing.status == .ready, let _ = pairing.getPairingData() else {
             throw AirLiftError.pairingRequired
         }
@@ -145,7 +146,33 @@ final class AirTrafficProtocolClient {
         return buffer
     }
     
-    private func performAirTrafficSyncSession(
+    private final class SafeContinuationBox: @unchecked Sendable {
+        private var isCompleted = false
+        private let lock = NSLock()
+        let continuation: CheckedContinuation<Void, Error>
+        
+        init(_ continuation: CheckedContinuation<Void, Error>) {
+            self.continuation = continuation
+        }
+        
+        func resume(returning value: ()) {
+            lock.lock()
+            defer { lock.unlock() }
+            guard !isCompleted else { return }
+            isCompleted = true
+            continuation.resume(returning: value)
+        }
+        
+        func resume(throwing error: Error) {
+            lock.lock()
+            defer { lock.unlock() }
+            guard !isCompleted else { return }
+            isCompleted = true
+            continuation.resume(throwing: error)
+        }
+    }
+    
+    private nonisolated func performAirTrafficSyncSession(
         payload: Data,
         linkIdentifier: String,
         payloadIdentifier: String,
@@ -159,31 +186,21 @@ final class AirTrafficProtocolClient {
         )
         
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            var resumed = false
+            let box = SafeContinuationBox(continuation)
             
             connection.stateUpdateHandler = { state in
                 switch state {
                 case .ready:
-                    // Send framing payload
                     connection.send(content: payload, completion: .contentProcessed { error in
                         if let error = error {
-                            if !resumed {
-                                resumed = true
-                                continuation.resume(throwing: AirLiftError.socketConnectionFailed(error.localizedDescription))
-                            }
+                            box.resume(throwing: AirLiftError.socketConnectionFailed(error.localizedDescription))
                         } else {
-                            if !resumed {
-                                resumed = true
-                                continuation.resume(returning: ())
-                            }
+                            box.resume(returning: ())
                         }
                         connection.cancel()
                     })
                 case .failed(let error):
-                    if !resumed {
-                        resumed = true
-                        continuation.resume(throwing: AirLiftError.socketConnectionFailed(error.localizedDescription))
-                    }
+                    box.resume(throwing: AirLiftError.socketConnectionFailed(error.localizedDescription))
                     connection.cancel()
                 case .cancelled:
                     break
