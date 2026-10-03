@@ -32,10 +32,40 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CONFIGURATION_BUILD_DIR="$(pwd)/build"
 
-      - name: Package IPA
+      - name: Build TunnelProv Extension
+        run: |
+          if xcodebuild -list -project ThreeOneOSFive.xcodeproj | grep -q "TunnelProv"; then
+            xcodebuild build \
+              -project ThreeOneOSFive.xcodeproj \
+              -target TunnelProv \
+              -configuration Release \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_IDENTITY="" \
+              CONFIGURATION_BUILD_DIR="$(pwd)/build"
+          fi
+
+      - name: Post-Build Verification
+        run: |
+          APP_NAME=$(find build -maxdepth 1 -name "*.app" -type d | head -n 1)
+          if [ -d "$APP_NAME" ]; then
+            echo "[build] Found App Bundle: $APP_NAME"
+          fi
+
+      - name: Package IPA with Embedded Extension
         run: |
           mkdir -p build/Payload
-          cp -R build/NovaX.app build/Payload/
+          APP_NAME=$(find build -maxdepth 1 -name "*.app" -type d | head -n 1)
+          cp -R "$APP_NAME" build/Payload/
+          
+          # Embed TunnelProv into PlugIns directory
+          TARGET_APP=$(find build/Payload -maxdepth 1 -name "*.app" -type d | head -n 1)
+          mkdir -p "$TARGET_APP/PlugIns"
+          if [ -d "build/TunnelProv.appex" ]; then
+            cp -R "build/TunnelProv.appex" "$TARGET_APP/PlugIns/"
+            echo "[ext] Successfully embedded TunnelProv.appex into $TARGET_APP/PlugIns/"
+          fi
+          
           cd build
           zip -r NovaX.ipa Payload
 
