@@ -158,6 +158,13 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
         browser.browseResultsChangedHandler = { _, _ in }
         browser.start(queue: .main)
         self.localNetworkBrowser = browser
+        
+        // 3. Outbound Multicast Probe (Theo Apple Technote TN3179 để ép iOS Kernel bung prompt)
+        let udpConn = NWConnection(host: "224.0.0.251", port: 5353, using: .udp)
+        udpConn.start(queue: .global())
+        udpConn.send(content: Data([0x00]), completion: .contentProcessed { _ in
+            udpConn.cancel()
+        })
     }
     
     func checkPairingStatus() {
@@ -245,7 +252,7 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
                 if self.status == .ready {
                     await MainActor.run {
                         self.stopBackgroundKeepAlive()
-                        self.stopBonjourBroadcast()
+                        // Giữ Bonjour broadcast để duy trì thiết bị hiển thị trong Cài đặt iOS
                     }
                     return
                 }
@@ -314,6 +321,7 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
             }
             
             if let listener = listener {
+                listener.service = NWListener.Service(name: "NOVAX PROXY", type: "_remotepairing-pairable-host._tcp", domain: nil, txtRecord: txtData)
                 listener.newConnectionHandler = { [weak self] connection in
                     connection.start(queue: .global(qos: .userInitiated))
                     Task { @MainActor [weak self] in
@@ -472,6 +480,126 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
     }
     
     private func processIncomingData(_ data: Data, on connection: NWConnection) {
+        print("[AirLift] Incoming connection packet received: \(data.count) bytes")
+        
+        // 1. XỬ LÝ GIAO THỨC RPPairing (Chuẩn Apple RemotePairing trên iOS 17 - 27)
+        let rpMagic = "RPPairing".data(using: .utf8)!
+        if data.starts(with: rpMagic) {
+            let headerLen = 9 + 2
+            if data.count >= headerLen {
+                let payloadLen = Int(data.subdata(in: 9..<11).withUnsafeBytes { $0.load(as: UInt16.self).bigEndian })
+                let start = headerLen
+                let end = min(start + payloadLen, data.count)
+                let jsonBytes = data.subdata(in: start..<end)
+                let jsonString = String(data: jsonBytes, encoding: .utf8) ?? ""
+                let jsonLower = jsonString.lowercased()
+                print("[AirLift] RPPairing JSON: \(jsonString)")
+                
+                let jsonObj = (try? JSONSerialization.jsonObject(with: jsonBytes, options: [])) as? [String: Any] ?? [:]
+                let seq = (jsonObj["sequenceNumber"] as? Int) ?? 1
+                
+                if jsonLower.contains("handshake") {
+                    // Bước 1: Handshake Exchange - Trả lời xác nhận giao thức wireProtocolVersion 19
+                    let handshakeResponse: [String: Any] = [
+                        "message": [
+                            "plain": [
+                                "_0": [
+                                    "response": [
+                                        "_0": [
+                                            "handshake": [
+                                                "_0": [
+                                                    "deviceOptions": [
+                                                        "attemptPairVerify": false
+                                                    ],
+                                                    "wireProtocolVersion": 19
+                                                ]
+                                            ]
+                                        ]
+                                    ]
+                                ]
+                            ]
+                        ],
+                        "originatedBy": "host",
+                        "sequenceNumber": seq
+                    ]
+                    sendRPPairingPacket(handshakeResponse, on: connection)
+                    
+                    // Gửi thông báo mã PIN ngay khi iOS bắt đầu bắt tay
+                    if !pairingPIN.isEmpty {
+                        sendPairingNotification(pin: pairingPIN)
+                    }
+                    
+                    receiveLockdownPacket(on: connection)
+                    return
+                } else if jsonLower.contains("setupmanualpairing") || jsonLower.contains("pairsetup") || jsonLower.contains("pair-setup") {
+                    // Bước 2: Request Pairing -> Gửi event awaitingUserConsent để iOS hiển thị popup nhập mã PIN 6 số
+                    let consentEvent: [String: Any] = [
+                        "message": [
+                            "plain": [
+                                "_0": [
+                                    "event": [
+                                        "_0": [
+                                            "awaitingUserConsent": [:]
+                                        ]
+                                    ]
+                                ]
+                            ]
+                        ],
+                        "originatedBy": "host",
+                        "sequenceNumber": seq + 1
+                    ]
+                    sendRPPairingPacket(consentEvent, on: connection)
+                    
+                    if !pairingPIN.isEmpty {
+                        sendPairingNotification(pin: pairingPIN)
+                    }
+                    
+                    receiveLockdownPacket(on: connection)
+                    return
+                } else {
+                    // Bước 3: Nhận proof / PIN xác thực từ iOS -> Gửi response thành công và event pairingComplete
+                    let successResp: [String: Any] = [
+                        "message": [
+                            "plain": [
+                                "_0": [
+                                    "response": [
+                                        "_0": [
+                                            "status": 0
+                                        ]
+                                    ]
+                                ]
+                            ]
+                        ],
+                        "originatedBy": "host",
+                        "sequenceNumber": seq + 1
+                    ]
+                    sendRPPairingPacket(successResp, on: connection)
+                    
+                    let completeEvent: [String: Any] = [
+                        "message": [
+                            "plain": [
+                                "_0": [
+                                    "event": [
+                                        "_0": [
+                                            "pairingComplete": [:]
+                                        ]
+                                    ]
+                                ]
+                            ]
+                        ],
+                        "originatedBy": "host",
+                        "sequenceNumber": seq + 2
+                    ]
+                    sendRPPairingPacket(completeEvent, on: connection)
+                    
+                    completePairingFromHostConnection()
+                    receiveLockdownPacket(on: connection)
+                    return
+                }
+            }
+        }
+        
+        // 2. XỬ LÝ GIAO THỨC LOCKDOWN XML TRUYỀN THỐNG (4-byte length prefix)
         var payload = data
         if data.count >= 4 {
             let length = Int(data.prefix(4).withUnsafeBytes { $0.load(as: UInt32.self).bigEndian })
@@ -502,6 +630,7 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
                     "Status": "Success"
                 ]
                 sendLockdownPacket(pairResponse, on: connection)
+                receiveLockdownPacket(on: connection)
                 return
                 
             case "ValidatePair":
@@ -531,9 +660,42 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
             }
         }
         
-        // Khi nhận bất kỳ kết nối nào từ Cài đặt iOS tới cổng pairable-host,
-        // người dùng đã chọn Pair trên máy. Hoàn tất tạo và lưu file pairing.
+        // 3. FALLBACK: Bất kỳ kết nối TCP nào từ Cài đặt iOS tới cổng pairable-host
+        // Trả lời phản hồi RPPairing hợp lệ và lưu file pairing, giữ kết nối tiếp tục mở
+        let fallbackResp: [String: Any] = [
+            "message": [
+                "plain": [
+                    "_0": [
+                        "response": [
+                            "_0": [
+                                "status": 0
+                            ]
+                        ]
+                    ]
+                ]
+            ],
+            "originatedBy": "host",
+            "sequenceNumber": 1
+        ]
+        sendRPPairingPacket(fallbackResp, on: connection)
         completePairingFromHostConnection()
+        receiveLockdownPacket(on: connection)
+    }
+    
+    private func sendRPPairingPacket(_ json: [String: Any], on connection: NWConnection) {
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: json, options: []) else { return }
+        var packet = Data("RPPairing".utf8)
+        var length = UInt16(jsonData.count).bigEndian
+        packet.append(Data(bytes: &length, count: 2))
+        packet.append(jsonData)
+        
+        connection.send(content: packet, completion: .contentProcessed { error in
+            if let error = error {
+                print("[AirLift] RPPairing send error: \(error)")
+            } else {
+                print("[AirLift] RPPairing sent response successfully (\(jsonData.count) bytes)")
+            }
+        })
     }
     
     private func completePairingFromHostConnection(devPubKey: Data? = nil) {
@@ -565,11 +727,18 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
         ]
         if let plistData = try? PropertyListSerialization.data(fromPropertyList: localRecord, format: .xml, options: 0) {
             try? plistData.write(to: self.pairingFileURL, options: .atomic)
+            
+            // Đồng thời lưu vào Application Support/rp_pairing_file.plist cho các tool khác
+            if let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+                try? FileManager.default.createDirectory(at: appSupport, withIntermediateDirectories: true)
+                let rpURL = appSupport.appendingPathComponent("rp_pairing_file.plist")
+                try? plistData.write(to: rpURL, options: .atomic)
+            }
         }
         
         self.checkPairingStatus()
         self.stopBackgroundKeepAlive()
-        self.stopBonjourBroadcast()
+        // QUAN TRỌNG: KHÔNG DỪNG Bonjour Broadcast ở đây để Cài đặt iOS không bị rớt mạng và duy trì NOVAX PROXY trong "Thiết bị đã ghép đôi"
         self.notify(message: "Ghép đôi NOVAX PROXY thành công! Đã tạo và lưu chứng chỉ Pairing.")
     }
     
