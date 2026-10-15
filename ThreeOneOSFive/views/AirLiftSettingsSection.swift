@@ -20,325 +20,23 @@ struct AirLiftDashboardCard: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            // Header
-            HStack(spacing: 8) {
-                Image(systemName: "network.badge.shield.half.filled")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(AppTheme.cyberCyan)
-                    .shadow(color: AppTheme.cyberCyan.opacity(0.4), radius: 4)
-                
-                Text("AIRLIFT TRANSPORT CHECK")
-                    .font(.system(size: 13, weight: .black, design: .monospaced))
-                    .foregroundColor(.white)
-                    .tracking(0.5)
-                
-                Spacer()
-                
-                Text(tunnelManager.isOperational ? "ONLINE" : "OFFLINE")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundColor(tunnelManager.isOperational ? AppTheme.cyberCyan : .white.opacity(0.4))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(
-                        Capsule()
-                            .fill((tunnelManager.isOperational ? AppTheme.cyberCyan : Color.white).opacity(0.12))
-                    )
-            }
-
-            HStack(spacing: 6) {
-                Image(systemName: tunnelManager.isServiceReachable ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
-                    .foregroundColor(tunnelManager.isServiceReachable ? .green : .orange)
-                Text(tunnelManager.serviceStatus.rawValue)
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.72))
-                Spacer()
-                Button("KIỂM TRA") {
-                    Task { await tunnelManager.verifyLoopbackService() }
-                }
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
-                .foregroundColor(AppTheme.cyberCyan)
-                .disabled(tunnelManager.status == .checking)
-            }
-
+            dashboardHeader
+            transportStatus
             if let error = tunnelManager.lastErrorMessage, !error.isEmpty {
                 Text(error)
                     .font(.system(size: 9, design: .monospaced))
                     .foregroundColor(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            
+
             Divider().background(Color.white.opacity(0.06))
-            
-            // 1. External LocalDevVPN status and launcher
-            HStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(tunnelStatusColor.opacity(0.18))
-                        .frame(width: 38, height: 38)
-                    Image(systemName: tunnelManager.status == .connected ? "bolt.shield.fill" : "shield.slash.fill")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundColor(tunnelStatusColor)
-                }
-                
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 6) {
-                        Text("LocalDevVPN bên ngoài")
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                            .foregroundColor(.white)
-                        
-                        Text("10.7.0.1")
-                            .font(.system(size: 9, weight: .bold, design: .monospaced))
-                            .foregroundColor(AppTheme.cyberCyan)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
-                            .background(AppTheme.cyberCyan.opacity(0.15))
-                            .clipShape(Capsule())
-                    }
-                    
-                    HStack(spacing: 4) {
-                        Circle()
-                            .fill(tunnelStatusColor)
-                            .frame(width: 6, height: 6)
-                        Text(tunnelManager.status.rawValue)
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundColor(tunnelStatusColor)
-                    }
-                }
-                
-                Spacer()
-                
-                Button {
-                    Haptics.medium()
-                    tunnelManager.openLocalDevVPN()
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "arrow.up.forward.app.fill")
-                            .font(.system(size: 11, weight: .black))
-                        Text("MỞ VPN")
-                            .font(.system(size: 12, weight: .heavy, design: .monospaced))
-                    }
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(
-                        LinearGradient(colors: [AppTheme.cyberCyan, Color(hex: 0x0088FF)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                    )
-                    .clipShape(Capsule())
-                    .shadow(color: AppTheme.cyberCyan.opacity(0.4), radius: 8)
-                }
-            }
-            
+            externalVPNStatus
             Divider().background(Color.white.opacity(0.06))
-            
-            // 2. Pairing Status & Action Buttons
-            HStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill((pairingManager.status == .ready ? Color.green : Color.orange).opacity(0.15))
-                        .frame(width: 32, height: 32)
-                    Image(systemName: pairingManager.status == .ready ? "key.fill" : "lock.trianglebadge.exclamationmark")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(pairingManager.status == .ready ? Color.green : Color.orange)
-                }
-                
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("AirTraffic Pairing")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                    Text(pairingManager.status.rawValue)
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundColor(pairingManager.status == .ready ? Color.green : Color.orange)
-                }
-                
-                Spacer()
-            }
-            
-            // Bonjour Pairing waiting guidance
-            if pairingManager.isBroadcastingBonjour || pairingManager.status == .waitingSettings {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                            .tint(AppTheme.cyberCyan)
-                            .scaleEffect(0.8)
-                        Text("Đang phát sóng ghép đôi ngầm...")
-                            .font(.system(size: 11, weight: .bold, design: .monospaced))
-                            .foregroundColor(AppTheme.cyberCyan)
-                        Spacer()
-                    }
-                    
-                    // PIN Code Card
-                    if !pairingManager.pairingPIN.isEmpty {
-                        VStack(spacing: 6) {
-                            HStack {
-                                Text("MÃ GHÉP ĐÔI (6 SỐ):")
-                                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                    .foregroundColor(.white.opacity(0.7))
-                                Spacer()
-                                Button {
-                                    UIPasteboard.general.string = pairingManager.pairingPIN
-                                    Haptics.light()
-                                } label: {
-                                    HStack(spacing: 3) {
-                                        Image(systemName: "doc.on.doc.fill")
-                                            .font(.system(size: 9))
-                                        Text("Sao chép")
-                                            .font(.system(size: 10, weight: .bold))
-                                    }
-                                    .foregroundColor(AppTheme.cyberCyan)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 3)
-                                    .background(AppTheme.cyberCyan.opacity(0.15))
-                                    .clipShape(Capsule())
-                                }
-                            }
-                            
-                            Text(pairingManager.pairingPIN)
-                                .font(.system(size: 26, weight: .black, design: .monospaced))
-                                .foregroundColor(AppTheme.cyberCyan)
-                                .tracking(6)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 8)
-                                .background(Color.black.opacity(0.45))
-                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(AppTheme.cyberCyan.opacity(0.4), lineWidth: 1))
-                        }
-                        .padding(8)
-                        .background(Color.white.opacity(0.04))
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    }
-                    
-                    // Wi-Fi Status Notice
-                    if !pairingManager.isWiFiConnected {
-                        HStack(alignment: .top, spacing: 8) {
-                            Image(systemName: "wifi.exclamationmark")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundColor(.yellow)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("LƯU Ý: CHƯA KẾT NỐI WI-FI")
-                                    .font(.system(size: 10, weight: .black, design: .monospaced))
-                                    .foregroundColor(.yellow)
-                                Text("Apple chỉ hiển thị 'Pair with NovaX' khi iPhone đang bật Wi-Fi (hoặc Điểm phát sóng). Nếu dùng 4G, vui lòng bật Wi-Fi.")
-                                    .font(.system(size: 9))
-                                    .foregroundColor(.white.opacity(0.85))
-                            }
-                        }
-                        .padding(8)
-                        .background(Color.yellow.opacity(0.12))
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.yellow.opacity(0.4), lineWidth: 1))
-                    }
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("QUY TRÌNH GHÉP ĐÔI TRÊN THIẾT BỊ (iOS 27+):")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .foregroundColor(AppTheme.cyberCyan)
-                        Text("1. Đảm bảo iPhone đã bật Wi-Fi (hoặc Điểm phát sóng).")
-                            .font(.system(size: 10))
-                            .foregroundColor(.white.opacity(0.85))
-                        Text("2. Mở Cài đặt ➔ Quyền riêng tư & Bảo mật ➔ Chế độ nhà phát triển.")
-                            .font(.system(size: 10))
-                            .foregroundColor(.white.opacity(0.85))
-                        Text("3. Tại mục ghép đôi, chọn 'Pair with NovaX'.")
-                            .font(.system(size: 10))
-                            .foregroundColor(.white.opacity(0.85))
-                        Text("4. Nhập mật mã máy, sau đó nhập mã 6 số ở trên vào ô yêu cầu.")
-                            .font(.system(size: 10))
-                            .foregroundColor(.white.opacity(0.85))
-                    }
-                    
-                    Button {
-                        Haptics.light()
-                        pairingManager.openPairingSettings()
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "arrow.up.forward.app.fill")
-                                .font(.system(size: 10))
-                            Text("Mở Cài đặt Chế độ nhà phát triển")
-                                .font(.system(size: 11, weight: .bold))
-                        }
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .background(AppTheme.cyberCyan)
-                        .clipShape(Capsule())
-                    }
-                }
-                .padding(12)
-                .background(AppTheme.cyberCyan.opacity(0.08))
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(AppTheme.cyberCyan.opacity(0.3), lineWidth: 1))
-            }
-            
-            // Pairing buttons
-            HStack(spacing: 8) {
-                Button {
-                    Haptics.light()
-                    showPairingStartAlert = true
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "iphone.and.arrow.forward")
-                            .font(.system(size: 10, weight: .bold))
-                        Text("Pair trên máy")
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
-                    }
-                    .foregroundColor(AppTheme.cyberCyan)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .background(AppTheme.cyberCyan.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(AppTheme.cyberCyan.opacity(0.3), lineWidth: 1))
-                }
-                
-                Button {
-                    Haptics.light()
-                    showDocumentPicker = true
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "square.and.arrow.down")
-                            .font(.system(size: 10, weight: .bold))
-                        Text("Nhập .plist")
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
-                    }
-                    .foregroundColor(.white.opacity(0.85))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.08))
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.white.opacity(0.15), lineWidth: 1))
-                }
-                
-                if pairingManager.status == .ready {
-                    Button {
-                        Haptics.light()
-                        pairingManager.deletePairingFile()
-                    } label: {
-                        Image(systemName: "trash.fill")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundColor(.red.opacity(0.85))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 8)
-                            .background(Color.red.opacity(0.12))
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.red.opacity(0.3), lineWidth: 1))
-                    }
-                }
-            }
-            
+            pairingStatus
+            pairingGuidance
+            pairingActions
             Divider().background(Color.white.opacity(0.06))
-            
-            // 3. Storage Engine Switch
-            Toggle(isOn: $storageCoordinator.useAirLiftForAll) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Sử dụng AirLift Engine toàn bộ")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                    Text("RPPairing + RSD/AFC + AirTraffic; bắt buộc canary read-back")
-                        .font(.system(size: 10))
-                        .foregroundColor(.white.opacity(0.5))
-                }
-            }
-            .tint(AppTheme.cyberCyan)
-            .disabled(!storageCoordinator.isAirTrafficEngineLinked)
+            storageEngineToggle
         }
         .padding(16)
         .background(
@@ -378,6 +76,323 @@ struct AirLiftDashboardCard: View {
         } message: {
             Text("NovaX sẽ chạy RPPairing host thật và phát Bonjour. Sau đó mở Cài đặt › Quyền riêng tư & Bảo mật › Chế độ nhà phát triển, chọn Pair with NovaX và nhập PIN hiển thị trong ứng dụng.")
         }
+    }
+
+    private var dashboardHeader: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "network.badge.shield.half.filled")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(AppTheme.cyberCyan)
+                .shadow(color: AppTheme.cyberCyan.opacity(0.4), radius: 4)
+
+            Text("AIRLIFT TRANSPORT CHECK")
+                .font(.system(size: 13, weight: .black, design: .monospaced))
+                .foregroundColor(.white)
+                .tracking(0.5)
+
+            Spacer()
+
+            Text(tunnelManager.isOperational ? "ONLINE" : "OFFLINE")
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .foregroundColor(tunnelManager.isOperational ? AppTheme.cyberCyan : .white.opacity(0.4))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(
+                    Capsule().fill(
+                        (tunnelManager.isOperational ? AppTheme.cyberCyan : Color.white).opacity(0.12)
+                    )
+                )
+        }
+    }
+
+    private var transportStatus: some View {
+        HStack(spacing: 6) {
+            Image(systemName: tunnelManager.isServiceReachable ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                .foregroundColor(tunnelManager.isServiceReachable ? .green : .orange)
+            Text(tunnelManager.serviceStatus.rawValue)
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundColor(.white.opacity(0.72))
+            Spacer()
+            Button("KIỂM TRA") {
+                Task { await tunnelManager.verifyLoopbackService() }
+            }
+            .font(.system(size: 9, weight: .bold, design: .monospaced))
+            .foregroundColor(AppTheme.cyberCyan)
+            .disabled(tunnelManager.status == .checking)
+        }
+    }
+
+    private var externalVPNStatus: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(tunnelStatusColor.opacity(0.18))
+                    .frame(width: 38, height: 38)
+                Image(systemName: tunnelManager.status == .connected ? "bolt.shield.fill" : "shield.slash.fill")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(tunnelStatusColor)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text("LocalDevVPN bên ngoài")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                    Text("10.7.0.1")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundColor(AppTheme.cyberCyan)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(AppTheme.cyberCyan.opacity(0.15))
+                        .clipShape(Capsule())
+                }
+
+                HStack(spacing: 4) {
+                    Circle().fill(tunnelStatusColor).frame(width: 6, height: 6)
+                    Text(tunnelManager.status.rawValue)
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundColor(tunnelStatusColor)
+                }
+            }
+
+            Spacer()
+
+            Button {
+                Haptics.medium()
+                tunnelManager.openLocalDevVPN()
+            } label: {
+                Label("MỞ VPN", systemImage: "arrow.up.forward.app.fill")
+                    .font(.system(size: 12, weight: .heavy, design: .monospaced))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(
+                        LinearGradient(
+                            colors: [AppTheme.cyberCyan, Color(hex: 0x0088FF)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .clipShape(Capsule())
+                    .shadow(color: AppTheme.cyberCyan.opacity(0.4), radius: 8)
+            }
+        }
+    }
+
+    private var pairingStatus: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill((pairingManager.status == .ready ? Color.green : Color.orange).opacity(0.15))
+                    .frame(width: 32, height: 32)
+                Image(systemName: pairingManager.status == .ready ? "key.fill" : "lock.trianglebadge.exclamationmark")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(pairingManager.status == .ready ? Color.green : Color.orange)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("AirTraffic Pairing")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                Text(pairingManager.status.rawValue)
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundColor(pairingManager.status == .ready ? Color.green : Color.orange)
+            }
+            Spacer()
+        }
+    }
+
+    @ViewBuilder
+    private var pairingGuidance: some View {
+        if pairingManager.isBroadcastingBonjour || pairingManager.status == .waitingSettings {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    ProgressView().tint(AppTheme.cyberCyan).scaleEffect(0.8)
+                    Text("Đang phát sóng ghép đôi ngầm...")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundColor(AppTheme.cyberCyan)
+                    Spacer()
+                }
+                pairingPINCard
+                wifiWarning
+                pairingInstructions
+                openDeveloperSettingsButton
+            }
+            .padding(12)
+            .background(AppTheme.cyberCyan.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(AppTheme.cyberCyan.opacity(0.3), lineWidth: 1)
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var pairingPINCard: some View {
+        if !pairingManager.pairingPIN.isEmpty {
+            VStack(spacing: 6) {
+                HStack {
+                    Text("MÃ GHÉP ĐÔI (6 SỐ):")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.7))
+                    Spacer()
+                    Button {
+                        UIPasteboard.general.string = pairingManager.pairingPIN
+                        Haptics.light()
+                    } label: {
+                        Label("Sao chép", systemImage: "doc.on.doc.fill")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(AppTheme.cyberCyan)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(AppTheme.cyberCyan.opacity(0.15))
+                            .clipShape(Capsule())
+                    }
+                }
+                Text(pairingManager.pairingPIN)
+                    .font(.system(size: 26, weight: .black, design: .monospaced))
+                    .foregroundColor(AppTheme.cyberCyan)
+                    .tracking(6)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(Color.black.opacity(0.45))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(AppTheme.cyberCyan.opacity(0.4), lineWidth: 1)
+                    )
+            }
+            .padding(8)
+            .background(Color.white.opacity(0.04))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+    }
+
+    @ViewBuilder
+    private var wifiWarning: some View {
+        if !pairingManager.isWiFiConnected {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "wifi.exclamationmark")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(.yellow)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("LƯU Ý: CHƯA KẾT NỐI WI-FI")
+                        .font(.system(size: 10, weight: .black, design: .monospaced))
+                        .foregroundColor(.yellow)
+                    Text("Apple chỉ hiển thị 'Pair with NovaX' khi iPhone đang bật Wi-Fi (hoặc Điểm phát sóng). Nếu dùng 4G, vui lòng bật Wi-Fi.")
+                        .font(.system(size: 9))
+                        .foregroundColor(.white.opacity(0.85))
+                }
+            }
+            .padding(8)
+            .background(Color.yellow.opacity(0.12))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.yellow.opacity(0.4), lineWidth: 1)
+            )
+        }
+    }
+
+    private var pairingInstructions: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("QUY TRÌNH GHÉP ĐÔI TRÊN THIẾT BỊ (iOS 27+):")
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .foregroundColor(AppTheme.cyberCyan)
+            Text("1. Đảm bảo iPhone đã bật Wi-Fi (hoặc Điểm phát sóng).")
+            Text("2. Mở Cài đặt ➔ Quyền riêng tư & Bảo mật ➔ Chế độ nhà phát triển.")
+            Text("3. Tại mục ghép đôi, chọn 'Pair with NovaX'.")
+            Text("4. Nhập mật mã máy, sau đó nhập mã 6 số ở trên vào ô yêu cầu.")
+        }
+        .font(.system(size: 10))
+        .foregroundColor(.white.opacity(0.85))
+    }
+
+    private var openDeveloperSettingsButton: some View {
+        Button {
+            Haptics.light()
+            pairingManager.openPairingSettings()
+        } label: {
+            Label("Mở Cài đặt Chế độ nhà phát triển", systemImage: "arrow.up.forward.app.fill")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(AppTheme.cyberCyan)
+                .clipShape(Capsule())
+        }
+    }
+
+    private var pairingActions: some View {
+        HStack(spacing: 8) {
+            Button {
+                Haptics.light()
+                showPairingStartAlert = true
+            } label: {
+                Label("Pair trên máy", systemImage: "iphone.and.arrow.forward")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundColor(AppTheme.cyberCyan)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(AppTheme.cyberCyan.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(AppTheme.cyberCyan.opacity(0.3), lineWidth: 1)
+                    )
+            }
+
+            Button {
+                Haptics.light()
+                showDocumentPicker = true
+            } label: {
+                Label("Nhập .plist", systemImage: "square.and.arrow.down")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundColor(.white.opacity(0.85))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(Color.white.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                    )
+            }
+
+            if pairingManager.status == .ready {
+                Button {
+                    Haptics.light()
+                    pairingManager.deletePairingFile()
+                } label: {
+                    Image(systemName: "trash.fill")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.red.opacity(0.85))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(Color.red.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(Color.red.opacity(0.3), lineWidth: 1)
+                        )
+                }
+            }
+        }
+    }
+
+    private var storageEngineToggle: some View {
+        Toggle(isOn: $storageCoordinator.useAirLiftForAll) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Sử dụng AirLift Engine toàn bộ")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                Text("RPPairing + RSD/AFC + AirTraffic; bắt buộc canary read-back")
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.5))
+            }
+        }
+        .tint(AppTheme.cyberCyan)
+        .disabled(!storageCoordinator.isAirTrafficEngineLinked)
     }
     
     private var tunnelStatusColor: Color {
