@@ -38,9 +38,12 @@ jobs:
       - name: Post-Build Verification
         run: |
           APP_NAME=$(find build -maxdepth 1 -name "*.app" -type d | head -n 1)
-          if [ -d "$APP_NAME" ]; then
-            echo "[build] Found App Bundle: $APP_NAME"
-          fi
+          test -n "$APP_NAME"
+          test -d "$APP_NAME"
+          EXECUTABLE=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP_NAME/Info.plist")
+          test -x "$APP_NAME/$EXECUTABLE"
+          nm -gj "$APP_NAME/$EXECUTABLE" | grep -Fx "_ALGetGrappaToken"
+          echo "[build] Found App Bundle: $APP_NAME with Grappa helper linked"
 
       - name: Package IPA
         run: |

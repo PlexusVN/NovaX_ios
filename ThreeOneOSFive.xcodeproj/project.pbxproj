@@ -74,6 +74,7 @@
 		3105N203 /* StorageEngineCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105N103; };
 		3105N204 /* AirLiftSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105N104; };
 		3105N205 /* AirliftFFI.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3105N105; };
+		3105N206 /* GrappaHelper.m in Sources */ = {isa = PBXBuildFile; fileRef = 3105N106; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -159,6 +160,8 @@
 		3105N103 /* StorageEngineCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageEngineCoordinator.swift; sourceTree = "<group>"; };
 		3105N104 /* AirLiftSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirLiftSettingsSection.swift; sourceTree = "<group>"; };
 		3105N105 /* AirliftFFI.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = AirliftFFI.xcframework; sourceTree = "<group>"; };
+		3105N106 /* GrappaHelper.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = GrappaHelper.m; sourceTree = "<group>"; };
+		3105N107 /* GrappaHelper.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GrappaHelper.h; sourceTree = "<group>"; };
 		3105A121 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		3105A122 /* vi */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = vi; path = vi.lproj/Localizable.strings; sourceTree = "<group>"; };
 		3105B123 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
@@ -298,6 +301,8 @@
 				3105N101 /* AirLiftPairingManager.swift */,
 				3105N102 /* AirTrafficProtocolClient.swift */,
 				3105N103 /* StorageEngineCoordinator.swift */,
+				3105N106 /* GrappaHelper.m */,
+				3105N107 /* GrappaHelper.h */,
 			);
 			path = helpers;
 			sourceTree = "<group>";
@@ -461,6 +466,7 @@
 				3105N202,
 				3105N203,
 				3105N204,
+				3105N206,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
