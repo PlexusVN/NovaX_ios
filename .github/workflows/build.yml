@@ -1,0 +1,58 @@
+name: Build Unsigned IPA
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Xcode version
+        run: |
+          xcodebuild -version
+
+      - name: Verify AirliftFFI
+        run: |
+          test -f Frameworks/AirliftFFI.xcframework/ios-arm64/libairlift_ffi.a
+
+      - name: Build App (Unsigned)
+        run: |
+          mkdir -p build
+          xcodebuild build \
+            -project ThreeOneOSFive.xcodeproj \
+            -target 3105 \
+            -configuration Release \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CONFIGURATION_BUILD_DIR="$(pwd)/build"
+
+      - name: Post-Build Verification
+        run: |
+          APP_NAME=$(find build -maxdepth 1 -name "*.app" -type d | head -n 1)
+          if [ -d "$APP_NAME" ]; then
+            echo "[build] Found App Bundle: $APP_NAME"
+          fi
+
+      - name: Package IPA
+        run: |
+          mkdir -p build/Payload
+          APP_NAME=$(find build -maxdepth 1 -name "*.app" -type d | head -n 1)
+          cp -R "$APP_NAME" build/Payload/
+
+          cd build
+          zip -r NovaX.ipa Payload
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NovaX-Unsigned-IPA
+          path: build/NovaX.ipa
