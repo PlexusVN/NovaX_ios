@@ -3,8 +3,8 @@
 //  ThreeOneOSFive
 //
 //  GỘP Splash + Login thành 1 màn hình duy nhất (liền mạch, không có 2 màn hình tách biệt).
-//  Giống cấu trúc HTML: logo morph từ giữa (112x112) → vị trí đăng nhập (92x92) trên cùng
-//  một view, cùng một ZStack, cùng một ScrollView — không có "chuyển cảnh" giữa 2 view.
+//  Logo morph từ vị trí chính giữa màn hình (112x112) sang vị trí đầu màn hình đăng nhập (92x92)
+//  thông qua matchedGeometryEffect, hiển thị liên tục, sắc nét và cố định vĩnh viễn trên đỉnh form đăng nhập.
 //
 
 import SwiftUI
@@ -16,85 +16,54 @@ struct SplashLoginView: View {
     @EnvironmentObject var updateManager: UpdateManager
 
     enum Phase: Equatable {
-        case loading          // Logo 112 ở center + status text loading bên dưới
-        case ready            // Logo morph 92 ở top + form trượt lên
+        case loading          // Splash: Logo 112 ở giữa + progress bar chạy mượt mà bên dưới
+        case ready            // Login: Logo morph 92 cố định ở trên đầu + form hiển thị đầy đủ
     }
 
-    @State private var phase: Phase = .loading
+    @State private var phase: Phase
+    @State private var loadProgress: CGFloat = 0.05
     @State private var statusText: String = "Đang khởi tạo"
+    @State private var pulseOpacity: Double = 0.35
+    @State private var sheenOffset: CGFloat = -160
+
+    // Gradual entrance cho màn hình splash
+    @State private var splashLogoOpacity: Double = 0.0
+    @State private var splashLogoScale: CGFloat = 0.90
+    @State private var splashIdentityOpacity: Double = 0.0
+    @State private var splashBottomOpacity: Double = 0.0
+
+    // Reveal animation cho form đăng nhập
+    @State private var formOpacity: Double = 0.0
+    @State private var formOffset: CGFloat = 18
+
     @State private var showKey: Bool = false
     @State private var showCommunityAlert: Bool = false
 
-    // Morph state
-    @State private var identityOpacity: Double = 1
-    @State private var loadingOpacity: Double = 1
-    @State private var isMorphing: Bool = false
+    @Namespace private var logoNamespace
+    private static var hasCompletedInitialSplash = false
 
-    // Reveal state (form trượt lên sau khi morph xong)
-    @State private var formOpacity: Double = 0
-    @State private var formOffset: CGFloat = 18
-    @State private var brandOpacity: Double = 0
-    @State private var brandOffset: CGFloat = 8
-
-    // Loading status steps (giống splashSteps trong HTML)
-    private let statusSteps = [
-        "Đang khởi tạo",
-        "Đang chuẩn bị không gian làm việc",
-        "Sẵn sàng"
-    ]
-    private let statusInterval: Double = 0.47
-    private let minLoadingDuration: Double = 1.5  // Khớp HTML: setTimeout(transitionToLogin, 1500)
+    init(auth: AuthManager) {
+        self.auth = auth
+        if Self.hasCompletedInitialSplash {
+            _phase = State(initialValue: .ready)
+            _formOpacity = State(initialValue: 1.0)
+            _formOffset = State(initialValue: 0.0)
+        } else {
+            _phase = State(initialValue: .loading)
+        }
+    }
 
     var body: some View {
         ZStack {
             AppTheme.pageBackground.ignoresSafeArea()
 
-            ScrollView {
-                VStack(spacing: 0) {
-                    // === HEADER ZONE: chứa logo morph + brand title ===
-                    // Logo: ở giữa khi loading, ở top khi ready
-                    // Brand title: ẩn khi loading, hiện dưới logo khi ready
-                    headerZone
-                        .padding(.top, phase == .loading ? 220 : 56)
-                        .padding(.bottom, phase == .loading ? 0 : 22)
-
-                    // === BODY ZONE: status text (loading) HOẶC form (ready) ===
-                    if phase == .loading {
-                        loadingStatusSection
-                            .padding(.top, 28)
-                    } else {
-                        brandTitle
-                            .padding(.bottom, 30)
-                            .opacity(brandOpacity)
-                            .offset(y: brandOffset)
-
-                        activationCard
-                            .padding(.horizontal, 20)
-                            .opacity(formOpacity)
-                            .offset(y: formOffset)
-
-                        activateButton
-                            .padding(.horizontal, 20)
-                            .padding(.top, 18)
-                            .padding(.bottom, 24)
-                            .opacity(formOpacity)
-                            .offset(y: formOffset)
-
-                        deviceCard
-                            .padding(.horizontal, 20)
-                            .opacity(formOpacity)
-                            .offset(y: formOffset)
-
-                        developerCard
-                            .padding(.horizontal, 20)
-                            .padding(.top, 16)
-                            .padding(.bottom, 56)
-                            .opacity(formOpacity)
-                            .offset(y: formOffset)
-                    }
-                }
+            if phase == .loading {
+                splashView
+                    .transition(.opacity)
+            } else {
+                loginView
+                    .transition(.opacity)
             }
-            .adaptiveScrollBounceBehavior()
         }
         .overlay {
             if showCommunityAlert {
@@ -108,93 +77,177 @@ struct SplashLoginView: View {
         }
     }
 
-    // MARK: - Header zone (logo + brand, ở giữa khi loading, ở top khi ready)
+    // MARK: - Splash View (giao diện loading khởi động)
+
+    private var splashView: some View {
+        VStack(spacing: 0) {
+            Spacer()
+
+            VStack(spacing: 24) {
+                // Logo 112x112 ở giữa màn hình
+                appLogoView(size: 112, cornerRadius: 28)
+                    .matchedGeometryEffect(id: "NOVAX_AVATAR_LOGO", in: logoNamespace)
+                    .scaleEffect(splashLogoScale)
+                    .opacity(splashLogoOpacity)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 28, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color.white.opacity(0.0),
+                                        Color.white.opacity(0.60),
+                                        Color.white.opacity(0.0)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .offset(x: sheenOffset)
+                            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                            .allowsHitTesting(false)
+                    )
+
+                VStack(spacing: 10) {
+                    Text("NovaX")
+                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                        .foregroundStyle(AppTheme.ink)
+                        .kerning(-1.3)
+
+                    Text("KHAI PHÁ HỆ THỐNG")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(AppTheme.grey500)
+                        .tracking(2.2)
+                }
+                .opacity(splashIdentityOpacity)
+            }
+
+            Spacer()
+
+            // Thanh tiến trình chạy từ từ, mượt mà và status text
+            VStack(spacing: 14) {
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(Color(hex: 0xE5E5EA))
+                            .frame(height: 2.5)
+
+                        Capsule()
+                            .fill(AppTheme.ink)
+                            .frame(width: max(0, min(geo.size.width * loadProgress, geo.size.width)), height: 2.5)
+                    }
+                }
+                .frame(width: 200, height: 2.5)
+
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(AppTheme.ink)
+                        .frame(width: 5, height: 5)
+                        .opacity(pulseOpacity)
+
+                    Text(statusText)
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .foregroundStyle(AppTheme.grey500)
+                        .frame(height: 18)
+                }
+            }
+            .padding(.bottom, 66)
+            .opacity(splashBottomOpacity)
+        }
+    }
+
+    // MARK: - Login View (giao diện đăng nhập sau khi load xong)
+
+    private var loginView: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                // Logo 92x92 cố định hiển thị trên đỉnh form đăng nhập, luôn có mặt (không bao giờ bị mất)
+                appLogoView(size: 92, cornerRadius: 24)
+                    .matchedGeometryEffect(id: "NOVAX_AVATAR_LOGO", in: logoNamespace)
+                    .padding(.top, 44)
+                    .padding(.bottom, 16)
+
+                brandTitle
+                    .padding(.bottom, 18)
+                    .opacity(formOpacity)
+                    .offset(y: formOffset * 0.5)
+
+                Rectangle()
+                    .fill(AppTheme.ink)
+                    .frame(width: 54, height: 1)
+                    .padding(.bottom, 26)
+                    .opacity(formOpacity)
+
+                activationCard
+                    .padding(.horizontal, 20)
+                    .opacity(formOpacity)
+                    .offset(y: formOffset)
+
+                activateButton
+                    .padding(.horizontal, 20)
+                    .padding(.top, 18)
+                    .padding(.bottom, 24)
+                    .opacity(formOpacity)
+                    .offset(y: formOffset)
+
+                deviceCard
+                    .padding(.horizontal, 20)
+                    .opacity(formOpacity)
+                    .offset(y: formOffset)
+
+                developerCard
+                    .padding(.horizontal, 20)
+                    .padding(.top, 16)
+                    .padding(.bottom, 56)
+                    .opacity(formOpacity)
+                    .offset(y: formOffset)
+            }
+        }
+        .adaptiveScrollBounceBehavior()
+    }
+
+    // MARK: - Reusable App Logo View (Avatar hiển thị sắc nét)
 
     @ViewBuilder
-    private var headerZone: some View {
-        VStack(spacing: 24) {
-            // Logo morph: 112x112 ở giữa → 92x92 ở top
-            // Outer clipShape + overlay + shadow + offset + scaleEffect control hoàn toàn
-            resizableLogo(size: 112)
-                .background(Color.white)
-                .overlay(
-                    RoundedRectangle(
-                        cornerRadius: isMorphing ? 24 : 29,
-                        style: .continuous
-                    )
-                    .stroke(Color.black.opacity(0.13), lineWidth: 1)
-                )
-                .shadow(color: Color.black.opacity(0.16), radius: 22, x: 0, y: 12)
-                .clipShape(RoundedRectangle(
-                    cornerRadius: isMorphing ? 24 : 29,
-                    style: .continuous
-                ))
-                .offset(y: isMorphing ? -220 + 56 : 0)  // morph từ center (padding 220) → top (padding 56)
-                .scaleEffect(isMorphing ? 92.0 / 112.0 : 1.0)
-                .opacity(loadingOpacity)
+    private func appLogoView(size: CGFloat, cornerRadius: CGFloat) -> some View {
+        ZStack {
+            Color.white
+
+            if let icon = UIImage(named: "NovaXLogo")
+                ?? UIImage(named: "AppIcon60x60")
+                ?? Bundle.main.path(forResource: "AppIcon60x60@2x", ofType: "png").flatMap(UIImage.init(contentsOfFile:))
+                ?? UIImage(named: "AppIcon") {
+                Image(uiImage: icon)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: size, height: size)
+            } else {
+                Image(systemName: "bolt.fill")
+                    .font(.system(size: size * 0.45, weight: .bold))
+                    .foregroundStyle(AppTheme.ink)
+            }
         }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .stroke(Color.black.opacity(0.14), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.13), radius: 18, x: 0, y: 10)
     }
 
-    // MARK: - Loading status (chỉ hiện khi phase == .loading)
-
-    private var loadingStatusSection: some View {
-        VStack(spacing: 16) {
-            // Spinner / progress bar
-            ProgressView()
-                .progressViewStyle(.linear)
-                .tint(AppTheme.ink)
-                .frame(width: 180)
-                .scaleEffect(y: 0.7)
-
-            // Status text
-            Text(statusText)
-                .font(.system(size: 13, weight: .medium, design: .monospaced))
-                .foregroundStyle(AppTheme.grey500)
-                .tracking(0.5)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 20)
-                .frame(height: 18)
-        }
-        .opacity(loadingOpacity)
-    }
-
-    // MARK: - Brand title (chỉ hiện khi phase == .ready)
+    // MARK: - Brand title
 
     private var brandTitle: some View {
-        VStack(spacing: 9) {
+        VStack(spacing: 8) {
             Text("NovaX")
                 .font(.system(size: 40, weight: .bold, design: .rounded))
                 .foregroundStyle(AppTheme.ink)
                 .kerning(-1.5)
-                .lineSpacing(0)
 
             Text("KHAI PHÁ HỆ THỐNG")
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(AppTheme.grey500)
                 .tracking(2.2)
-        }
-    }
-
-    // MARK: - Image resizable
-
-    @ViewBuilder
-    private func resizableLogo(size: CGFloat) -> some View {
-        if let icon = UIImage(named: "NovaXLogo")
-            ?? UIImage(named: "AppIcon60x60")
-            ?? Bundle.main.path(forResource: "AppIcon60x60@2x", ofType: "png").flatMap(UIImage.init(contentsOfFile:))
-            ?? UIImage(named: "AppIcon") {
-            Image(uiImage: icon)
-                .resizable()
-                .scaledToFill()
-                .frame(width: size, height: size)
-                .saturation(0)
-                .contrast(1.08)
-        } else {
-            Image(systemName: "bolt.fill")
-                .font(.system(size: size * 0.5, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: size, height: size)
-                .background(AppTheme.ink)
         }
     }
 
@@ -607,60 +660,85 @@ struct SplashLoginView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Loading sequence (timeline khớp HTML chính xác)
+    // MARK: - Loading sequence (Hiệu ứng load từ từ + thanh tiến trình mượt mà)
 
     private func startLoadingSequence() {
-        // Bước 1: chạy status text cycle (giống HTML setInterval 470ms)
+        guard phase == .loading else { return }
+
+        // Chấm tròn nhấp nháy êm ái
+        withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+            pulseOpacity = 1.0
+        }
+
+        // 1. Hiệu ứng load từ từ: Logo fade in từ từ 0 -> 1 và scale từ 0.90 -> 1.0 trong 0.7s
+        withAnimation(.easeOut(duration: 0.7)) {
+            splashLogoOpacity = 1.0
+            splashLogoScale = 1.0
+        }
+
+        // Vệt sáng đơn sắc lướt qua mặt logo
+        withAnimation(.easeInOut(duration: 1.15).delay(0.2)) {
+            sheenOffset = 160
+        }
+
+        // Tên thương hiệu fade in nhẹ sau 0.2s
+        withAnimation(.easeOut(duration: 0.55).delay(0.2)) {
+            splashIdentityOpacity = 1.0
+        }
+
+        // Thanh tiến trình và status fade in sau 0.3s
+        withAnimation(.easeOut(duration: 0.45).delay(0.3)) {
+            splashBottomOpacity = 1.0
+        }
+
+        // 2. Thanh tiến trình chạy từ từ, mượt mà qua các chặng
         Task { @MainActor in
-            for i in 1..<statusSteps.count {
-                try? await Task.sleep(nanoseconds: UInt64(statusInterval * 1_000_000_000))
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    statusText = statusSteps[i]
-                }
+            // Chặng 1: 0% -> 45% (Đang khởi tạo)
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            withAnimation(.easeInOut(duration: 0.45)) {
+                loadProgress = 0.45
+                statusText = "Đang khởi tạo"
             }
-        }
 
-        // Bước 2: sau 1500ms (khớp HTML setTimeout), chuyển sang phase ready
-        // Timeline:
-        //   t=0ms:   loading hiển thị (logo 112 ở center, status text bên dưới)
-        //   t=80ms:  logo morph START (offset y: 0 → -164, scale 1 → 0.821)
-        //   t=820ms: morph xong → status text + loading fade out
-        //   t=820ms: form + brand title stagger fade in
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: UInt64(minLoadingDuration * 1_000_000_000))
-            await performTransitionToReady()
-        }
-    }
+            // Chặng 2: 45% -> 80% (Đang chuẩn bị không gian làm việc)
+            try? await Task.sleep(nanoseconds: 480_000_000)
+            withAnimation(.easeInOut(duration: 0.48)) {
+                loadProgress = 0.80
+                statusText = "Đang chuẩn bị không gian làm việc"
+            }
 
-    private func performTransitionToReady() async {
-        // Fade out status/loading ở t=0 (khớp HTML .splash-identity fade out .22s)
-        withAnimation(.easeOut(duration: 0.22)) {
-            identityOpacity = 0
-        }
+            // Chặng 3: 80% -> 100% (Sẵn sàng)
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            withAnimation(.easeInOut(duration: 0.35)) {
+                loadProgress = 1.0
+                statusText = "Sẵn sàng"
+            }
 
-        // Morph logo tại t=80ms, duration .74s (khớp HTML gsap.to(movingLogo, {duration:.74}, .08))
-        try? await Task.sleep(nanoseconds: 80_000_000)
-        withAnimation(.easeInOut(duration: 0.74)) {
-            isMorphing = true
-        }
+            // Đợi thanh chạm 100% trọn vẹn
+            try? await Task.sleep(nanoseconds: 380_000_000)
 
-        // Sau khi morph xong (t=80+740=820ms), đổi phase → form
-        try? await Task.sleep(nanoseconds: 740_000_000)
+            // Đánh dấu đã qua màn hình splash lần đầu
+            Self.hasCompletedInitialSplash = true
 
-        // Đổi phase + fade out status loading đồng thời
-        loadingOpacity = 0
-        phase = .ready
+            // Fade out nhẹ chi tiết phụ của splash (thanh progress & text)
+            withAnimation(.easeOut(duration: 0.22)) {
+                splashBottomOpacity = 0.0
+                splashIdentityOpacity = 0.0
+            }
 
-        // Brand title fade in
-        withAnimation(.easeOut(duration: 0.28).delay(0)) {
-            brandOpacity = 1
-            brandOffset = 0
-        }
+            try? await Task.sleep(nanoseconds: 100_000_000)
 
-        // Form cards stagger fade in (khớp HTML revealTargets stagger .065s, duration .5s)
-        withAnimation(.easeOut(duration: 0.5).delay(0.13)) {
-            formOpacity = 1
-            formOffset = 0
+            // Morph logo mượt mà từ giữa màn hình lên đỉnh form đăng nhập qua matchedGeometryEffect
+            withAnimation(.spring(response: 0.72, dampingFraction: 0.82)) {
+                phase = .ready
+            }
+
+            // Form cards trượt lên và hiện rõ dần
+            try? await Task.sleep(nanoseconds: 180_000_000)
+            withAnimation(.easeOut(duration: 0.50)) {
+                formOpacity = 1.0
+                formOffset = 0.0
+            }
         }
     }
 }
