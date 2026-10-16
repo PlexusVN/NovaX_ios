@@ -112,20 +112,12 @@ enum AppTheme {
     }
 
     /// Liquid Glass / iOS 16+ equivalent: ultraThinMaterial on capsule
+    /// Khi build bằng Xcode 26+ với iOS 26 SDK, có thể kích hoạt glassEffect thật ở đây.
     static func liquidGlassCapsule<S: Shape>(shape: S, interactive: Bool = true) -> some View {
-        Group {
-            if #available(iOS 26.0, *) {
-                // SwiftUI Liquid Glass
-                shape.fill(.clear)
-                    .glassEffect(interactive ? .regular.interactive() : .regular, in: shape)
-            } else {
-                // iOS 16-25 fallback
-                shape.fill(.ultraThinMaterial)
-                    .overlay(
-                        shape.stroke(borderHairline, lineWidth: 1)
-                    )
-            }
-        }
+        shape.fill(.ultraThinMaterial)
+            .overlay(
+                shape.stroke(borderHairline, lineWidth: 1)
+            )
     }
 }
 

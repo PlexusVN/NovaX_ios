@@ -13,9 +13,6 @@ struct ThreeOneOSFiveApp: App {
     @State private var showSplash = true
     @Environment(\.scenePhase) private var scenePhase
 
-    /// Holder giữ namespace chung để matchedGeometryEffect hoạt động giữa SplashScreen và LoginView.
-    @StateObject private var splashNamespaceHolder = SharedSplashNamespaceHolder()
-
     init() {
         setupLogCapture()
         log("app: NovaX launching — iOS \(AppInfo.osVersion) (\(AppInfo.osBuild)) \(AppInfo.machineName)")
@@ -132,11 +129,6 @@ struct ThreeOneOSFiveApp: App {
         }
     }
 }
-
-/// View-side holder - cung cấp namespace cho SplashScreen.
-/// Trong app hiện tại, SplashScreen dùng namespace cục bộ của riêng nó;
-/// morph liền mạch sang login được đảm bảo bằng animation đồng bộ trong App.swift.
-final class SharedSplashNamespaceHolder: ObservableObject {}
 
 // MARK: - AppState giữ nguyên
 

@@ -147,17 +147,6 @@ struct SplashScreen: View {
     /// Namespace sẽ được truyền từ App.swift để morph sang LoginView cùng ID.
     /// SplashScreen nhận thông qua một hằng số wrapper để chia sẻ giữa 2 view.
     /// Trong trường hợp chưa được cung cấp, fallback về namespace cục bộ.
-    @Namespace private var localNamespace
-    @State private var usingAppNamespace: Bool = false
-
-    // Thực tế: matchedGeometryEffect của SwiftUI yêu cầu cùng Namespace.ID trong cùng container.
-    // Trong kiến trúc hiện tại (App.swift switch giữa SplashScreen và LoginView), morph liền mạch
-    // không thể đảm bảo 100% qua matchedGeometryEffect vì 2 view không cùng lúc trong hierarchy.
-    // Giải pháp: dùng keyframe animation để scale + position về đích trong cùng thời điểm
-    // LoginView xuất hiện. App.swift sẽ overlay morph logo trong lúc chuyển.
-    // Tại đây SplashScreen expose matchedGeometry ID; App.swift đọc bằng SharedNamespaceHolder.
-    private var appNamespace: Namespace.ID { SharedSplashNamespace.shared.id }
-
     private func startAnimation() {
         // Logo appear
         withAnimation(.spring(response: 0.65, dampingFraction: 0.85)) {
@@ -176,7 +165,7 @@ struct SplashScreen: View {
         }
 
         // Progress bar với curve cubic giống professionalLoad của preview
-        withAnimation(.cubicBezier(x1: 0.22, y1: 0.75, x2: 0.3, y2: 1.0).delay(0.10)) {
+        withAnimation(.easeInOut(duration: 1.2).delay(0.10)) {
             progress = 1
         }
 
@@ -213,15 +202,6 @@ struct SplashScreen: View {
             onComplete()
         }
     }
-}
-
-// MARK: - Shared namespace holder
-
-/// App.swift khởi tạo Namespace.ID chung để SplashScreen và LoginView cùng chia sẻ matchedGeometryEffect ID.
-final class SharedSplashNamespace: ObservableObject {
-    static let shared = SharedSplashNamespace()
-    let id: Namespace.ID = Namespace.ID()
-    private init() {}
 }
 
 // MARK: - Progress Bar
