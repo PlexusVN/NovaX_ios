@@ -10,7 +10,7 @@ struct FeaturesView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack {
+            ZStack(alignment: .bottom) {
                 AppTheme.pageBackground.ignoresSafeArea()
 
                 ScrollView {
@@ -21,9 +21,12 @@ struct FeaturesView: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
-                    .padding(.bottom, 128)
+                    .padding(.bottom, 200)
                 }
                 .refreshable { await reload(showLoading: false) }
+
+                injectBar
+                    .padding(.bottom, 88)
             }
             .navigationTitle("Chức năng")
             .navigationBarTitleDisplayMode(.inline)
@@ -44,9 +47,6 @@ struct FeaturesView: View {
                         }
                     }
                 }
-            }
-            .safeAreaInset(edge: .bottom) {
-                injectBar
             }
             .task(id: selectedVariant) {
                 await reload(showLoading: true)
@@ -212,6 +212,7 @@ struct FeaturesView: View {
             Text(service.nativeStatusMessage)
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
                 .foregroundStyle(AppTheme.grey500)
+                .lineLimit(1)
 
             Button {
                 injectSelectedPatch()
@@ -232,13 +233,17 @@ struct FeaturesView: View {
                 .padding(.vertical, 14)
                 .background(service.nativeRelease == nil ? AppTheme.grey400 : AppTheme.ink)
                 .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+                .shadow(color: AppTheme.ink.opacity(0.35), radius: 14, x: 0, y: 6)
             }
             .disabled(service.nativeRelease == nil || service.isNativeInjecting)
         }
         .padding(.horizontal, 16)
-        .padding(.top, 10)
-        .padding(.bottom, 8)
-        .background(.ultraThinMaterial)
+        .padding(.top, 12)
+        .padding(.bottom, 14)
+        .background(
+            VisualEffectBlur()
+                .ignoresSafeArea(edges: .bottom)
+        )
     }
 
     private var featureSections: [String] {
@@ -422,4 +427,11 @@ private extension View {
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(AppTheme.grey200, lineWidth: 1))
             .shadow(color: Color.black.opacity(0.05), radius: 14, x: 0, y: 6)
     }
+}
+
+private struct VisualEffectBlur: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIVisualEffectView {
+        UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
+    }
+    func updateUIView(_ uiView: UIVisualEffectView, context: Context) {}
 }
