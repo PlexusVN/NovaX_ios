@@ -11,13 +11,21 @@ import UIKit
 struct LoginView: View {
     @ObservedObject var auth: AuthManager
     @EnvironmentObject var appState: AppState
-    var namespace: Namespace.ID? = nil
+    /// Chỉ bật animation khi LoginView thực sự hiện (splash đã kết thúc)
+    var isVisible: Bool = true
 
     @State private var showKey: Bool = false
     @State private var cardOpacity: Double = 0
     @State private var cardOffset: CGFloat = 18
     @State private var logoAppear: Bool = false
     @State private var showCommunityAlert: Bool = false
+
+    /// Reset animation state khi LoginView mount (splash đang che)
+    private func resetAnimationState() {
+        logoAppear = false
+        cardOpacity = 0
+        cardOffset = 18
+    }
 
     var body: some View {
         ZStack {
@@ -58,7 +66,19 @@ struct LoginView: View {
             }
             .scrollBounceBehavior(.basedOnSize)
         }
-        .onAppear { startEntryAnimation() }
+        .onAppear { resetAnimationState() }
+        .onChange(of: isVisible) { visible in
+            if visible {
+                // Chỉ trigger animation khi LoginView thực sự hiện (splash đã kết thúc)
+                withAnimation(.easeOut(duration: 0.6)) {
+                    logoAppear = true
+                }
+                withAnimation(.easeOut(duration: 0.55).delay(0.35)) {
+                    cardOpacity = 1
+                    cardOffset = 0
+                }
+            }
+        }
         .overlay {
             if showCommunityAlert {
                 communityAlert

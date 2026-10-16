@@ -6,7 +6,6 @@ import SwiftUI
 /// - Progress bar đơn sắc (đen).
 /// - Status text xoay vòng: "Đang khởi tạo" → ... → "Sẵn sàng".
 struct SplashScreen: View {
-    var namespace: Namespace.ID
     var onComplete: () -> Void
     @State private var logoAppeared = false
     @State private var logoScale: CGFloat = 0.9
