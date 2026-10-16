@@ -84,13 +84,13 @@ struct SplashLoginView: View {
             Spacer()
 
             VStack(spacing: 24) {
-                // Logo 112x112 ở giữa màn hình
-                appLogoView(size: 112, cornerRadius: 28)
+                // Logo 112x112 ở giữa màn hình (chuẩn HTML: width 112, height 112, border-radius 29)
+                appLogoView(size: 112, cornerRadius: 29)
                     .matchedGeometryEffect(id: "NOVAX_AVATAR_LOGO", in: logoNamespace)
                     .scaleEffect(splashLogoScale)
                     .opacity(splashLogoOpacity)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        RoundedRectangle(cornerRadius: 29, style: .continuous)
                             .fill(
                                 LinearGradient(
                                     colors: [
@@ -103,7 +103,7 @@ struct SplashLoginView: View {
                                 )
                             )
                             .offset(x: sheenOffset)
-                            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: 29, style: .continuous))
                             .allowsHitTesting(false)
                     )
 
@@ -111,32 +111,32 @@ struct SplashLoginView: View {
                     Text("NovaX")
                         .font(.system(size: 34, weight: .bold, design: .rounded))
                         .foregroundStyle(AppTheme.ink)
-                        .kerning(-1.3)
+                        .kerning(-1.35)
 
                     Text("KHAI PHÁ HỆ THỐNG")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.system(size: 9, weight: .bold))
                         .foregroundStyle(AppTheme.grey500)
-                        .tracking(2.2)
+                        .tracking(2.25)
                 }
                 .opacity(splashIdentityOpacity)
             }
 
             Spacer()
 
-            // Thanh tiến trình chạy từ từ, mượt mà và status text
-            VStack(spacing: 14) {
+            // Thanh tiến trình chạy từ từ, mượt mà và status text (chuẩn HTML: width 210, height 2, bg #dedee2, dot 5x5)
+            VStack(spacing: 13) {
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
                         Capsule()
-                            .fill(Color(hex: 0xE5E5EA))
-                            .frame(height: 2.5)
+                            .fill(Color(hex: 0xDEDEE2))
+                            .frame(height: 2)
 
                         Capsule()
                             .fill(AppTheme.ink)
-                            .frame(width: max(0, min(geo.size.width * loadProgress, geo.size.width)), height: 2.5)
+                            .frame(width: max(0, min(geo.size.width * loadProgress, geo.size.width)), height: 2)
                     }
                 }
-                .frame(width: 200, height: 2.5)
+                .frame(width: 210, height: 2)
 
                 HStack(spacing: 8) {
                     Circle()
@@ -145,8 +145,9 @@ struct SplashLoginView: View {
                         .opacity(pulseOpacity)
 
                     Text(statusText)
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        .foregroundStyle(AppTheme.grey500)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color(hex: 0x58585D))
+                        .tracking(0.1)
                         .frame(height: 18)
                 }
             }
@@ -167,14 +168,15 @@ struct SplashLoginView: View {
                     .padding(.bottom, 16)
 
                 brandTitle
-                    .padding(.bottom, 18)
                     .opacity(formOpacity)
                     .offset(y: formOffset * 0.5)
 
+                // Divider hairline 54x1 chuẩn HTML (styles.css: width 54px; height 1px; background #000; margin 20px auto 30px)
                 Rectangle()
-                    .fill(AppTheme.ink)
+                    .fill(Color.black)
                     .frame(width: 54, height: 1)
-                    .padding(.bottom, 26)
+                    .padding(.top, 20)
+                    .padding(.bottom, 30)
                     .opacity(formOpacity)
 
                 activationCard
@@ -238,15 +240,15 @@ struct SplashLoginView: View {
     // MARK: - Brand title
 
     private var brandTitle: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 9) {
             Text("NovaX")
                 .font(.system(size: 40, weight: .bold, design: .rounded))
                 .foregroundStyle(AppTheme.ink)
                 .kerning(-1.5)
 
             Text("KHAI PHÁ HỆ THỐNG")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(AppTheme.grey500)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color(hex: 0x5D5D62))
                 .tracking(2.2)
         }
     }
