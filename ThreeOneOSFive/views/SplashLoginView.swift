@@ -94,7 +94,7 @@ struct SplashLoginView: View {
                     }
                 }
             }
-            .scrollBounceBehavior(.basedOnSize)
+            .adaptiveScrollBounceBehavior()
         }
         .overlay {
             if showCommunityAlert {
@@ -661,6 +661,17 @@ struct SplashLoginView: View {
         withAnimation(.easeOut(duration: 0.5).delay(0.13)) {
             formOpacity = 1
             formOffset = 0
+        }
+    }
+}
+
+extension View {
+    @ViewBuilder
+    fileprivate func adaptiveScrollBounceBehavior() -> some View {
+        if #available(iOS 16.4, *) {
+            self.scrollBounceBehavior(.basedOnSize)
+        } else {
+            self
         }
     }
 }

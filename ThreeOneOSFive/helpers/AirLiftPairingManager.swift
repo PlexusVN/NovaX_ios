@@ -62,7 +62,7 @@ final class AirLiftPairingManager: ObservableObject {
     private var continuation: CheckedContinuation<String, Error>?
     private var pairingThreadActive = false
 
-    private static let altIRKKey = "novax.airlift.hostAltIRK"
+    nonisolated private static let altIRKKey = "novax.airlift.hostAltIRK"
     nonisolated private static var storedAltIRK: String {
         get { UserDefaults.standard.string(forKey: altIRKKey) ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: altIRKKey) }
