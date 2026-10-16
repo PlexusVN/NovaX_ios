@@ -17,6 +17,7 @@ struct SplashLoginView: View {
 
     enum Phase: Equatable {
         case loading          // Splash: Logo 112 ở giữa + progress bar chạy mượt mà bên dưới
+        case transitioning    // Logo morph trong khi splash và login cùng tồn tại
         case ready            // Login: Logo morph 92 cố định ở trên đầu + form hiển thị đầy đủ
     }
 
@@ -31,6 +32,7 @@ struct SplashLoginView: View {
     @State private var splashLogoScale: CGFloat = 0.90
     @State private var splashIdentityOpacity: Double = 0.0
     @State private var splashBottomOpacity: Double = 0.0
+    @State private var splashLayerOpacity: Double = 1.0
 
     // Reveal animation cho form đăng nhập
     @State private var formOpacity: Double = 0.0
@@ -57,12 +59,16 @@ struct SplashLoginView: View {
         ZStack {
             AppTheme.pageBackground.ignoresSafeArea()
 
-            if phase == .loading {
-                splashView
-                    .transition(.opacity)
-            } else {
+            if phase != .loading {
                 loginView
-                    .transition(.opacity)
+                    .zIndex(1)
+            }
+
+            if phase != .ready {
+                splashView
+                    .opacity(splashLayerOpacity)
+                    .allowsHitTesting(false)
+                    .zIndex(2)
             }
         }
         .overlay {
@@ -75,6 +81,7 @@ struct SplashLoginView: View {
         .onAppear {
             startLoadingSequence()
         }
+        .animation(.easeInOut(duration: 0.22), value: authErrorMessage)
     }
 
     // MARK: - Splash View (giao diện loading khởi động)
@@ -85,27 +92,34 @@ struct SplashLoginView: View {
 
             VStack(spacing: 24) {
                 // Logo 112x112 ở giữa màn hình (chuẩn HTML: width 112, height 112, border-radius 29)
-                appLogoView(size: 112, cornerRadius: 29)
-                    .matchedGeometryEffect(id: "NOVAX_AVATAR_LOGO", in: logoNamespace)
-                    .scaleEffect(splashLogoScale)
-                    .opacity(splashLogoOpacity)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 29, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        Color.white.opacity(0.0),
-                                        Color.white.opacity(0.60),
-                                        Color.white.opacity(0.0)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
+                Group {
+                    if phase == .loading {
+                        appLogoView(size: 112, cornerRadius: 29)
+                            .matchedGeometryEffect(id: "NOVAX_AVATAR_LOGO", in: logoNamespace)
+                            .scaleEffect(splashLogoScale)
+                            .opacity(splashLogoOpacity)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 29, style: .continuous)
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [
+                                                Color.white.opacity(0.0),
+                                                Color.white.opacity(0.60),
+                                                Color.white.opacity(0.0)
+                                            ],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                                    .offset(x: sheenOffset)
+                                    .clipShape(RoundedRectangle(cornerRadius: 29, style: .continuous))
+                                    .allowsHitTesting(false)
                             )
-                            .offset(x: sheenOffset)
-                            .clipShape(RoundedRectangle(cornerRadius: 29, style: .continuous))
-                            .allowsHitTesting(false)
-                    )
+                    } else {
+                        Color.clear
+                            .frame(width: 112, height: 112)
+                    }
+                }
 
                 VStack(spacing: 10) {
                     Text("NovaX")
@@ -170,6 +184,7 @@ struct SplashLoginView: View {
                 brandTitle
                     .opacity(formOpacity)
                     .offset(y: formOffset * 0.5)
+                    .animation(loginRevealAnimation(delay: 0), value: formOpacity)
 
                 // Divider hairline 54x1 chuẩn HTML (styles.css: width 54px; height 1px; background #000; margin 20px auto 30px)
                 Rectangle()
@@ -178,11 +193,13 @@ struct SplashLoginView: View {
                     .padding(.top, 20)
                     .padding(.bottom, 30)
                     .opacity(formOpacity)
+                    .animation(loginRevealAnimation(delay: 0.065), value: formOpacity)
 
                 activationCard
                     .padding(.horizontal, 20)
                     .opacity(formOpacity)
                     .offset(y: formOffset)
+                    .animation(loginRevealAnimation(delay: 0.13), value: formOpacity)
 
                 activateButton
                     .padding(.horizontal, 20)
@@ -190,11 +207,13 @@ struct SplashLoginView: View {
                     .padding(.bottom, 24)
                     .opacity(formOpacity)
                     .offset(y: formOffset)
+                    .animation(loginRevealAnimation(delay: 0.195), value: formOpacity)
 
                 deviceCard
                     .padding(.horizontal, 20)
                     .opacity(formOpacity)
                     .offset(y: formOffset)
+                    .animation(loginRevealAnimation(delay: 0.26), value: formOpacity)
 
                 developerCard
                     .padding(.horizontal, 20)
@@ -202,6 +221,7 @@ struct SplashLoginView: View {
                     .padding(.bottom, 56)
                     .opacity(formOpacity)
                     .offset(y: formOffset)
+                    .animation(loginRevealAnimation(delay: 0.325), value: formOpacity)
             }
         }
         .adaptiveScrollBounceBehavior()
@@ -326,8 +346,19 @@ struct SplashLoginView: View {
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(AppTheme.grey300, lineWidth: 1)
+                    .stroke(authErrorMessage == nil ? AppTheme.grey300 : Color(red: 0.78, green: 0.13, blue: 0.13), lineWidth: 1)
             )
+
+            if let errorMessage = authErrorMessage {
+                authErrorBanner(errorMessage)
+                    .padding(.top, 12)
+                    .transition(
+                        .asymmetric(
+                            insertion: .opacity.combined(with: .move(edge: .top)),
+                            removal: .opacity
+                        )
+                    )
+            }
 
             HStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 3) {
@@ -380,15 +411,65 @@ struct SplashLoginView: View {
         .shadow(color: Color.black.opacity(0.07), radius: 22, x: 0, y: 12)
     }
 
+    private var authErrorMessage: String? {
+        guard case .error(let message) = auth.authState else { return nil }
+        return message
+    }
+
+    private var authStatusPresentation: (label: String, foreground: Color, dot: Color) {
+        switch auth.authState {
+        case .verified:
+            return ("ON", AppTheme.ink, AppTheme.ink)
+        case .loading:
+            return ("WAIT", AppTheme.grey700, AppTheme.grey600)
+        case .error:
+            let red = Color(red: 0.78, green: 0.13, blue: 0.13)
+            return ("ERROR", red, red)
+        case .idle:
+            return ("OFF", AppTheme.grey500, AppTheme.grey400)
+        }
+    }
+
+    private func authErrorBanner(_ message: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.circle.fill")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(Color(red: 0.78, green: 0.13, blue: 0.13))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("KHÔNG THỂ XÁC THỰC")
+                    .font(.system(size: 11, weight: .bold))
+                    .tracking(0.45)
+                    .foregroundStyle(AppTheme.ink)
+
+                Text(message)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(AppTheme.grey700)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(13)
+        .background(Color(red: 1.0, green: 0.965, blue: 0.965))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color(red: 0.78, green: 0.13, blue: 0.13).opacity(0.22), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Lỗi xác thực: \(message)")
+    }
+
     private var statusPill: some View {
-        let isOn = auth.authState == .verified
+        let presentation = authStatusPresentation
         return HStack(spacing: 4) {
             Circle()
-                .fill(isOn ? AppTheme.ink : AppTheme.grey400)
+                .fill(presentation.dot)
                 .frame(width: 6, height: 6)
-            Text(isOn ? "ON" : "OFF")
+            Text(presentation.label)
                 .font(.system(size: 10, weight: .heavy, design: .monospaced))
-                .foregroundStyle(isOn ? AppTheme.ink : AppTheme.grey500)
+                .foregroundStyle(presentation.foreground)
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 6)
@@ -664,6 +745,11 @@ struct SplashLoginView: View {
 
     // MARK: - Loading sequence (Hiệu ứng load từ từ + thanh tiến trình mượt mà)
 
+    private func loginRevealAnimation(delay: Double) -> Animation {
+        .timingCurve(0.22, 0.75, 0.30, 1.0, duration: 0.50)
+            .delay(delay)
+    }
+
     private func startLoadingSequence() {
         guard phase == .loading else { return }
 
@@ -730,17 +816,20 @@ struct SplashLoginView: View {
 
             try? await Task.sleep(nanoseconds: 100_000_000)
 
-            // Morph logo mượt mà từ giữa màn hình lên đỉnh form đăng nhập qua matchedGeometryEffect
-            withAnimation(.spring(response: 0.72, dampingFraction: 0.82)) {
-                phase = .ready
+            // Khớp nhịp HTML: logo morph 0.74s, nền splash mờ dần phía trên login.
+            withAnimation(.timingCurve(0.22, 0.75, 0.30, 1.0, duration: 0.74)) {
+                phase = .transitioning
+            }
+            withAnimation(.easeInOut(duration: 0.50).delay(0.10)) {
+                splashLayerOpacity = 0.0
             }
 
-            // Form cards trượt lên và hiện rõ dần
-            try? await Task.sleep(nanoseconds: 180_000_000)
-            withAnimation(.easeOut(duration: 0.50)) {
-                formOpacity = 1.0
-                formOffset = 0.0
-            }
+            try? await Task.sleep(nanoseconds: 740_000_000)
+            phase = .ready
+
+            // Mỗi khối dùng delay riêng để tạo hiệu ứng stagger giống bản HTML.
+            formOpacity = 1.0
+            formOffset = 0.0
         }
     }
 }

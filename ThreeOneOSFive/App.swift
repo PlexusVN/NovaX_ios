@@ -63,6 +63,8 @@ struct ThreeOneOSFiveApp: App {
                             .environmentObject(StorageEngineCoordinator.shared)
                             .environment(\.appLanguage, language)
                             .environment(\.locale, language.locale)
+                            .transition(.opacity.combined(with: .scale(scale: 1.01)))
+                            .zIndex(1)
                     } else {
                         SplashLoginView(auth: authManager)
                             .environmentObject(appState)
@@ -85,6 +87,8 @@ struct ThreeOneOSFiveApp: App {
                                     Task { await featurePatchService.syncFromServer(auth: authManager) }
                                 }
                             }
+                            .transition(.opacity)
+                            .zIndex(1)
                     }
                 }
 
@@ -94,7 +98,7 @@ struct ThreeOneOSFiveApp: App {
                         .zIndex(3)
                 }
             }
-            .animation(.easeInOut(duration: 0.45), value: authManager.authState)
+            .animation(.easeInOut(duration: 0.32), value: authManager.authState == .verified)
             .preferredColorScheme(.light)
             .onAppear {
                 updateManager.checkForUpdate()

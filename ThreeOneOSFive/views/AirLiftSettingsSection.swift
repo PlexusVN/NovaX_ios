@@ -25,36 +25,35 @@ struct AirLiftDashboardCard: View {
             if let error = tunnelManager.lastErrorMessage, !error.isEmpty {
                 Text(error)
                     .font(.system(size: 9, design: .monospaced))
-                    .foregroundColor(.orange)
+                    .foregroundColor(Color(red: 0.72, green: 0.16, blue: 0.16))
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Divider().background(Color.white.opacity(0.06))
+            Divider().background(AppTheme.grey200)
             externalVPNStatus
-            Divider().background(Color.white.opacity(0.06))
+            Divider().background(AppTheme.grey200)
             pairingStatus
             pairingGuidance
             pairingActions
-            Divider().background(Color.white.opacity(0.06))
+            Divider().background(AppTheme.grey200)
             storageEngineToggle
         }
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(AppTheme.cyberSurface.opacity(0.55))
-                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.ultraThinMaterial))
+                .fill(Color.white)
                 .overlay(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .stroke(
                             LinearGradient(
-                                colors: [AppTheme.cyberCyan.opacity(0.35), AppTheme.cyberPurple.opacity(0.2), Color.white.opacity(0.03)],
+                                colors: [AppTheme.grey300, AppTheme.grey200],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             ),
                             lineWidth: 1
                         )
                 )
-                .shadow(color: AppTheme.cyberCyan.opacity(0.1), radius: 20, y: 10)
+                .shadow(color: Color.black.opacity(0.06), radius: 20, y: 10)
         )
         .sheet(isPresented: $showDocumentPicker) {
             AirLiftDocumentPicker { url in
@@ -82,24 +81,23 @@ struct AirLiftDashboardCard: View {
         HStack(spacing: 8) {
             Image(systemName: "network.badge.shield.half.filled")
                 .font(.system(size: 14, weight: .bold))
-                .foregroundColor(AppTheme.cyberCyan)
-                .shadow(color: AppTheme.cyberCyan.opacity(0.4), radius: 4)
+                .foregroundColor(AppTheme.ink)
 
             Text("AIRLIFT TRANSPORT CHECK")
                 .font(.system(size: 13, weight: .black, design: .monospaced))
-                .foregroundColor(.white)
+                .foregroundColor(AppTheme.ink)
                 .tracking(0.5)
 
             Spacer()
 
             Text(tunnelManager.isOperational ? "ONLINE" : "OFFLINE")
                 .font(.system(size: 10, weight: .bold, design: .monospaced))
-                .foregroundColor(tunnelManager.isOperational ? AppTheme.cyberCyan : .white.opacity(0.4))
+                .foregroundColor(tunnelManager.isOperational ? .white : AppTheme.grey600)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
                 .background(
                     Capsule().fill(
-                        (tunnelManager.isOperational ? AppTheme.cyberCyan : Color.white).opacity(0.12)
+                        tunnelManager.isOperational ? AppTheme.ink : AppTheme.grey100
                     )
                 )
         }
@@ -108,16 +106,16 @@ struct AirLiftDashboardCard: View {
     private var transportStatus: some View {
         HStack(spacing: 6) {
             Image(systemName: tunnelManager.isServiceReachable ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
-                .foregroundColor(tunnelManager.isServiceReachable ? .green : .orange)
+                .foregroundColor(tunnelManager.isServiceReachable ? AppTheme.ink : AppTheme.grey500)
             Text(tunnelManager.serviceStatus.rawValue)
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .foregroundColor(.white.opacity(0.72))
+                .foregroundColor(AppTheme.grey700)
             Spacer()
             Button("KIỂM TRA") {
                 Task { await tunnelManager.verifyLoopbackService() }
             }
             .font(.system(size: 9, weight: .bold, design: .monospaced))
-            .foregroundColor(AppTheme.cyberCyan)
+            .foregroundColor(AppTheme.ink)
             .disabled(tunnelManager.status == .checking)
         }
     }
@@ -137,13 +135,13 @@ struct AirLiftDashboardCard: View {
                 HStack(spacing: 6) {
                     Text("LocalDevVPN bên ngoài")
                         .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
+                        .foregroundColor(AppTheme.ink)
                     Text("10.7.0.1")
                         .font(.system(size: 9, weight: .bold, design: .monospaced))
-                        .foregroundColor(AppTheme.cyberCyan)
+                        .foregroundColor(AppTheme.ink)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
-                        .background(AppTheme.cyberCyan.opacity(0.15))
+                        .background(AppTheme.grey100)
                         .clipShape(Capsule())
                 }
 
@@ -167,14 +165,10 @@ struct AirLiftDashboardCard: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
                     .background(
-                        LinearGradient(
-                            colors: [AppTheme.cyberCyan, Color(hex: 0x0088FF)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
+                        AppTheme.ink
                     )
                     .clipShape(Capsule())
-                    .shadow(color: AppTheme.cyberCyan.opacity(0.4), radius: 8)
+                    .shadow(color: Color.black.opacity(0.12), radius: 8)
             }
         }
     }
@@ -183,19 +177,19 @@ struct AirLiftDashboardCard: View {
         HStack(spacing: 12) {
             ZStack {
                 Circle()
-                    .fill((pairingManager.status == .ready ? Color.green : Color.orange).opacity(0.15))
+                    .fill(pairingManager.status == .ready ? AppTheme.ink : AppTheme.grey100)
                     .frame(width: 32, height: 32)
                 Image(systemName: pairingManager.status == .ready ? "key.fill" : "lock.trianglebadge.exclamationmark")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(pairingManager.status == .ready ? Color.green : Color.orange)
+                    .foregroundColor(pairingManager.status == .ready ? .white : AppTheme.grey600)
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text("AirTraffic Pairing")
                     .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
+                    .foregroundColor(AppTheme.ink)
                 Text(pairingManager.status.rawValue)
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundColor(pairingManager.status == .ready ? Color.green : Color.orange)
+                    .foregroundColor(pairingManager.status == .ready ? AppTheme.ink : AppTheme.grey600)
             }
             Spacer()
         }
@@ -206,10 +200,10 @@ struct AirLiftDashboardCard: View {
         if pairingManager.isBroadcastingBonjour || pairingManager.status == .waitingSettings {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
-                    ProgressView().tint(AppTheme.cyberCyan).scaleEffect(0.8)
+                    ProgressView().tint(AppTheme.ink).scaleEffect(0.8)
                     Text("Đang phát sóng ghép đôi ngầm...")
                         .font(.system(size: 11, weight: .bold, design: .monospaced))
-                        .foregroundColor(AppTheme.cyberCyan)
+                        .foregroundColor(AppTheme.ink)
                     Spacer()
                 }
                 pairingPINCard
@@ -218,11 +212,11 @@ struct AirLiftDashboardCard: View {
                 openDeveloperSettingsButton
             }
             .padding(12)
-            .background(AppTheme.cyberCyan.opacity(0.08))
+            .background(AppTheme.grey50)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(AppTheme.cyberCyan.opacity(0.3), lineWidth: 1)
+                    .stroke(AppTheme.grey200, lineWidth: 1)
             )
         }
     }
@@ -234,7 +228,7 @@ struct AirLiftDashboardCard: View {
                 HStack {
                     Text("MÃ GHÉP ĐÔI (6 SỐ):")
                         .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.7))
+                        .foregroundColor(AppTheme.grey600)
                     Spacer()
                     Button {
                         UIPasteboard.general.string = pairingManager.pairingPIN
@@ -242,28 +236,28 @@ struct AirLiftDashboardCard: View {
                     } label: {
                         Label("Sao chép", systemImage: "doc.on.doc.fill")
                             .font(.system(size: 10, weight: .bold))
-                            .foregroundColor(AppTheme.cyberCyan)
+                            .foregroundColor(AppTheme.ink)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
-                            .background(AppTheme.cyberCyan.opacity(0.15))
+                            .background(AppTheme.grey100)
                             .clipShape(Capsule())
                     }
                 }
                 Text(pairingManager.pairingPIN)
                     .font(.system(size: 26, weight: .black, design: .monospaced))
-                    .foregroundColor(AppTheme.cyberCyan)
+                    .foregroundColor(AppTheme.ink)
                     .tracking(6)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
-                    .background(Color.black.opacity(0.45))
+                    .background(Color.white)
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(AppTheme.cyberCyan.opacity(0.4), lineWidth: 1)
+                            .stroke(AppTheme.grey300, lineWidth: 1)
                     )
             }
             .padding(8)
-            .background(Color.white.opacity(0.04))
+            .background(AppTheme.grey50)
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
     }
@@ -274,22 +268,22 @@ struct AirLiftDashboardCard: View {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "wifi.exclamationmark")
                     .font(.system(size: 13, weight: .bold))
-                    .foregroundColor(.yellow)
+                    .foregroundColor(AppTheme.grey700)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("LƯU Ý: CHƯA KẾT NỐI WI-FI")
                         .font(.system(size: 10, weight: .black, design: .monospaced))
-                        .foregroundColor(.yellow)
+                        .foregroundColor(AppTheme.ink)
                     Text("Apple chỉ hiển thị 'Pair with NovaX' khi iPhone đang bật Wi-Fi (hoặc Điểm phát sóng). Nếu dùng 4G, vui lòng bật Wi-Fi.")
                         .font(.system(size: 9))
-                        .foregroundColor(.white.opacity(0.85))
+                        .foregroundColor(AppTheme.grey700)
                 }
             }
             .padding(8)
-            .background(Color.yellow.opacity(0.12))
+            .background(AppTheme.grey100)
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(Color.yellow.opacity(0.4), lineWidth: 1)
+                    .stroke(AppTheme.grey300, lineWidth: 1)
             )
         }
     }
@@ -298,14 +292,14 @@ struct AirLiftDashboardCard: View {
         VStack(alignment: .leading, spacing: 4) {
             Text("QUY TRÌNH GHÉP ĐÔI TRÊN THIẾT BỊ (iOS 27+):")
                 .font(.system(size: 10, weight: .bold, design: .monospaced))
-                .foregroundColor(AppTheme.cyberCyan)
+                .foregroundColor(AppTheme.ink)
             Text("1. Đảm bảo iPhone đã bật Wi-Fi (hoặc Điểm phát sóng).")
             Text("2. Mở Cài đặt ➔ Quyền riêng tư & Bảo mật ➔ Chế độ nhà phát triển.")
             Text("3. Tại mục ghép đôi, chọn 'Pair with NovaX'.")
             Text("4. Nhập mật mã máy, sau đó nhập mã 6 số ở trên vào ô yêu cầu.")
         }
         .font(.system(size: 10))
-        .foregroundColor(.white.opacity(0.85))
+        .foregroundColor(AppTheme.grey700)
     }
 
     private var openDeveloperSettingsButton: some View {
@@ -318,7 +312,7 @@ struct AirLiftDashboardCard: View {
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
-                .background(AppTheme.cyberCyan)
+                .background(AppTheme.ink)
                 .clipShape(Capsule())
         }
     }
@@ -331,14 +325,14 @@ struct AirLiftDashboardCard: View {
             } label: {
                 Label("Pair trên máy", systemImage: "iphone.and.arrow.forward")
                     .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .foregroundColor(AppTheme.cyberCyan)
+                    .foregroundColor(AppTheme.ink)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
-                    .background(AppTheme.cyberCyan.opacity(0.12))
+                    .background(AppTheme.grey50)
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(AppTheme.cyberCyan.opacity(0.3), lineWidth: 1)
+                            .stroke(AppTheme.grey300, lineWidth: 1)
                     )
             }
 
@@ -348,14 +342,14 @@ struct AirLiftDashboardCard: View {
             } label: {
                 Label("Nhập .plist", systemImage: "square.and.arrow.down")
                     .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .foregroundColor(.white.opacity(0.85))
+                    .foregroundColor(AppTheme.ink)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.08))
+                    .background(AppTheme.grey50)
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                            .stroke(AppTheme.grey300, lineWidth: 1)
                     )
             }
 
@@ -385,13 +379,13 @@ struct AirLiftDashboardCard: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Sử dụng AirLift Engine toàn bộ")
                     .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
+                    .foregroundColor(AppTheme.ink)
                 Text("RPPairing + RSD/AFC + AirTraffic; bắt buộc canary read-back")
                     .font(.system(size: 10))
-                    .foregroundColor(.white.opacity(0.5))
+                    .foregroundColor(AppTheme.grey500)
             }
         }
-        .tint(AppTheme.cyberCyan)
+        .tint(AppTheme.ink)
         .disabled(!storageCoordinator.isAirTrafficEngineLinked)
     }
     
@@ -465,7 +459,7 @@ struct AirLiftSettingsSection: View {
                 Spacer()
                 Text(pairingManager.status.rawValue)
                     .font(.subheadline)
-                    .foregroundStyle(pairingManager.status == .ready ? Color.green : Color.orange)
+                    .foregroundStyle(pairingManager.status == .ready ? AppTheme.ink : AppTheme.grey600)
             }
             
             // 3. Pair trực tiếp trên iPhone
@@ -475,11 +469,11 @@ struct AirLiftSettingsSection: View {
                 HStack(spacing: 12) {
                     Image(systemName: "link.badge.plus")
                         .font(.system(size: 18))
-                        .foregroundStyle(Color(red: 0.82, green: 0.45, blue: 0.32))
+                        .foregroundStyle(AppTheme.ink)
                         .frame(width: 24)
                     
                     Text("Pair trực tiếp trên iPhone")
-                        .foregroundStyle(Color(red: 0.82, green: 0.45, blue: 0.32))
+                        .foregroundStyle(AppTheme.ink)
                 }
             }
             
@@ -490,11 +484,11 @@ struct AirLiftSettingsSection: View {
                 HStack(spacing: 12) {
                     Image(systemName: "square.and.arrow.down")
                         .font(.system(size: 18))
-                        .foregroundStyle(Color(red: 0.82, green: 0.45, blue: 0.32))
+                        .foregroundStyle(AppTheme.ink)
                         .frame(width: 24)
                     
                     Text("Nhập file pairing")
-                        .foregroundStyle(Color(red: 0.82, green: 0.45, blue: 0.32))
+                        .foregroundStyle(AppTheme.ink)
                 }
             }
             
@@ -520,14 +514,14 @@ struct AirLiftSettingsSection: View {
                 HStack(spacing: 12) {
                     Image(systemName: "arrow.triangle.2.circlepath")
                         .font(.system(size: 18))
-                        .foregroundStyle(Color(red: 0.82, green: 0.45, blue: 0.32))
+                        .foregroundStyle(AppTheme.ink)
                         .frame(width: 24)
                     
                     Text("Sử dụng AirLift cho toàn bộ")
                         .foregroundStyle(.primary)
                 }
             }
-            .tint(Color(red: 0.88, green: 0.55, blue: 0.42))
+            .tint(AppTheme.ink)
             .disabled(!storageCoordinator.isAirTrafficEngineLinked)
         } footer: {
             Text("NovaX không còn chứa VPN tích hợp. Hãy bật ứng dụng LocalDevVPN riêng; NovaX chỉ kiểm tra RSD/Lockdown và ghi qua AirTraffic sau khi canary được đọc lại chính xác.")
