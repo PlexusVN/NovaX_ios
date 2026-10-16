@@ -25,8 +25,8 @@ struct SplashScreen: View {
         "Sẵn sàng"
     ]
 
-    // Tổng thời gian loading mục tiêu ~1.3s, đủ để người dùng thấy nhưng không chậm.
-    private let statusInterval: Double = 0.45
+    // Tổng thời gian loading mục tiêu ~2.0s, đủ để người dùng thấy từng bước khởi tạo.
+    private let statusInterval: Double = 0.65
 
     var body: some View {
         ZStack {
@@ -143,7 +143,7 @@ struct SplashScreen: View {
 
     private func startAnimation() {
         // Logo appear
-        withAnimation(.spring(response: 0.65, dampingFraction: 0.85)) {
+        withAnimation(.spring(response: 0.7, dampingFraction: 0.85)) {
             logoOpacity = 1
             logoScale = 1
             identityOpacity = 1
@@ -151,15 +151,15 @@ struct SplashScreen: View {
         logoAppeared = true
 
         // Identity + loading fade in chậm
-        withAnimation(.easeOut(duration: 0.55).delay(0.28)) {
+        withAnimation(.easeOut(duration: 0.6).delay(0.32)) {
             identityOpacity = 1
         }
-        withAnimation(.easeOut(duration: 0.45).delay(0.48)) {
+        withAnimation(.easeOut(duration: 0.5).delay(0.55)) {
             loadingOpacity = 1
         }
 
-        // Progress bar với curve cubic giống professionalLoad của preview
-        withAnimation(.easeInOut(duration: 1.2).delay(0.10)) {
+        // Progress bar với curve cubic, chạy trong ~1.9s để hoàn thành cùng lúc với status cuối
+        withAnimation(.easeInOut(duration: 1.85).delay(0.10)) {
             progress = 1
         }
 
@@ -167,11 +167,11 @@ struct SplashScreen: View {
         if MotionPreference.isReduced {
             // Reduce motion: show only final state
             statusText = statusSteps.last ?? "Sẵn sàng"
-            scheduleCompletion(after: 1.0)
+            scheduleCompletion(after: 2.0)
         } else {
             statusText = statusSteps.first ?? "Đang khởi tạo"
             scheduleNextStatus()
-            scheduleCompletion(after: 1.3)
+            scheduleCompletion(after: 2.0)
         }
     }
 

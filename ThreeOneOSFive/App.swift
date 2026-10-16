@@ -49,30 +49,10 @@ struct ThreeOneOSFiveApp: App {
     var body: some Scene {
         WindowGroup {
             ZStack {
-                Group {
-                    if authManager.authState == .verified {
-                        ContentView()
-                            .environmentObject(appState)
-                            .environmentObject(patchDraftCoordinator)
-                            .environmentObject(fileOperationCoordinator)
-                            .environmentObject(authManager)
-                            .environmentObject(featurePatchService)
-                            .environmentObject(updateManager)
-                            .environmentObject(StorageEngineCoordinator.shared)
-                            .environment(\.appLanguage, language)
-                            .environment(\.locale, language.locale)
-                            .transition(.opacity)
-                    } else {
-                        LoginView(auth: authManager)
-                            .environmentObject(appState)
-                            .environmentObject(updateManager)
-                            .transition(.opacity)
-                    }
-                }
-
                 if showSplash {
                     SplashScreen {
-                        withAnimation(.easeInOut(duration: 0.45)) {
+                        // Sau khi splash hoàn tất, fade splash ra rồi mới fade login vào
+                        withAnimation(.easeInOut(duration: 0.55)) {
                             showSplash = false
                         }
 
@@ -93,15 +73,39 @@ struct ThreeOneOSFiveApp: App {
                         }
                     }
                     .transition(.opacity)
-                    .zIndex(1)
+                    .zIndex(2)
+                } else {
+                    Group {
+                        if authManager.authState == .verified {
+                            ContentView()
+                                .environmentObject(appState)
+                                .environmentObject(patchDraftCoordinator)
+                                .environmentObject(fileOperationCoordinator)
+                                .environmentObject(authManager)
+                                .environmentObject(featurePatchService)
+                                .environmentObject(updateManager)
+                                .environmentObject(StorageEngineCoordinator.shared)
+                                .environment(\.appLanguage, language)
+                                .environment(\.locale, language.locale)
+                                .transition(.opacity)
+                        } else {
+                            LoginView(auth: authManager)
+                                .environmentObject(appState)
+                                .environmentObject(updateManager)
+                                .transition(.opacity)
+                        }
+                    }
+                    .transition(.opacity)
                 }
 
                 if let offer = updateManager.updateOffer {
                     UpdateRequiredView(offer: offer)
                         .transition(.opacity)
-                        .zIndex(2)
+                        .zIndex(3)
                 }
             }
+            .animation(.easeInOut(duration: 0.55), value: showSplash)
+            .animation(.easeInOut(duration: 0.45), value: authManager.authState)
             .preferredColorScheme(.light)
             .onAppear {
                 updateManager.checkForUpdate()
