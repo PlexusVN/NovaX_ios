@@ -218,15 +218,15 @@ struct SplashScreen: View {
                 identityOpacity = 0
             }
 
-            // Bước 2: morph logo — trượt lên + thu nhỏ + bo góc (như HTML)
-            try? await Task.sleep(nanoseconds: 120_000_000)
-            withAnimation(.easeInOut(duration: 0.72)) {
+            // Bước 2: morph logo — trượt lên + thu nhỏ + bo góc (khớp HTML: t=80ms, dur=.74s)
+            try? await Task.sleep(nanoseconds: 80_000_000)
+            withAnimation(.easeInOut(duration: 0.74)) {
                 isMorphing = true
             }
 
-            // Bước 3: sau khi morph xong (logo đã ở đúng vị trí login),
-            // gọi onComplete → splash biến mất → login hiện ra ngay tại vị trí đó
-            try? await Task.sleep(nanoseconds: 520_000_000)
+            // Bước 3: morph hoàn tất tại t=80+740=820ms → gọi onComplete
+            // Splash sẽ fade out (0.55s) → Login hiện ra → logo bounce (0.28s)
+            try? await Task.sleep(nanoseconds: 740_000_000)
             onComplete()
         }
     }

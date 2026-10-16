@@ -69,11 +69,12 @@ struct LoginView: View {
         .onAppear { resetAnimationState() }
         .onChange(of: isVisible) { visible in
             if visible {
-                // Chỉ trigger animation khi LoginView thực sự hiện (splash đã kết thúc)
-                withAnimation(.easeOut(duration: 0.6)) {
+                // Logo fade + scale 0.96→1.0 (khớp HTML t=820ms, dur=.28s, easeOut)
+                withAnimation(.easeOut(duration: 0.28)) {
                     logoAppear = true
                 }
-                withAnimation(.easeOut(duration: 0.55).delay(0.35)) {
+                // Cards stagger in (delay .38s, duration .5s) — khớp HTML revealTargets
+                withAnimation(.easeOut(duration: 0.55).delay(0.38)) {
                     cardOpacity = 1
                     cardOffset = 0
                 }
