@@ -10,7 +10,7 @@ struct ThreeOneOSFiveApp: App {
     @StateObject private var featurePatchService = FeaturePatchService()
     @StateObject private var updateManager = UpdateManager.shared
     @AppStorage(AppLanguage.storageKey) private var languageCode = AppLanguage.vietnamese.rawValue
-    @State private var showSplash = false   // ĐÃ BỎ: không còn 2 view tách biệt
+    @State private var showMainInterface = false
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -52,7 +52,7 @@ struct ThreeOneOSFiveApp: App {
                 // Một màn hình duy nhất: SplashLoginView gộp loading + login
                 // → liền mạch, không có "chuyển cảnh" giữa 2 view (giống HTML)
                 Group {
-                    if authManager.authState == .verified {
+                    if showMainInterface {
                         ContentView()
                             .environmentObject(appState)
                             .environmentObject(patchDraftCoordinator)
@@ -98,8 +98,21 @@ struct ThreeOneOSFiveApp: App {
                         .zIndex(3)
                 }
             }
-            .animation(.easeInOut(duration: 0.32), value: authManager.authState == .verified)
+            .animation(.easeInOut(duration: 0.32), value: showMainInterface)
             .preferredColorScheme(.light)
+            .task(id: authManager.authState == .verified) {
+                guard authManager.authState == .verified else {
+                    showMainInterface = false
+                    return
+                }
+
+                // Giữ Login đủ lâu để người dùng nhìn thấy trạng thái thành công.
+                try? await Task.sleep(nanoseconds: 1_100_000_000)
+                guard !Task.isCancelled, authManager.authState == .verified else { return }
+                withAnimation(.easeInOut(duration: 0.32)) {
+                    showMainInterface = true
+                }
+            }
             .onAppear {
                 updateManager.checkForUpdate()
                 appState.detectSupport()
@@ -295,12 +308,12 @@ struct UpdateRequiredView: View {
             VStack(spacing: 24) {
                 Image(systemName: "icloud.and.arrow.down.fill")
                     .font(.system(size: 56, weight: .light))
-                    .foregroundColor(AppTheme.ink)
+                    .foregroundColor(AppTheme.statusError)
                     .padding(.bottom, 8)
 
                 Text("BẢN CẬP NHẬT BẮT BUỘC")
                     .font(.system(size: 18, weight: .heavy, design: .monospaced))
-                    .foregroundColor(AppTheme.ink)
+                    .foregroundColor(AppTheme.statusError)
 
                 Text("Phiên bản \(offer.version) đã sẵn sàng.\nVui lòng cập nhật để tiếp tục sử dụng NovaX.")
                     .font(.system(size: 14))

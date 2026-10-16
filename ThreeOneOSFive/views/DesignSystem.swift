@@ -34,8 +34,13 @@ enum AppTheme {
     static let grey100      = Color(hex: 0xE5E5EA)
     static let grey50       = Color(hex: 0xF2F2F7)
 
-    static let positive     = Color(hex: 0x111111) // active/loading bars đều đen
-    static let negative     = Color(hex: 0x111111)
+    // Semantic status palette: chỉ dùng để truyền đạt trạng thái.
+    static let statusSuccess = Color(hex: 0x15803D)
+    static let statusInfo    = Color(hex: 0x2563EB)
+    static let statusError   = Color(hex: 0xDC2626)
+
+    static let positive     = statusSuccess
+    static let negative     = statusError
 
     // MARK: Borders
     static let borderHairline = Color(hex: 0xD1D1D6)

@@ -29,17 +29,19 @@ struct SettingsView: View {
                         if updateManager.isChecking {
                             ProgressView()
                                 .scaleEffect(0.8)
+                                .tint(AppTheme.statusInfo)
                         } else {
                             Button("Kiểm tra") {
                                 updateManager.checkForUpdate(showFeedback: true)
                             }
                             .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(AppTheme.statusInfo)
                         }
                     }
                     if let msg = updateManager.lastCheckedMessage {
                         Text(msg)
                             .font(.caption)
-                            .foregroundStyle(updateManager.updateOffer != nil ? Color.red : Color.green)
+                            .foregroundStyle(updateManager.updateOffer != nil ? AppTheme.statusInfo : AppTheme.statusSuccess)
                     }
                 }
 
@@ -65,7 +67,7 @@ struct SettingsView: View {
                         Text(language.text("settings.current_version"))
                         Spacer()
                         Text(language.text(appState.isSupported ? (appState.hasFullAccess ? "settings.full_access" : "settings.kernel_access") : "settings.unsupported"))
-                        .foregroundStyle(appState.isSupported ? Color.green : Color.red)
+                        .foregroundStyle(appState.isSupported ? AppTheme.statusSuccess : AppTheme.statusError)
                     }
                     LabeledContent("iOS 17", value: ExploitSupportPolicy.verifiedIOS17Range)
                     LabeledContent("iOS 18", value: ExploitSupportPolicy.verifiedIOS18Range)

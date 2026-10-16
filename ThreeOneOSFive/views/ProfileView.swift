@@ -124,11 +124,11 @@ struct ProfileView: View {
 
             HStack(spacing: 5) {
                 Circle()
-                    .fill(AppTheme.ink)
+                    .fill(AppTheme.statusSuccess)
                     .frame(width: 7, height: 7)
                 Text("Hoạt động")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(AppTheme.ink)
+                    .foregroundStyle(AppTheme.statusSuccess)
             }
             .padding(.horizontal, 9)
             .padding(.vertical, 7)
@@ -211,14 +211,14 @@ struct ProfileView: View {
 
             // Trạng thái key - tách riêng
             HStack(spacing: 8) {
-                Circle().fill(AppTheme.ink).frame(width: 7, height: 7)
+                Circle().fill(keyStatusColor).frame(width: 7, height: 7)
                 Text("Trạng thái key")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(AppTheme.grey500)
                 Spacer()
                 Text(keyStatusLabel)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(AppTheme.ink)
+                    .foregroundStyle(keyStatusColor)
             }
             .padding(.horizontal, 15)
             .padding(.vertical, 14)
@@ -335,12 +335,16 @@ struct ProfileView: View {
                     }
                 }
                 Spacer()
-                Text(updateManager.updateOffer != nil ? "Có cập nhật" : "Mới nhất")
+                Text(updateStatusPresentation.label)
                     .font(.system(size: 11, weight: .semibold))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 7)
-                    .background(AppTheme.ink)
-                    .foregroundStyle(.white)
+                    .background(updateStatusPresentation.color.opacity(0.10))
+                    .overlay(
+                        Capsule()
+                            .stroke(updateStatusPresentation.color.opacity(0.24), lineWidth: 1)
+                    )
+                    .foregroundStyle(updateStatusPresentation.color)
                     .clipShape(Capsule())
             }
             .padding(16)
@@ -357,7 +361,7 @@ struct ProfileView: View {
             } label: {
                 HStack(spacing: 8) {
                     if updateManager.isChecking {
-                        ProgressView().tint(AppTheme.ink).scaleEffect(0.85)
+                        ProgressView().tint(AppTheme.statusInfo).scaleEffect(0.85)
                         Text("Đang kiểm tra…")
                             .font(.system(size: 14, weight: .semibold))
                     } else {
@@ -372,6 +376,16 @@ struct ProfileView: View {
             }
             .buttonStyle(OutlineButtonStyle())
             .disabled(updateManager.isChecking)
+
+            if let message = updateManager.lastCheckedMessage {
+                HStack(alignment: .top, spacing: 7) {
+                    Image(systemName: updateManager.updateOffer == nil ? "checkmark.circle.fill" : "arrow.down.circle.fill")
+                    Text(message)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(updateManager.updateOffer == nil ? AppTheme.statusSuccess : AppTheme.statusInfo)
+            }
         }
         .padding(20)
         .background(Color.white)
@@ -658,6 +672,27 @@ struct ProfileView: View {
         case .error:    return "Lỗi xác thực"
         case .idle:     return "Chưa xác thực"
         }
+    }
+
+    private var keyStatusColor: Color {
+        switch auth.authState {
+        case .verified: return AppTheme.statusSuccess
+        case .loading:  return AppTheme.statusInfo
+        case .error, .idle: return AppTheme.statusError
+        }
+    }
+
+    private var updateStatusPresentation: (label: String, color: Color) {
+        if updateManager.isChecking {
+            return ("Đang kiểm tra", AppTheme.statusInfo)
+        }
+        if updateManager.updateOffer != nil {
+            return ("Có cập nhật", AppTheme.statusInfo)
+        }
+        if updateManager.hasChecked {
+            return ("Mới nhất", AppTheme.statusSuccess)
+        }
+        return ("Chưa kiểm tra", AppTheme.statusInfo)
     }
 
     private var remainingTime: String {

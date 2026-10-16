@@ -409,14 +409,14 @@ private struct DashboardView: View {
             HStack {
                 Image(systemName: appState.isSupported ? "checkmark.circle.fill" : "xmark.circle.fill")
                     .font(.system(size: 14))
-                    .foregroundStyle(appState.isSupported ? AppTheme.ink : AppTheme.ink)
+                    .foregroundStyle(appState.isSupported ? AppTheme.statusSuccess : AppTheme.statusError)
                 Text("Tương thích")
                     .font(.system(size: 13, weight: .medium, design: .rounded))
                     .foregroundStyle(AppTheme.grey700)
                 Spacer()
                 Text(appState.accessLevelDescription)
                     .font(.system(size: 12, weight: .bold, design: .monospaced))
-                    .foregroundStyle(AppTheme.ink)
+                    .foregroundStyle(appState.isSupported ? AppTheme.statusSuccess : AppTheme.statusError)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
                     .background(AppTheme.grey100)
@@ -428,22 +428,26 @@ private struct DashboardView: View {
                 HStack {
                     Image(systemName: appState.kernelExploitRunning ? "bolt.fill" : "bolt.slash.fill")
                         .font(.system(size: 14))
-                        .foregroundStyle(AppTheme.ink)
+                        .foregroundStyle(
+                            appState.kernelExploitRunning
+                                ? AppTheme.statusInfo
+                                : (appState.exploitStatus.isSuccess ? AppTheme.statusSuccess : AppTheme.statusError)
+                        )
                     Text("Kernel Exploit")
                         .font(.system(size: 13, weight: .medium, design: .rounded))
                         .foregroundStyle(AppTheme.grey700)
                     Spacer()
                     if appState.kernelExploitRunning {
                         HStack(spacing: 6) {
-                            ProgressView().tint(AppTheme.ink).scaleEffect(0.7)
+                            ProgressView().tint(AppTheme.statusInfo).scaleEffect(0.7)
                             Text("Đang chạy")
                                 .font(.system(size: 11, weight: .medium, design: .monospaced))
-                                .foregroundStyle(AppTheme.ink)
+                                .foregroundStyle(AppTheme.statusInfo)
                         }
                     } else {
                         Text(appState.exploitStatus.isSuccess ? "Đã kích hoạt" : "Chưa hoạt động")
                             .font(.system(size: 12, weight: .bold, design: .monospaced))
-                            .foregroundStyle(AppTheme.ink)
+                            .foregroundStyle(appState.exploitStatus.isSuccess ? AppTheme.statusSuccess : AppTheme.statusError)
                     }
                 }
             }

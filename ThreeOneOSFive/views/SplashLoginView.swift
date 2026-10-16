@@ -346,7 +346,7 @@ struct SplashLoginView: View {
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(authErrorMessage == nil ? AppTheme.grey300 : Color(red: 0.78, green: 0.13, blue: 0.13), lineWidth: 1)
+                    .stroke(activationInputBorderColor, lineWidth: 1)
             )
 
             if let errorMessage = authErrorMessage {
@@ -357,6 +357,12 @@ struct SplashLoginView: View {
                             insertion: .opacity.combined(with: .move(edge: .top)),
                             removal: .opacity
                         )
+                    )
+            } else if auth.authState == .verified {
+                authSuccessBanner
+                    .padding(.top, 12)
+                    .transition(
+                        .opacity.combined(with: .move(edge: .top))
                     )
             }
 
@@ -416,17 +422,25 @@ struct SplashLoginView: View {
         return message
     }
 
+    private var activationInputBorderColor: Color {
+        switch auth.authState {
+        case .verified: return AppTheme.statusSuccess
+        case .loading:  return AppTheme.statusInfo
+        case .error:    return AppTheme.statusError
+        case .idle:     return AppTheme.grey300
+        }
+    }
+
     private var authStatusPresentation: (label: String, foreground: Color, dot: Color) {
         switch auth.authState {
         case .verified:
-            return ("ON", AppTheme.ink, AppTheme.ink)
+            return ("ON", AppTheme.statusSuccess, AppTheme.statusSuccess)
         case .loading:
-            return ("WAIT", AppTheme.grey700, AppTheme.grey600)
+            return ("WAIT", AppTheme.statusInfo, AppTheme.statusInfo)
         case .error:
-            let red = Color(red: 0.78, green: 0.13, blue: 0.13)
-            return ("ERROR", red, red)
+            return ("ERROR", AppTheme.statusError, AppTheme.statusError)
         case .idle:
-            return ("OFF", AppTheme.grey500, AppTheme.grey400)
+            return ("OFF", AppTheme.statusError, AppTheme.statusError)
         }
     }
 
@@ -434,7 +448,7 @@ struct SplashLoginView: View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "exclamationmark.circle.fill")
                 .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(Color(red: 0.78, green: 0.13, blue: 0.13))
+                .foregroundStyle(AppTheme.statusError)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("KHÔNG THỂ XÁC THỰC")
@@ -455,10 +469,39 @@ struct SplashLoginView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color(red: 0.78, green: 0.13, blue: 0.13).opacity(0.22), lineWidth: 1)
+                .stroke(AppTheme.statusError.opacity(0.22), lineWidth: 1)
         )
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Lỗi xác thực: \(message)")
+    }
+
+    private var authSuccessBanner: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(AppTheme.statusSuccess)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("ĐĂNG NHẬP THÀNH CÔNG")
+                    .font(.system(size: 11, weight: .bold))
+                    .tracking(0.45)
+                    .foregroundStyle(AppTheme.statusSuccess)
+                Text("Đang mở giao diện chính của NovaX…")
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(AppTheme.grey700)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(13)
+        .background(AppTheme.statusSuccess.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(AppTheme.statusSuccess.opacity(0.24), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Đăng nhập thành công. Đang mở NovaX.")
     }
 
     private var statusPill: some View {
@@ -489,6 +532,12 @@ struct SplashLoginView: View {
                         .scaleEffect(0.85)
                     Text(text)
                         .font(.system(size: 15, weight: .semibold))
+                } else if auth.authState == .verified {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 17, weight: .semibold))
+                    Text("ĐĂNG NHẬP THÀNH CÔNG")
+                        .font(.system(size: 15, weight: .semibold))
+                        .tracking(0.2)
                 } else {
                     Image(systemName: "checkmark.shield.fill")
                         .font(.system(size: 17, weight: .semibold))
@@ -500,7 +549,7 @@ struct SplashLoginView: View {
             .foregroundStyle(.white)
         }
         .buttonStyle(PrimaryButtonStyle())
-        .disabled(auth.licenseKey.trimmingCharacters(in: .whitespaces).isEmpty)
+        .disabled(auth.licenseKey.trimmingCharacters(in: .whitespaces).isEmpty || auth.authState == .verified)
     }
 
     private var deviceCard: some View {
@@ -516,10 +565,12 @@ struct SplashLoginView: View {
 
             Divider().background(AppTheme.grey200)
 
-            deviceRow("Phiên bản iOS:", value: "iOS \(AppInfo.osVersion)", isMonoValue: true)
+            deviceRow("Phiên bản iOS:", value: "iOS \(AppInfo.osVersion)",
+                      isMonoValue: true, valueColor: AppTheme.statusInfo)
             deviceRow("Trạng thái hỗ trợ:",
                       value: appState.accessLevelDescription.uppercased(),
-                      isMonoValue: true, valueColor: appState.isSupported ? AppTheme.ink : AppTheme.ink)
+                      isMonoValue: true,
+                      valueColor: appState.isSupported ? AppTheme.statusSuccess : AppTheme.statusError)
         }
         .padding(19)
         .background(Color.white)

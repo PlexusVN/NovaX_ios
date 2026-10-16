@@ -25,7 +25,7 @@ struct AirLiftDashboardCard: View {
             if let error = tunnelManager.lastErrorMessage, !error.isEmpty {
                 Text(error)
                     .font(.system(size: 9, design: .monospaced))
-                    .foregroundColor(Color(red: 0.72, green: 0.16, blue: 0.16))
+                    .foregroundColor(AppTheme.statusError)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -92,12 +92,12 @@ struct AirLiftDashboardCard: View {
 
             Text(tunnelManager.isOperational ? "ONLINE" : "OFFLINE")
                 .font(.system(size: 10, weight: .bold, design: .monospaced))
-                .foregroundColor(tunnelManager.isOperational ? .white : AppTheme.grey600)
+                .foregroundColor(.white)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
                 .background(
                     Capsule().fill(
-                        tunnelManager.isOperational ? AppTheme.ink : AppTheme.grey100
+                        tunnelManager.isOperational ? AppTheme.statusSuccess : AppTheme.statusError
                     )
                 )
         }
@@ -106,16 +106,16 @@ struct AirLiftDashboardCard: View {
     private var transportStatus: some View {
         HStack(spacing: 6) {
             Image(systemName: tunnelManager.isServiceReachable ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
-                .foregroundColor(tunnelManager.isServiceReachable ? AppTheme.ink : AppTheme.grey500)
+                .foregroundColor(tunnelManager.isServiceReachable ? AppTheme.statusSuccess : AppTheme.statusError)
             Text(tunnelManager.serviceStatus.rawValue)
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .foregroundColor(AppTheme.grey700)
+                .foregroundColor(tunnelManager.isServiceReachable ? AppTheme.statusSuccess : AppTheme.statusError)
             Spacer()
             Button("KIỂM TRA") {
                 Task { await tunnelManager.verifyLoopbackService() }
             }
             .font(.system(size: 9, weight: .bold, design: .monospaced))
-            .foregroundColor(AppTheme.ink)
+            .foregroundColor(AppTheme.statusInfo)
             .disabled(tunnelManager.status == .checking)
         }
     }
@@ -177,11 +177,11 @@ struct AirLiftDashboardCard: View {
         HStack(spacing: 12) {
             ZStack {
                 Circle()
-                    .fill(pairingManager.status == .ready ? AppTheme.ink : AppTheme.grey100)
+                    .fill(pairingStatusColor.opacity(0.12))
                     .frame(width: 32, height: 32)
                 Image(systemName: pairingManager.status == .ready ? "key.fill" : "lock.trianglebadge.exclamationmark")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(pairingManager.status == .ready ? .white : AppTheme.grey600)
+                    .foregroundColor(pairingStatusColor)
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text("AirTraffic Pairing")
@@ -189,7 +189,7 @@ struct AirLiftDashboardCard: View {
                     .foregroundColor(AppTheme.ink)
                 Text(pairingManager.status.rawValue)
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundColor(pairingManager.status == .ready ? AppTheme.ink : AppTheme.grey600)
+                    .foregroundColor(pairingStatusColor)
             }
             Spacer()
         }
@@ -200,10 +200,10 @@ struct AirLiftDashboardCard: View {
         if pairingManager.isBroadcastingBonjour || pairingManager.status == .waitingSettings {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
-                    ProgressView().tint(AppTheme.ink).scaleEffect(0.8)
+                    ProgressView().tint(AppTheme.statusInfo).scaleEffect(0.8)
                     Text("Đang phát sóng ghép đôi ngầm...")
                         .font(.system(size: 11, weight: .bold, design: .monospaced))
-                        .foregroundColor(AppTheme.ink)
+                        .foregroundColor(AppTheme.statusInfo)
                     Spacer()
                 }
                 pairingPINCard
@@ -212,11 +212,11 @@ struct AirLiftDashboardCard: View {
                 openDeveloperSettingsButton
             }
             .padding(12)
-            .background(AppTheme.grey50)
+            .background(AppTheme.statusInfo.opacity(0.06))
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(AppTheme.grey200, lineWidth: 1)
+                    .stroke(AppTheme.statusInfo.opacity(0.20), lineWidth: 1)
             )
         }
     }
@@ -236,16 +236,16 @@ struct AirLiftDashboardCard: View {
                     } label: {
                         Label("Sao chép", systemImage: "doc.on.doc.fill")
                             .font(.system(size: 10, weight: .bold))
-                            .foregroundColor(AppTheme.ink)
+                            .foregroundColor(AppTheme.statusInfo)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
-                            .background(AppTheme.grey100)
+                            .background(AppTheme.statusInfo.opacity(0.08))
                             .clipShape(Capsule())
                     }
                 }
                 Text(pairingManager.pairingPIN)
                     .font(.system(size: 26, weight: .black, design: .monospaced))
-                    .foregroundColor(AppTheme.ink)
+                    .foregroundColor(AppTheme.statusInfo)
                     .tracking(6)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
@@ -253,7 +253,7 @@ struct AirLiftDashboardCard: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(AppTheme.grey300, lineWidth: 1)
+                            .stroke(AppTheme.statusInfo.opacity(0.28), lineWidth: 1)
                     )
             }
             .padding(8)
@@ -268,22 +268,22 @@ struct AirLiftDashboardCard: View {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "wifi.exclamationmark")
                     .font(.system(size: 13, weight: .bold))
-                    .foregroundColor(AppTheme.grey700)
+                    .foregroundColor(AppTheme.statusError)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("LƯU Ý: CHƯA KẾT NỐI WI-FI")
                         .font(.system(size: 10, weight: .black, design: .monospaced))
-                        .foregroundColor(AppTheme.ink)
+                        .foregroundColor(AppTheme.statusError)
                     Text("Apple chỉ hiển thị 'Pair with NovaX' khi iPhone đang bật Wi-Fi (hoặc Điểm phát sóng). Nếu dùng 4G, vui lòng bật Wi-Fi.")
                         .font(.system(size: 9))
                         .foregroundColor(AppTheme.grey700)
                 }
             }
             .padding(8)
-            .background(AppTheme.grey100)
+            .background(AppTheme.statusError.opacity(0.07))
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(AppTheme.grey300, lineWidth: 1)
+                    .stroke(AppTheme.statusError.opacity(0.20), lineWidth: 1)
             )
         }
     }
@@ -292,7 +292,7 @@ struct AirLiftDashboardCard: View {
         VStack(alignment: .leading, spacing: 4) {
             Text("QUY TRÌNH GHÉP ĐÔI TRÊN THIẾT BỊ (iOS 27+):")
                 .font(.system(size: 10, weight: .bold, design: .monospaced))
-                .foregroundColor(AppTheme.ink)
+                .foregroundColor(AppTheme.statusInfo)
             Text("1. Đảm bảo iPhone đã bật Wi-Fi (hoặc Điểm phát sóng).")
             Text("2. Mở Cài đặt ➔ Quyền riêng tư & Bảo mật ➔ Chế độ nhà phát triển.")
             Text("3. Tại mục ghép đôi, chọn 'Pair with NovaX'.")
@@ -312,7 +312,7 @@ struct AirLiftDashboardCard: View {
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
-                .background(AppTheme.ink)
+                .background(AppTheme.statusInfo)
                 .clipShape(Capsule())
         }
     }
@@ -325,14 +325,14 @@ struct AirLiftDashboardCard: View {
             } label: {
                 Label("Pair trên máy", systemImage: "iphone.and.arrow.forward")
                     .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .foregroundColor(AppTheme.ink)
+                    .foregroundColor(AppTheme.statusInfo)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
-                    .background(AppTheme.grey50)
+                    .background(AppTheme.statusInfo.opacity(0.06))
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(AppTheme.grey300, lineWidth: 1)
+                            .stroke(AppTheme.statusInfo.opacity(0.22), lineWidth: 1)
                     )
             }
 
@@ -342,14 +342,14 @@ struct AirLiftDashboardCard: View {
             } label: {
                 Label("Nhập .plist", systemImage: "square.and.arrow.down")
                     .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .foregroundColor(AppTheme.ink)
+                    .foregroundColor(AppTheme.statusInfo)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
-                    .background(AppTheme.grey50)
+                    .background(AppTheme.statusInfo.opacity(0.06))
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(AppTheme.grey300, lineWidth: 1)
+                            .stroke(AppTheme.statusInfo.opacity(0.22), lineWidth: 1)
                     )
             }
 
@@ -360,14 +360,14 @@ struct AirLiftDashboardCard: View {
                 } label: {
                     Image(systemName: "trash.fill")
                         .font(.system(size: 11, weight: .bold))
-                        .foregroundColor(.red.opacity(0.85))
+                        .foregroundColor(AppTheme.statusError)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 8)
-                        .background(Color.red.opacity(0.12))
+                        .background(AppTheme.statusError.opacity(0.08))
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .stroke(Color.red.opacity(0.3), lineWidth: 1)
+                                .stroke(AppTheme.statusError.opacity(0.22), lineWidth: 1)
                         )
                 }
             }
@@ -392,13 +392,22 @@ struct AirLiftDashboardCard: View {
     private var tunnelStatusColor: Color {
         switch tunnelManager.status {
         case .connected:
-            return AppTheme.cyberCyan
-        case .connecting, .disconnecting:
-            return .yellow
+            return AppTheme.statusSuccess
+        case .connecting, .disconnecting, .checking:
+            return AppTheme.statusInfo
         case .disconnected, .invalid:
-            return .red.opacity(0.8)
-        case .checking:
-            return .gray
+            return AppTheme.statusError
+        }
+    }
+
+    private var pairingStatusColor: Color {
+        switch pairingManager.status {
+        case .ready:
+            return AppTheme.statusSuccess
+        case .pairing, .waitingSettings:
+            return AppTheme.statusInfo
+        case .missing, .invalid:
+            return AppTheme.statusError
         }
     }
 }
@@ -433,7 +442,7 @@ struct AirLiftSettingsSection: View {
                         .frame(width: 8, height: 8)
                     Text(tunnelManager.status.rawValue)
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(tunnelStatusColor)
                 }
             }
             .contentShape(Rectangle())
@@ -446,7 +455,7 @@ struct AirLiftSettingsSection: View {
                 Spacer()
                 Text(tunnelManager.serviceStatus.rawValue)
                     .font(.caption)
-                    .foregroundStyle(tunnelManager.isServiceReachable ? Color.green : Color.orange)
+                    .foregroundStyle(tunnelManager.isServiceReachable ? AppTheme.statusSuccess : AppTheme.statusError)
             }
             .contentShape(Rectangle())
             .onTapGesture {
@@ -459,7 +468,7 @@ struct AirLiftSettingsSection: View {
                 Spacer()
                 Text(pairingManager.status.rawValue)
                     .font(.subheadline)
-                    .foregroundStyle(pairingManager.status == .ready ? AppTheme.ink : AppTheme.grey600)
+                    .foregroundStyle(pairingStatusColor)
             }
             
             // 3. Pair trực tiếp trên iPhone
@@ -469,11 +478,11 @@ struct AirLiftSettingsSection: View {
                 HStack(spacing: 12) {
                     Image(systemName: "link.badge.plus")
                         .font(.system(size: 18))
-                        .foregroundStyle(AppTheme.ink)
+                        .foregroundStyle(AppTheme.statusInfo)
                         .frame(width: 24)
                     
                     Text("Pair trực tiếp trên iPhone")
-                        .foregroundStyle(AppTheme.ink)
+                        .foregroundStyle(AppTheme.statusInfo)
                 }
             }
             
@@ -484,11 +493,11 @@ struct AirLiftSettingsSection: View {
                 HStack(spacing: 12) {
                     Image(systemName: "square.and.arrow.down")
                         .font(.system(size: 18))
-                        .foregroundStyle(AppTheme.ink)
+                        .foregroundStyle(AppTheme.statusInfo)
                         .frame(width: 24)
                     
                     Text("Nhập file pairing")
-                        .foregroundStyle(AppTheme.ink)
+                        .foregroundStyle(AppTheme.statusInfo)
                 }
             }
             
@@ -500,11 +509,11 @@ struct AirLiftSettingsSection: View {
                     HStack(spacing: 12) {
                         Image(systemName: "trash")
                             .font(.system(size: 18))
-                            .foregroundStyle(Color(red: 0.85, green: 0.25, blue: 0.30))
+                            .foregroundStyle(AppTheme.statusError)
                             .frame(width: 24)
                         
                         Text("Xoá file pairing")
-                            .foregroundStyle(Color(red: 0.85, green: 0.25, blue: 0.30))
+                            .foregroundStyle(AppTheme.statusError)
                     }
                 }
             }
@@ -545,13 +554,22 @@ struct AirLiftSettingsSection: View {
     private var tunnelStatusColor: Color {
         switch tunnelManager.status {
         case .connected:
-            return .green
-        case .connecting, .disconnecting:
-            return .yellow
+            return AppTheme.statusSuccess
+        case .connecting, .disconnecting, .checking:
+            return AppTheme.statusInfo
         case .disconnected, .invalid:
-            return .red
-        case .checking:
-            return .gray
+            return AppTheme.statusError
+        }
+    }
+
+    private var pairingStatusColor: Color {
+        switch pairingManager.status {
+        case .ready:
+            return AppTheme.statusSuccess
+        case .pairing, .waitingSettings:
+            return AppTheme.statusInfo
+        case .missing, .invalid:
+            return AppTheme.statusError
         }
     }
 }
