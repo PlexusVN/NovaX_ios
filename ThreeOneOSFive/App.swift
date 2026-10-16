@@ -10,7 +10,7 @@ struct ThreeOneOSFiveApp: App {
     @StateObject private var featurePatchService = FeaturePatchService()
     @StateObject private var updateManager = UpdateManager.shared
     @AppStorage(AppLanguage.storageKey) private var languageCode = AppLanguage.vietnamese.rawValue
-    @State private var showSplash = true
+    @State private var showSplash = false   // ĐÃ BỎ: không còn 2 view tách biệt
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -49,8 +49,8 @@ struct ThreeOneOSFiveApp: App {
     var body: some Scene {
         WindowGroup {
             ZStack {
-                // LoginView / ContentView — luôn mount, bị splash che khi đang loading.
-                // Đây là chìa khoá để matchedGeometryEffect morph logo từ splash → login mượt mà.
+                // Một màn hình duy nhất: SplashLoginView gộp loading + login
+                // → liền mạch, không có "chuyển cảnh" giữa 2 view (giống HTML)
                 Group {
                     if authManager.authState == .verified {
                         ContentView()
@@ -64,39 +64,28 @@ struct ThreeOneOSFiveApp: App {
                             .environment(\.appLanguage, language)
                             .environment(\.locale, language.locale)
                     } else {
-                        LoginView(auth: authManager, isVisible: !showSplash)
+                        SplashLoginView(auth: authManager)
                             .environmentObject(appState)
                             .environmentObject(updateManager)
+                            .onAppear {
+                                // Trigger init giống như splash cũ
+                                updateManager.checkForUpdate()
+                                appState.detectSupport()
+                                if !authManager.licenseKey.isEmpty {
+                                    Task { await authManager.restoreSessionIfNeeded() }
+                                }
+                                let v = AppInfo.versionTuple
+                                let supported = ExploitSupportPolicy.isSupported(
+                                    major: v.major,
+                                    minor: v.minor,
+                                    patch: v.patch,
+                                    build: AppInfo.osBuild
+                                )
+                                if supported {
+                                    Task { await featurePatchService.syncFromServer(auth: authManager) }
+                                }
+                            }
                     }
-                }
-                .opacity(showSplash ? 0 : 1)
-                .animation(.easeInOut(duration: 0.55), value: showSplash)
-
-                if showSplash {
-                    SplashScreen {
-                        // Sau khi splash hoàn tất, fade splash ra → logo morph mượt sang login
-                        withAnimation(.easeInOut(duration: 0.55)) {
-                            showSplash = false
-                        }
-
-                        updateManager.checkForUpdate()
-                        appState.detectSupport()
-                        if !authManager.licenseKey.isEmpty {
-                            Task { await authManager.restoreSessionIfNeeded() }
-                        }
-                        let v = AppInfo.versionTuple
-                        let supported = ExploitSupportPolicy.isSupported(
-                            major: v.major,
-                            minor: v.minor,
-                            patch: v.patch,
-                            build: AppInfo.osBuild
-                        )
-                        if supported {
-                            Task { await featurePatchService.syncFromServer(auth: authManager) }
-                        }
-                    }
-                    .transition(.opacity)
-                    .zIndex(2)
                 }
 
                 if let offer = updateManager.updateOffer {
@@ -105,22 +94,17 @@ struct ThreeOneOSFiveApp: App {
                         .zIndex(3)
                 }
             }
-            .animation(.easeInOut(duration: 0.55), value: showSplash)
             .animation(.easeInOut(duration: 0.45), value: authManager.authState)
             .preferredColorScheme(.light)
             .onAppear {
                 updateManager.checkForUpdate()
-                if !showSplash {
-                    appState.detectSupport()
-                }
+                appState.detectSupport()
             }
             .onChange(of: scenePhase) { phase in
                 guard phase == .active else { return }
                 updateManager.checkForUpdate()
-                if !showSplash {
-                    appState.detectSupport()
-                    Task { await featurePatchService.syncFromServer(auth: authManager) }
-                }
+                appState.detectSupport()
+                Task { await featurePatchService.syncFromServer(auth: authManager) }
             }
             .onChange(of: authManager.authState) { state in
                 updateManager.checkForUpdate()
