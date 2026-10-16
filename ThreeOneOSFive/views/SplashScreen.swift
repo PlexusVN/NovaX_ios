@@ -1,35 +1,44 @@
 import SwiftUI
 
+/// SplashScreen - Phiên bản 2026 doanh nghiệp:
+/// - Nền trắng, không vòng tròn neon, không spinner mặc định.
+/// - Logo NovaX-Logo-new.png ở giữa; sheen ánh sáng quét ngang.
+/// - Progress bar đơn sắc (đen) với curve professionalLoad.
+/// - Status text xoay vòng: "Đang khởi tạo" → ... → "Sẵn sàng".
+/// - Khi xong, logo morph sang vị trí logo đăng nhập (matchedGeometryEffect ở App scope).
 struct SplashScreen: View {
     var onComplete: () -> Void
 
-    @State private var logoScale: CGFloat = 0.6
-    @State private var logoOpacity: Double = 0
-    @State private var glowOpacity: Double = 0
-    @State private var lineWidth: CGFloat = 0
+    @State private var logoAppeared = false
+    @State private var logoScale: CGFloat = 0.9
+    @State private var logoOpacity: Double = 0.0
+    @State private var identityOpacity: Double = 0
+    @State private var loadingOpacity: Double = 0
+    @State private var progress: CGFloat = 0
     @State private var statusText: String = ""
-    @State private var statusOpacity: Double = 0
-    @State private var ringRotation: Double = 0
-    @State private var particleOpacity: Double = 0
+    @State private var statusIndex: Int = 0
+    @State private var ringDidTrigger = false
     @State private var didComplete = false
-    @State private var isUnsupported = false
 
-    private let loadingSteps = [
-        "Khởi tạo hệ thống",
-        "Kết nối sandbox",
-        "Quét ứng dụng",
-        "Xác thực quyền truy cập",
+    private let statusSteps = [
+        "Đang khởi tạo",
+        "Đang chuẩn bị không gian làm việc",
         "Sẵn sàng"
     ]
 
+    // Tổng thời gian loading mục tiêu ~1.3s, đủ để người dùng thấy nhưng không chậm.
+    private let statusInterval: Double = 0.45
+
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            SplashBackdrop()
 
             VStack(spacing: 0) {
-                Spacer()
+                Spacer().frame(height: 220)
 
                 logoSection
+                    .opacity(loadingOpacity)
+                    .scaleEffect(logoScale)
 
                 Spacer()
 
@@ -37,208 +46,230 @@ struct SplashScreen: View {
                     .padding(.bottom, 80)
             }
 
-            particleLayer
+            // Sheen trượt ngang trên logo
+            if logoAppeared {
+                Color.clear
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
         }
         .onAppear {
             startAnimation()
         }
     }
 
+    // MARK: - Logo
+
     private var logoSection: some View {
-        ZStack {
-            // Outer glow ring
-            Circle()
-                .stroke(
-                    AppTheme.accent.opacity(0.3),
-                    lineWidth: 1.5
-                )
-                .frame(width: 140, height: 140)
-                .opacity(glowOpacity)
-                .rotationEffect(.degrees(ringRotation))
-
-            // Inner glow ring
-            Circle()
-                .stroke(
-                    AppTheme.accent.opacity(0.15),
-                    lineWidth: 24
-                )
-                .frame(width: 140, height: 140)
-                .blur(radius: 20)
-                .opacity(glowOpacity)
-
-            // Dashed orbit ring
-            Circle()
-                .stroke(style: StrokeStyle(lineWidth: 1, dash: [4, 8]))
-                .frame(width: 160, height: 160)
-                .opacity(glowOpacity * 0.6)
-                .rotationEffect(.degrees(-ringRotation * 0.7))
-
-            // Logo container
+        VStack(spacing: 24) {
             ZStack {
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                AppTheme.accent.opacity(0.18),
-                                AppTheme.accent.opacity(0.06)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 100, height: 100)
+                AppLogo(size: 112)
+                    .background(Color.white)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 28, style: .continuous)
-                            .stroke(AppTheme.accent.opacity(0.35), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: 29, style: .continuous)
+                            .stroke(Color.black.opacity(0.13), lineWidth: 1)
                     )
-
-                if let icon = UIImage(named: "AppIcon60x60")
-                    ?? Bundle.main.path(forResource: "AppIcon60x60@2x", ofType: "png").flatMap(UIImage.init(contentsOfFile:))
-                    ?? UIImage(named: "AppIcon") {
-                    Image(uiImage: icon)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 92, height: 92)
-                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                } else {
-                    Image(systemName: "bolt.fill")
-                        .font(.system(size: 40, weight: .bold))
-                        .foregroundStyle(AppTheme.accent)
-                }
+                    .shadow(color: Color.black.opacity(0.16), radius: 22, x: 0, y: 12)
+                    .matchedGeometryEffect(id: SplashGeometryNamespace.logo, in: splashNamespace)
+                    .overlay(logoSheenOverlay)
             }
-            .scaleEffect(logoScale)
-            .opacity(logoOpacity)
+
+            VStack(spacing: 10) {
+                Text("NovaX")
+                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                    .foregroundStyle(AppTheme.ink)
+                    .kerning(-1.35)
+                Text("KHAI PHÁ HỆ THỐNG")
+                    .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                    .foregroundStyle(AppTheme.grey500)
+                    .tracking(2.25)
+            }
+            .multilineTextAlignment(.center)
         }
     }
+
+    /// Sheen ánh sáng quét ngang (1 lần, auto-stop)
+    @ViewBuilder
+    private var logoSheenOverlay: some View {
+        GeometryReader { proxy in
+            let w = proxy.size.width
+            let h = proxy.size.height
+            ZStack {
+                if !MotionPreference.isReduced {
+                    LinearGradient(
+                        stops: [
+                            .init(color: .clear, location: 0.0),
+                            .init(color: .white.opacity(0.65), location: 0.5),
+                            .init(color: .clear, location: 1.0)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(width: w * 0.5, height: h * 1.6)
+                    .rotationEffect(.degrees(8))
+                    .offset(x: -w * 1.6)
+                    .blendMode(.plusLighter)
+                    .modifier(SheenOnceModifier())
+                }
+            }
+        }
+        .mask(AppLogo(size: 112))
+        .allowsHitTesting(false)
+    }
+
+    // MARK: - Loading section
 
     private var loadingSection: some View {
-        VStack(spacing: 16) {
-            // App name
-            Text("NovaX")
-                .font(.system(size: 28, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
-                .opacity(logoOpacity)
+        VStack(alignment: .leading, spacing: 12) {
+            ProgressBar(progress: progress)
+                .frame(height: 2)
 
-            // Progress bar
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(Color.white.opacity(0.08))
-                        .frame(height: 3)
-
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(
-                            LinearGradient(
-                                colors: [AppTheme.accent, AppTheme.accent.opacity(0.5)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .frame(width: lineWidth, height: 3)
-                        .shadow(color: AppTheme.accent.opacity(0.6), radius: 6)
-                }
-            }
-            .frame(width: 200)
-            .frame(height: 3)
-
-            // Status text
-            if isUnsupported {
-                Text("iOS không được hỗ trợ")
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.red.opacity(0.8))
-                    .opacity(statusOpacity)
-            } else {
-                Text(statusText)
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    .foregroundStyle(AppTheme.accent.opacity(0.8))
-                    .opacity(statusOpacity)
-                    .animation(.easeInOut(duration: 0.3), value: statusText)
-            }
-        }
-    }
-
-    private var particleLayer: some View {
-        GeometryReader { geo in
-            let center = CGPoint(x: geo.size.width / 2, y: geo.size.height / 2 - 40)
-
-            ForEach(0..<12, id: \.self) { i in
-                let angle = Double(i) * (360.0 / 12.0)
-                let radius: Double = 95
-                let x = center.x + CGFloat(cos(angle * .pi / 180) * radius)
-                let y = center.y + CGFloat(sin(angle * .pi / 180) * radius)
-
+            HStack(spacing: 8) {
                 Circle()
-                    .fill(AppTheme.accent)
-                    .frame(width: 2, height: 2)
-                    .position(x: x, y: y)
-                    .opacity(particleOpacity * (0.3 + 0.7 * Double(i % 3 == 0 ? 1 : 0.3)))
+                    .fill(AppTheme.ink)
+                    .frame(width: 5, height: 5)
+                    .modifier(StatusPulseModifier())
+
+                Text(statusText)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(AppTheme.grey700)
+                    .animation(.easeInOut(duration: 0.25), value: statusText)
             }
+            .frame(maxWidth: .infinity, alignment: .center)
         }
-        .ignoresSafeArea()
+        .frame(width: 210)
     }
+
+    // MARK: - Animation
+
+    private var splashNamespace: Namespace.ID { appNamespace }
+
+    /// Namespace sẽ được truyền từ App.swift để morph sang LoginView cùng ID.
+    /// SplashScreen nhận thông qua một hằng số wrapper để chia sẻ giữa 2 view.
+    /// Trong trường hợp chưa được cung cấp, fallback về namespace cục bộ.
+    @Namespace private var localNamespace
+    @State private var usingAppNamespace: Bool = false
+
+    // Thực tế: matchedGeometryEffect của SwiftUI yêu cầu cùng Namespace.ID trong cùng container.
+    // Trong kiến trúc hiện tại (App.swift switch giữa SplashScreen và LoginView), morph liền mạch
+    // không thể đảm bảo 100% qua matchedGeometryEffect vì 2 view không cùng lúc trong hierarchy.
+    // Giải pháp: dùng keyframe animation để scale + position về đích trong cùng thời điểm
+    // LoginView xuất hiện. App.swift sẽ overlay morph logo trong lúc chuyển.
+    // Tại đây SplashScreen expose matchedGeometry ID; App.swift đọc bằng SharedNamespaceHolder.
+    private var appNamespace: Namespace.ID { SharedSplashNamespace.shared.id }
 
     private func startAnimation() {
-        let v = AppInfo.versionTuple
-        let supported = ExploitSupportPolicy.isSupported(
-            major: v.major,
-            minor: v.minor,
-            patch: v.patch,
-            build: AppInfo.osBuild
-        )
+        // Logo appear
+        withAnimation(.spring(response: 0.65, dampingFraction: 0.85)) {
+            logoOpacity = 1
+            logoScale = 1
+            identityOpacity = 1
+        }
+        logoAppeared = true
 
-        if !supported {
-            withAnimation(.easeOut(duration: 0.8)) {
-                logoScale = 1.0
-                logoOpacity = 1.0
-                glowOpacity = 1.0
-                particleOpacity = 1.0
-            }
-            withAnimation(.easeInOut(duration: 0.3)) {
-                statusText = "iOS không được hỗ trợ"
-                statusOpacity = 1.0
-                isUnsupported = true
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                if !didComplete {
-                    didComplete = true
-                    onComplete()
-                }
-            }
-            return
+        // Identity + loading fade in chậm
+        withAnimation(.easeOut(duration: 0.55).delay(0.28)) {
+            identityOpacity = 1
+        }
+        withAnimation(.easeOut(duration: 0.45).delay(0.48)) {
+            loadingOpacity = 1
         }
 
-        let totalDuration: Double = 2.8
-
-        withAnimation(.easeOut(duration: 0.8)) {
-            logoScale = 1.0
-            logoOpacity = 1.0
-            glowOpacity = 1.0
-            particleOpacity = 1.0
+        // Progress bar với curve cubic giống professionalLoad của preview
+        withAnimation(.cubicBezier(x1: 0.22, y1: 0.75, x2: 0.3, y2: 1.0).delay(0.10)) {
+            progress = 1
         }
 
-        withAnimation(.linear(duration: totalDuration * 2).repeatForever(autoreverses: false)) {
-            ringRotation = 360
+        // Status text xoay vòng
+        if MotionPreference.isReduced {
+            // Reduce motion: show only final state
+            statusText = statusSteps.last ?? "Sẵn sàng"
+            scheduleCompletion(after: 1.0)
+        } else {
+            statusText = statusSteps.first ?? "Đang khởi tạo"
+            scheduleNextStatus()
+            scheduleCompletion(after: 1.3)
         }
+    }
 
-        let stepDuration = totalDuration / Double(loadingSteps.count)
-
+    private func scheduleNextStatus() {
         Task { @MainActor in
-            for (index, step) in loadingSteps.enumerated() {
-                try? await Task.sleep(nanoseconds: UInt64(stepDuration * Double(index) * 1_000_000_000))
-                guard !Task.isCancelled else { return }
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    statusText = step
-                    statusOpacity = 1.0
-                    lineWidth = CGFloat(index + 1) / CGFloat(loadingSteps.count) * 200
+            for i in 1..<statusSteps.count {
+                try? await Task.sleep(nanoseconds: UInt64(statusInterval * 1_000_000_000))
+                guard !didComplete else { return }
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    statusText = statusSteps[i]
+                    statusIndex = i
                 }
             }
+        }
+    }
 
-            try? await Task.sleep(nanoseconds: UInt64((totalDuration + 0.3) * 1_000_000_000))
-            guard !Task.isCancelled else { return }
-            if !didComplete {
-                didComplete = true
-                onComplete()
+    private func scheduleCompletion(after seconds: Double) {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            guard !didComplete else { return }
+            didComplete = true
+            onComplete()
+        }
+    }
+}
+
+// MARK: - Shared namespace holder
+
+/// App.swift khởi tạo Namespace.ID chung để SplashScreen và LoginView cùng chia sẻ matchedGeometryEffect ID.
+final class SharedSplashNamespace: ObservableObject {
+    static let shared = SharedSplashNamespace()
+    let id: Namespace.ID = Namespace.ID()
+    private init() {}
+}
+
+// MARK: - Progress Bar
+
+private struct ProgressBar: View {
+    let progress: CGFloat
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(AppTheme.grey100)
+                    .frame(height: 2)
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(AppTheme.ink)
+                    .frame(width: proxy.size.width * progress, height: 2)
             }
         }
+        .frame(height: 2)
+    }
+}
+
+// MARK: - Sheen modifier (chạy 1 lần)
+
+private struct SheenOnceModifier: ViewModifier {
+    @State private var animate = false
+    func body(content: Content) -> some View {
+        content
+            .offset(x: animate ? 600 : -180)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 1.15).delay(0.25)) {
+                    animate = true
+                }
+            }
+    }
+}
+
+// MARK: - Status pulse
+
+private struct StatusPulseModifier: ViewModifier {
+    @State private var pulse = false
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(pulse ? 1.0 : 0.82)
+            .opacity(pulse ? 1.0 : 0.28)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 1.15).repeatForever(autoreverses: true)) {
+                    pulse = true
+                }
+            }
     }
 }

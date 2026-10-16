@@ -18,7 +18,7 @@ struct GuidesView: View {
                 AppTheme.pageBackground.ignoresSafeArea()
 
                 ScrollView {
-                    VStack(spacing: 20) {
+                    VStack(spacing: 18) {
                         headerBanner
 
                         if guideService.isLoading && guideService.guides.isEmpty {
@@ -26,7 +26,7 @@ struct GuidesView: View {
                         } else if guideService.guides.isEmpty {
                             emptyPlaceholder
                         } else {
-                            LazyVStack(spacing: 18) {
+                            LazyVStack(spacing: 16) {
                                 ForEach(guideService.guides) { guide in
                                     GuideCardView(
                                         guide: guide,
@@ -53,7 +53,7 @@ struct GuidesView: View {
             }
             .navigationTitle("Hướng dẫn")
             .navigationBarTitleDisplayMode(.inline)
-            .tint(AppTheme.accent)
+            .tint(AppTheme.ink)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
@@ -62,11 +62,11 @@ struct GuidesView: View {
                     } label: {
                         Image(systemName: "gearshape.fill")
                             .font(.system(size: 15, weight: .bold))
-                            .foregroundColor(AppTheme.cyberCyan)
+                            .foregroundStyle(AppTheme.ink)
                             .frame(width: 32, height: 32)
-                            .background(Circle().fill(AppTheme.cyberSurface.opacity(0.8)))
-                            .overlay(Circle().stroke(AppTheme.cyberCyan.opacity(0.35), lineWidth: 1))
-                            .shadow(color: AppTheme.cyberCyan.opacity(0.3), radius: 6)
+                            .background(Color.white)
+                            .clipShape(Circle())
+                            .overlay(Circle().stroke(AppTheme.grey200, lineWidth: 1))
                     }
                 }
             }
@@ -78,70 +78,58 @@ struct GuidesView: View {
                     await guideService.fetchGuides()
                 }
             }
-            // Trình phát video toàn màn hình
             .fullScreenCover(item: $playingVideoItem) { item in
                 FullScreenVideoPlayer(url: item.url)
                     .ignoresSafeArea()
             }
-            // Xem ảnh phóng to
             .sheet(item: $previewImageItem) { item in
                 FullScreenImageView(url: item.url)
             }
         }
     }
 
-    // MARK: - Top Header Banner
+    // MARK: - Header
 
     private var headerBanner: some View {
         HStack(spacing: 14) {
             ZStack {
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [AppTheme.cyberPurple.opacity(0.3), AppTheme.cyberCyan.opacity(0.2)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 44, height: 44)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(AppTheme.ink)
+                    .frame(width: 56, height: 56)
                 Image(systemName: "play.rectangle.on.rectangle.fill")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundStyle(AppTheme.cyberGradient)
+                    .font(.system(size: 24, weight: .bold))
+                    .foregroundStyle(.white)
             }
-            .shadow(color: AppTheme.cyberCyan.opacity(0.3), radius: 10)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text("Trung tâm Hướng dẫn")
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
+                    .font(.system(size: 19, weight: .bold, design: .rounded))
+                    .foregroundStyle(AppTheme.ink)
+                    .kerning(-0.4)
                 Text("Video hướng dẫn & bài viết chi tiết từ Admin")
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.45))
+                    .font(.system(size: 12))
+                    .foregroundStyle(AppTheme.grey500)
+                    .lineLimit(2)
             }
             Spacer()
         }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(AppTheme.cyberSurface.opacity(0.6))
-                .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(.ultraThinMaterial))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(AppTheme.cyberBorderGradient, lineWidth: 1)
-                )
+        .padding(18)
+        .background(Color.white)
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(AppTheme.grey200, lineWidth: 1)
         )
+        .shadow(color: Color.black.opacity(0.06), radius: 14, x: 0, y: 6)
     }
 
-    // MARK: - Loading & Empty States
+    // MARK: - States
 
     private var loadingPlaceholder: some View {
         VStack(spacing: 12) {
-            ProgressView()
-                .tint(AppTheme.cyberCyan)
-                .scaleEffect(1.2)
+            ProgressView().tint(AppTheme.ink).scaleEffect(1.2)
             Text("Đang tải danh sách bài hướng dẫn...")
                 .font(.system(size: 13, design: .monospaced))
-                .foregroundColor(.white.opacity(0.4))
+                .foregroundStyle(AppTheme.grey500)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 60)
@@ -151,13 +139,13 @@ struct GuidesView: View {
         VStack(spacing: 14) {
             Image(systemName: "book.closed.fill")
                 .font(.system(size: 40))
-                .foregroundColor(.white.opacity(0.25))
+                .foregroundStyle(AppTheme.grey400)
             Text("Chưa có bài hướng dẫn nào")
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundColor(.white.opacity(0.6))
+                .foregroundStyle(AppTheme.grey500)
             Text("Các video và bài viết hướng dẫn từ Admin sẽ xuất hiện tại đây.")
                 .font(.system(size: 12))
-                .foregroundColor(.white.opacity(0.35))
+                .foregroundStyle(AppTheme.grey400)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
@@ -165,7 +153,7 @@ struct GuidesView: View {
     }
 }
 
-// MARK: - Guide Card View (Dạng thẻ bài viết Cyberpunk)
+// MARK: - Guide Card View (Doanh nghiệp 2026)
 
 private struct GuideCardView: View {
     let guide: GuideItem
@@ -179,35 +167,32 @@ private struct GuideCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            // Header bài viết
             HStack(alignment: .center, spacing: 8) {
                 mediaBadge
                 Spacer()
                 if let dateStr = guide.createdAt, !dateStr.isEmpty {
                     Text(formattedDate(dateStr))
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.35))
+                        .foregroundStyle(AppTheme.grey500)
                 }
             }
 
-            // Tiêu đề
             Text(guide.title)
-                .font(.system(size: 17, weight: .bold, design: .rounded))
-                .foregroundColor(.white)
+                .font(.system(size: 19, weight: .bold, design: .rounded))
+                .foregroundStyle(AppTheme.ink)
+                .kerning(-0.4)
                 .lineLimit(isExpanded ? nil : 3)
                 .fixedSize(horizontal: false, vertical: true)
 
-            // Khu vực Media (Video hoặc Ảnh)
             mediaContainer
 
-            // Nội dung văn bản
             if !guide.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(guide.content)
-                        .font(.system(size: 14, weight: .regular))
-                        .foregroundColor(.white.opacity(0.82))
+                        .font(.system(size: 14))
+                        .foregroundStyle(AppTheme.grey700)
                         .lineSpacing(4)
-                        .lineLimit(isExpanded ? nil : 4)
+                        .lineLimit(isExpanded ? nil : 3)
 
                     if guide.content.count > 120 {
                         Button {
@@ -219,20 +204,20 @@ private struct GuideCardView: View {
                                 Text(isExpanded ? "Thu gọn" : "Xem thêm")
                                 Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                             }
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
-                            .foregroundColor(AppTheme.cyberCyan)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(AppTheme.ink)
                             .padding(.top, 2)
                         }
                     }
                 }
             }
 
-            Divider()
-                .background(Color.white.opacity(0.08))
+            Rectangle()
+                .fill(AppTheme.grey200)
+                .frame(height: 1)
+                .padding(.top, 2)
 
-            // Footer (Nút Like & Share)
             HStack(spacing: 16) {
-                // Nút Like
                 Button {
                     withAnimation(.spring(response: 0.25, dampingFraction: 0.5)) {
                         isLikeAnimating = true
@@ -245,68 +230,45 @@ private struct GuideCardView: View {
                     HStack(spacing: 6) {
                         Image(systemName: isLiked ? "heart.fill" : "heart")
                             .font(.system(size: 15, weight: .bold))
-                            .foregroundColor(isLiked ? Color(red: 1.0, green: 0.2, blue: 0.45) : .white.opacity(0.4))
+                            .foregroundStyle(isLiked ? AppTheme.ink : AppTheme.grey500)
                             .scaleEffect(isLikeAnimating ? 1.35 : 1.0)
-                            .shadow(color: isLiked ? Color(red: 1.0, green: 0.2, blue: 0.45).opacity(0.5) : .clear, radius: 6)
 
                         Text("\(guide.likesCount)")
                             .font(.system(size: 13, weight: .bold, design: .rounded))
-                            .foregroundColor(isLiked ? Color(red: 1.0, green: 0.2, blue: 0.45) : .white.opacity(0.6))
+                            .foregroundStyle(AppTheme.ink)
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 7)
-                    .background(
-                        Capsule()
-                            .fill(isLiked ? Color(red: 1.0, green: 0.2, blue: 0.45).opacity(0.12) : Color.white.opacity(0.05))
-                    )
+                    .background(isLiked ? AppTheme.grey50 : Color.white)
                     .overlay(
-                        Capsule()
-                            .stroke(isLiked ? Color(red: 1.0, green: 0.2, blue: 0.45).opacity(0.35) : Color.white.opacity(0.08), lineWidth: 1)
+                        Capsule().stroke(isLiked ? AppTheme.ink : AppTheme.grey200, lineWidth: 1)
                     )
                 }
                 .buttonStyle(.plain)
 
                 Spacer()
 
-                // Nút chia sẻ
                 ShareLink(item: "\(guide.title)\n\n\(guide.content)") {
                     HStack(spacing: 6) {
                         Image(systemName: "square.and.arrow.up")
                             .font(.system(size: 13, weight: .semibold))
                         Text("Chia sẻ")
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .font(.system(size: 12, weight: .semibold))
                     }
-                    .foregroundColor(.white.opacity(0.45))
+                    .foregroundStyle(AppTheme.ink)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                 }
             }
         }
-        .padding(16)
-        .background(
+        .padding(18)
+        .background(Color.white)
+        .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(AppTheme.cyberSurface.opacity(0.68))
-                .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(.ultraThinMaterial))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(
-                            LinearGradient(
-                                colors: [
-                                    guide.mediaType == "video" ? Color(red: 1.0, green: 0.2, blue: 0.45).opacity(0.3) : AppTheme.cyberCyan.opacity(0.3),
-                                    AppTheme.cyberPurple.opacity(0.15),
-                                    Color.white.opacity(0.04)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                )
-                .shadow(color: .black.opacity(0.4), radius: 15, y: 8)
+                .stroke(AppTheme.grey200, lineWidth: 1)
         )
+        .shadow(color: Color.black.opacity(0.05), radius: 14, x: 0, y: 6)
     }
-
-    // MARK: - Media Badge
 
     private var mediaBadge: some View {
         Group {
@@ -314,42 +276,41 @@ private struct GuideCardView: View {
                 HStack(spacing: 5) {
                     Image(systemName: "play.fill")
                         .font(.system(size: 9, weight: .bold))
-                    Text("VIDEO HƯỚNG DẪN")
-                        .font(.system(size: 10, weight: .heavy, design: .rounded))
+                    Text("VIDEO")
+                        .font(.system(size: 10, weight: .heavy, design: .monospaced))
                 }
-                .foregroundColor(Color(red: 1.0, green: 0.25, blue: 0.5))
+                .foregroundStyle(.white)
                 .padding(.horizontal, 9)
                 .padding(.vertical, 4)
-                .background(Capsule().fill(Color(red: 1.0, green: 0.25, blue: 0.5).opacity(0.12)))
-                .overlay(Capsule().stroke(Color(red: 1.0, green: 0.25, blue: 0.5).opacity(0.3), lineWidth: 1))
+                .background(AppTheme.ink)
+                .clipShape(Capsule())
             } else if guide.mediaType == "image" {
                 HStack(spacing: 5) {
                     Image(systemName: "photo.fill")
                         .font(.system(size: 9, weight: .bold))
                     Text("HÌNH ẢNH")
-                        .font(.system(size: 10, weight: .heavy, design: .rounded))
+                        .font(.system(size: 10, weight: .heavy, design: .monospaced))
                 }
-                .foregroundColor(AppTheme.cyberCyan)
+                .foregroundStyle(.white)
                 .padding(.horizontal, 9)
                 .padding(.vertical, 4)
-                .background(Capsule().fill(AppTheme.cyberCyan.opacity(0.12)))
-                .overlay(Capsule().stroke(AppTheme.cyberCyan.opacity(0.3), lineWidth: 1))
+                .background(AppTheme.ink)
+                .clipShape(Capsule())
             } else {
                 HStack(spacing: 5) {
                     Image(systemName: "doc.text.fill")
                         .font(.system(size: 9, weight: .bold))
                     Text("BÀI VIẾT")
-                        .font(.system(size: 10, weight: .heavy, design: .rounded))
+                        .font(.system(size: 10, weight: .heavy, design: .monospaced))
                 }
-                .foregroundColor(.white.opacity(0.6))
+                .foregroundStyle(AppTheme.grey600)
                 .padding(.horizontal, 9)
                 .padding(.vertical, 4)
-                .background(Capsule().fill(Color.white.opacity(0.06)))
+                .background(AppTheme.grey50)
+                .clipShape(Capsule())
             }
         }
     }
-
-    // MARK: - Media Container
 
     @ViewBuilder
     private var mediaContainer: some View {
@@ -359,38 +320,30 @@ private struct GuideCardView: View {
                 onPlayVideo(videoURL)
             } label: {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Color.black.opacity(0.7))
+                    LinearGradient(colors: [AppTheme.grey100, AppTheme.grey200],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing)
                         .aspectRatio(16/9, contentMode: .fit)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
-                    // Nút Play Neon
                     VStack(spacing: 8) {
                         ZStack {
                             Circle()
-                                .fill(
-                                    LinearGradient(
-                                        colors: [Color(red: 1.0, green: 0.2, blue: 0.45), AppTheme.cyberPurple],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .frame(width: 52, height: 52)
-                                .shadow(color: Color(red: 1.0, green: 0.2, blue: 0.45).opacity(0.6), radius: 12)
-
+                                .fill(AppTheme.ink)
+                                .frame(width: 56, height: 56)
                             Image(systemName: "play.fill")
-                                .font(.system(size: 20, weight: .bold))
-                                .foregroundColor(.white)
+                                .font(.system(size: 22, weight: .bold))
+                                .foregroundStyle(.white)
                                 .offset(x: 2)
                         }
 
                         Text("Chạm để phát video")
-                            .font(.system(size: 11, weight: .semibold, design: .rounded))
-                            .foregroundColor(.white.opacity(0.7))
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(AppTheme.grey600)
                     }
                 }
                 .overlay(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                        .stroke(AppTheme.grey200, lineWidth: 1)
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
@@ -410,7 +363,7 @@ private struct GuideCardView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                                    .stroke(AppTheme.grey200, lineWidth: 1)
                             )
                     case .failure:
                         HStack(spacing: 8) {
@@ -418,15 +371,15 @@ private struct GuideCardView: View {
                             Text("Không thể tải hình ảnh")
                         }
                         .font(.system(size: 12))
-                        .foregroundColor(.white.opacity(0.3))
+                        .foregroundStyle(AppTheme.grey500)
                         .frame(maxWidth: .infinity, minHeight: 120)
-                        .background(Color.black.opacity(0.3))
+                        .background(AppTheme.grey50)
                         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     case .empty:
                         ProgressView()
-                            .tint(AppTheme.cyberCyan)
+                            .tint(AppTheme.ink)
                             .frame(maxWidth: .infinity, minHeight: 140)
-                            .background(Color.black.opacity(0.3))
+                            .background(AppTheme.grey50)
                             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     @unknown default:
                         EmptyView()
@@ -455,7 +408,7 @@ private struct GuideCardView: View {
     }
 }
 
-// MARK: - Trình phát Video Full Screen
+// MARK: - Full screen video player
 
 private struct FullScreenVideoPlayer: View {
     let url: URL
@@ -470,8 +423,7 @@ private struct FullScreenVideoPlayer: View {
                 VideoPlayer(player: player)
                     .ignoresSafeArea()
             } else {
-                ProgressView()
-                    .tint(.white)
+                ProgressView().tint(.white)
             }
 
             VStack {
@@ -483,7 +435,7 @@ private struct FullScreenVideoPlayer: View {
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 28))
-                            .foregroundColor(.white.opacity(0.8))
+                            .foregroundStyle(.white.opacity(0.85))
                             .padding(16)
                     }
                 }
@@ -502,7 +454,7 @@ private struct FullScreenVideoPlayer: View {
     }
 }
 
-// MARK: - Trình xem Ảnh Full Screen
+// MARK: - Full screen image
 
 private struct FullScreenImageView: View {
     let url: URL
@@ -527,10 +479,9 @@ private struct FullScreenImageView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Đóng") { dismiss() }
-                        .foregroundColor(AppTheme.cyberCyan)
+                        .foregroundStyle(AppTheme.ink)
                 }
             }
         }
     }
 }
-

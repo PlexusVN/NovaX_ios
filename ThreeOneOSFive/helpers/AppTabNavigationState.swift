@@ -47,11 +47,12 @@ struct FeatureVisibility: Equatable {
         AppSection.allCases.filter(isVisible)
     }
 
+    /// Theo design.md: bỏ tab DNS, chỉ còn 3 tab Features / Guides / Profile.
     func isVisible(_ section: AppSection) -> Bool {
         switch section {
-        case .features, .guides, .profile, .dns:
+        case .features, .guides, .profile:
             return true
-        case .home, .cleaner, .wallpapers, .files, .patches:
+        case .dns, .home, .cleaner, .wallpapers, .files, .patches:
             return false
         }
     }
@@ -62,7 +63,7 @@ struct AppTabNavigationState: Equatable {
     private(set) var filesTabs: FilesTabSession
 
     init(
-        selectedTab: Int = 0,
+        selectedTab: Int = AppSection.features.rawValue,
         filesNavigationPath: [FileBrowserDestination] = []
     ) {
         self.selectedTab = selectedTab

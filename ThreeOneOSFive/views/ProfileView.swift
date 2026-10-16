@@ -1,640 +1,668 @@
 import SwiftUI
 import UIKit
 
+/// ProfileView - 2026 enterprise Hồ sơ dễ đọc:
+/// - Hero: logo + NovaX + Phiên bản + PREMIUM + status "Hoạt động".
+/// - License card (key) - nền đen, copy dễ.
+/// - Lưới 2 cột HWID/Ngày/Ngày hết hạn/Loại key/Còn lại (responsive về 1 cột trên màn nhỏ).
+/// - Hàng trạng thái key riêng.
+/// - Phiên bản & cập nhật: số to + nút kiểm tra.
+/// - Phiên đăng nhập: nút Đăng xuất key (chevron).
+/// - Modal xác nhận đăng xuất key.
 struct ProfileView: View {
     var showSystemDashboard: Binding<Bool>? = nil
     @EnvironmentObject private var auth: AuthManager
     @ObservedObject private var updateManager = UpdateManager.shared
 
-    @State private var currentTime = Date()
-    private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    @State private var showLogoutModal: Bool = false
+    @State private var appear: Bool = false
+
+    private static let version: String = AppUpdateChecker.currentVersion
+    private static let build: String = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "1"
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 20) {
-                    Spacer().frame(height: 8)
+                VStack(spacing: 15) {
+                    // 1. Hero card
+                    profileHero
+                        .opacity(appear ? 1 : 0)
+                        .offset(y: appear ? 0 : 12)
 
-                    keyInfoPanel
+                    // 2. Thông tin key
+                    licenseCard
+                        .opacity(appear ? 1 : 0)
+                        .offset(y: appear ? 0 : 12)
 
-                    keyDetailsCard
+                    // 3. Phiên bản & cập nhật
+                    updateCard
+                        .opacity(appear ? 1 : 0)
+                        .offset(y: appear ? 0 : 12)
 
-                    appUpdateCard
+                    // 4. Phiên đăng nhập - Đăng xuất key
+                    sessionCard
+                        .opacity(appear ? 1 : 0)
+                        .offset(y: appear ? 0 : 12)
 
-                    AirLiftDashboardCard()
-
+                    // 5. Nhà phát triển
                     developerCard
-
-                    logoutButton
+                        .opacity(appear ? 1 : 0)
+                        .offset(y: appear ? 0 : 12)
 
                     Spacer().frame(height: 120)
                 }
                 .padding(.horizontal, 16)
+                .padding(.top, 8)
             }
             .background(MeshBackground())
             .navigationTitle("Hồ sơ")
             .navigationBarTitleDisplayMode(.inline)
-            .tint(AppTheme.accent)
+            .tint(AppTheme.ink)
             .toolbar {
-                if let showSystemDashboard = showSystemDashboard {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button {
-                            Haptics.light()
-                            showSystemDashboard.wrappedValue = true
-                        } label: {
-                            Image(systemName: "gearshape.fill")
-                                .font(.system(size: 15, weight: .bold))
-                                .foregroundColor(AppTheme.cyberCyan)
-                                .frame(width: 32, height: 32)
-                                .background(Circle().fill(AppTheme.cyberSurface.opacity(0.8)))
-                                .overlay(Circle().stroke(AppTheme.cyberCyan.opacity(0.35), lineWidth: 1))
-                                .shadow(color: AppTheme.cyberCyan.opacity(0.3), radius: 6)
-                        }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        Haptics.light()
+                        showSystemDashboard?.wrappedValue = true
+                    } label: {
+                        Image(systemName: "gearshape.fill")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(AppTheme.ink)
+                            .frame(width: 32, height: 32)
+                            .background(Color.white)
+                            .clipShape(Circle())
+                            .overlay(Circle().stroke(AppTheme.grey200, lineWidth: 1))
                     }
                 }
             }
-            .onReceive(timer) { currentTime = $0 }
+            .overlay {
+                if showLogoutModal {
+                    logoutConfirmModal
+                        .transition(.scale(scale: 0.96).combined(with: .opacity))
+                        .zIndex(50)
+                }
+            }
+        }
+        .onAppear {
+            withAnimation(.easeOut(duration: 0.55)) { appear = true }
         }
     }
 
-    // MARK: - Key Info Panel (centered avatar + key type)
+    // MARK: - Hero card
 
-    private var keyInfoPanel: some View {
-        VStack(spacing: 0) {
-            // Top glow line
-            Rectangle()
-                .fill(
-                    LinearGradient(
-                        colors: [AppTheme.accent.opacity(0), AppTheme.accent.opacity(0.6), AppTheme.accent.opacity(0)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .frame(height: 1)
-
-            VStack(spacing: 16) {
-                Spacer().frame(height: 8)
-
-                // App icon
-                ZStack {
-                    // Glow
-                    Circle()
-                        .fill(AppTheme.accent.opacity(0.08))
-                        .frame(width: 120, height: 120)
-
-                    // Outer ring
-                    Circle()
-                        .stroke(AppTheme.accent.opacity(0.25), lineWidth: 1.5)
-                        .frame(width: 110, height: 110)
-
-                    // Inner ring
-                    Circle()
-                        .stroke(AppTheme.accent.opacity(0.12), lineWidth: 8)
-                        .frame(width: 96, height: 96)
-                        .blur(radius: 4)
-
-                    if let icon = UIImage(named: "AppIcon60x60")
-                        ?? Bundle.main.path(forResource: "AppIcon60x60@2x", ofType: "png").flatMap(UIImage.init(contentsOfFile:))
-                        ?? UIImage(named: "AppIcon") {
-                        Image(uiImage: icon)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: 80, height: 80)
-                            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                    .stroke(AppTheme.accent.opacity(0.3), lineWidth: 1)
-                            )
-                            .shadow(color: AppTheme.accent.opacity(0.2), radius: 12)
-                    } else {
-                        Image(systemName: "bolt.fill")
-                            .font(.system(size: 32, weight: .bold))
-                            .foregroundStyle(AppTheme.accent)
-                            .frame(width: 80, height: 80)
-                            .background(AppTheme.accent.opacity(0.1))
-                            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                    }
-                }
-
-                // App name + version
-                VStack(spacing: 4) {
-                    Text("NovaX")
-                        .font(.system(size: 22, weight: .black, design: .rounded))
-                        .foregroundStyle(AppTheme.cyberGradient)
-
-                    Text("v\(AppUpdateChecker.currentVersion)")
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.45))
-                }
-
-                // Key type badge
-                HStack(spacing: 6) {
-                    Image(systemName: keyTypeIcon)
-                        .font(.system(size: 10, weight: .bold))
-                    Text(keyTypeLabel)
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
-                }
-                .foregroundColor(keyTypeColor)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 6)
-                .background(keyTypeColor.opacity(0.12))
-                .clipShape(Capsule())
-                .overlay(Capsule().stroke(keyTypeColor.opacity(0.3), lineWidth: 1))
-
-                // Status indicator
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(statusColor)
-                        .frame(width: 7, height: 7)
-                        .shadow(color: statusColor.opacity(0.5), radius: 4)
-                    Text(statusLabel)
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundColor(statusColor)
-                }
-
-                Spacer().frame(height: 4)
-            }
-
-            // Bottom glow line
-            Rectangle()
-                .fill(
-                    LinearGradient(
-                        colors: [AppTheme.accent.opacity(0), AppTheme.accent.opacity(0.6), AppTheme.accent.opacity(0)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .frame(height: 1)
-        }
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(AppTheme.cyberSurface.opacity(0.65))
-                .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(.ultraThinMaterial))
+    private var profileHero: some View {
+        HStack(spacing: 14) {
+            AppLogo(size: 70)
+                .saturation(0)
+                .contrast(1.08)
+                .background(Color.white)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(AppTheme.cyberBorderGradient, lineWidth: 1.2)
+                    RoundedRectangle(cornerRadius: 19, style: .continuous)
+                        .stroke(AppTheme.grey200, lineWidth: 1)
                 )
-                .shadow(color: AppTheme.cyberCyan.opacity(0.12), radius: 20, y: 10)
-        )
-    }
+                .shadow(color: Color.black.opacity(0.10), radius: 8, x: 0, y: 4)
 
-    // MARK: - Key Details Card
+            VStack(alignment: .leading, spacing: 5) {
+                Text("NovaX")
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .foregroundStyle(AppTheme.ink)
+                    .kerning(-0.6)
 
-    private var keyDetailsCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Header
-            HStack(spacing: 8) {
-                Image(systemName: "key.fill")
+                Text("Phiên bản \(Self.version)")
+                    .font(.system(size: 13))
+                    .foregroundStyle(AppTheme.grey500)
+
+                Text("PREMIUM")
+                    .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                    .foregroundStyle(AppTheme.ink)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 4)
+                    .background(AppTheme.grey50)
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            }
+            Spacer()
+
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(AppTheme.ink)
+                    .frame(width: 7, height: 7)
+                Text("Hoạt động")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(AppTheme.accent)
-                    .frame(width: 24, height: 24)
-                    .background(AppTheme.accent.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                Text("THÔNG TIN KEY")
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .foregroundColor(AppTheme.accent)
-                    .tracking(1)
-                Spacer()
+                    .foregroundStyle(AppTheme.ink)
             }
-
-            Divider().background(AppTheme.accent.opacity(0.12))
-                .padding(.vertical, 12)
-
-            VStack(spacing: 0) {
-                keyDetailRow(
-                    icon: "key.fill",
-                    label: "License Key",
-                    value: auth.licenseKey.isEmpty ? "Chưa kích hoạt" : auth.licenseKey,
-                    isCopyable: !auth.licenseKey.isEmpty
-                )
-
-                keyDetailRow(
-                    icon: "fingerprint",
-                    label: "HWID",
-                    value: auth.hwid,
-                    isCopyable: true
-                )
-
-                keyDetailRow(
-                    icon: "calendar.badge.clock",
-                    label: "Ngày kích hoạt",
-                    value: {
-                        if let exp = auth.expiresAt {
-                            return formatDateShort(exp.addingTimeInterval(-86400 * 30))
-                        }
-                        return "Chưa kích hoạt"
-                    }()
-                )
-
-                keyDetailRow(
-                    icon: "calendar.badge.exclamationmark",
-                    label: "Ngày hết hạn",
-                    value: {
-                        if let exp = auth.expiresAt {
-                            return formatDateShort(exp)
-                        }
-                        return "Không xác định"
-                    }()
-                )
-
-                keyDetailRow(
-                    icon: "tag.fill",
-                    label: "Loại key",
-                    value: keyTypeLabel,
-                    valueColor: keyTypeColor
-                )
-
-                keyDetailRow(
-                    icon: "clock.arrow.circlepath",
-                    label: "Thời gian còn lại",
-                    value: remainingTime
-                )
-
-                keyDetailRow(
-                    icon: "checkmark.shield.fill",
-                    label: "Trạng thái",
-                    value: statusLabel,
-                    valueColor: statusColor,
-                    isLast: true
-                )
-            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 7)
+            .background(AppTheme.grey50)
+            .clipShape(Capsule())
         }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(AppTheme.cyberSurface.opacity(0.6))
-                .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(.ultraThinMaterial))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(
-                            LinearGradient(
-                                colors: [AppTheme.cyberCyan.opacity(0.25), AppTheme.cyberPurple.opacity(0.12), Color.white.opacity(0.02)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                )
-                .shadow(color: .black.opacity(0.4), radius: 20, y: 10)
+        .frame(minHeight: 112, alignment: .center)
+        .padding(19)
+        .background(Color.white)
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(AppTheme.grey200, lineWidth: 1)
         )
+        .shadow(color: Color.black.opacity(0.05), radius: 14, x: 0, y: 6)
     }
 
-    // MARK: - App Update Card
+    // MARK: - License card
 
-    private var appUpdateCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            // Header
-            HStack(spacing: 8) {
-                Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(AppTheme.accent)
-                    .frame(width: 24, height: 24)
-                    .background(AppTheme.accent.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                Text("PHIÊN BẢN & CẬP NHẬT")
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .foregroundColor(AppTheme.accent)
-                    .tracking(0.5)
+    private var licenseCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Section header
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .fill(AppTheme.ink)
+                        .frame(width: 42, height: 42)
+                    Image(systemName: "key.fill")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Thông tin key")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(AppTheme.ink)
+                        .kerning(-0.25)
+                    Text("Thông tin kích hoạt trên thiết bị này")
+                        .font(.system(size: 12))
+                        .foregroundStyle(AppTheme.grey500)
+                }
                 Spacer()
+            }
+            .padding(.bottom, 17)
 
-                Text("v\(AppUpdateChecker.currentVersion)")
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.8))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color.white.opacity(0.08))
+            // License dark block
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("LICENSE KEY")
+                        .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                        .foregroundStyle(AppTheme.grey400)
+                        .tracking(1.1)
+                    Spacer()
+                    Button {
+                        Haptics.light()
+                        UIPasteboard.general.string = auth.licenseKey
+                        Haptics.success()
+                    } label: {
+                        Image(systemName: "doc.on.doc.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(AppTheme.ink)
+                            .frame(width: 36, height: 36)
+                            .background(Color.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+                Text(auth.licenseKey.isEmpty ? "Chưa kích hoạt" : auth.licenseKey)
+                    .font(.system(size: 17, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .padding(17)
+            .background(AppTheme.ink)
+            .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+
+            // Info grid (2 cột, tự về 1 cột <380px)
+            infoGrid
+
+            // Trạng thái key - tách riêng
+            HStack(spacing: 8) {
+                Circle().fill(AppTheme.ink).frame(width: 7, height: 7)
+                Text("Trạng thái key")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(AppTheme.grey500)
+                Spacer()
+                Text(keyStatusLabel)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(AppTheme.ink)
+            }
+            .padding(.horizontal, 15)
+            .padding(.vertical, 14)
+            .background(Color.white)
+            .overlay(
+                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                    .stroke(AppTheme.grey200, lineWidth: 1)
+            )
+            .padding(.top, 12)
+        }
+        .padding(20)
+        .background(Color.white)
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(AppTheme.grey200, lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.06), radius: 18, x: 0, y: 8)
+    }
+
+    private var infoGrid: some View {
+        // 2 cột, nếu HWID quá dài thì cho full width
+        let columns = [
+            GridItem(.flexible(), spacing: 10),
+            GridItem(.flexible(), spacing: 10)
+        ]
+        return LazyVGrid(columns: columns, spacing: 10) {
+            infoCell(icon: "iphone.gen3", label: "HWID thiết bị",
+                     value: auth.hwid, isMono: true, fullWidth: true)
+            infoCell(icon: "calendar.badge.clock", label: "Ngày kích hoạt",
+                     value: formatDate(auth.expiresAt.map { $0.addingTimeInterval(-86400 * 30) }))
+            infoCell(icon: "calendar.badge.exclamationmark", label: "Ngày hết hạn",
+                     value: auth.expiresAt.map(formatDate) ?? "Không xác định")
+            infoCell(icon: "tag.fill", label: "Loại key",
+                     value: keyTypeLabel)
+            infoCell(icon: "clock.arrow.circlepath", label: "Thời gian còn lại",
+                     value: remainingTime)
+        }
+        .padding(.top, 12)
+    }
+
+    private func infoCell(icon: String, label: String, value: String, isMono: Bool = false, fullWidth: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 5) {
+                Image(systemName: icon)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(AppTheme.grey500)
+                Text(label.uppercased())
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .tracking(0.4)
+                    .foregroundStyle(AppTheme.grey500)
+            }
+            Text(value)
+                .font(.system(size: fullWidth ? 13 : 15, weight: .semibold,
+                              design: fullWidth || isMono ? .monospaced : .rounded))
+                .foregroundStyle(AppTheme.ink)
+                .lineLimit(fullWidth ? 1 : 2)
+                .truncationMode(.middle)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(AppTheme.grey50)
+        .overlay(
+            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .stroke(Color.black.opacity(0.04), lineWidth: 1)
+        )
+        .gridCellColumns(fullWidth ? 2 : 1)
+    }
+
+    // MARK: - Update card
+
+    private var updateCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .fill(AppTheme.ink)
+                        .frame(width: 42, height: 42)
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Phiên bản & cập nhật")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(AppTheme.ink)
+                        .kerning(-0.25)
+                    Text("Thông tin bản dựng hiện tại")
+                        .font(.system(size: 12))
+                        .foregroundStyle(AppTheme.grey500)
+                }
+                Spacer()
+            }
+
+            Divider().background(AppTheme.grey200)
+
+            HStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("PHIÊN BẢN")
+                        .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                        .foregroundStyle(AppTheme.grey500)
+                        .tracking(0.8)
+                    HStack(alignment: .lastTextBaseline, spacing: 9) {
+                        Text(Self.version)
+                            .font(.system(size: 30, weight: .bold, design: .rounded))
+                            .foregroundStyle(AppTheme.ink)
+                            .kerning(-1)
+                        Text("Build \(Self.build)")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(AppTheme.grey500)
+                    }
+                }
+                Spacer()
+                Text(updateManager.updateOffer != nil ? "Có cập nhật" : "Mới nhất")
+                    .font(.system(size: 11, weight: .semibold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(AppTheme.ink)
+                    .foregroundStyle(.white)
                     .clipShape(Capsule())
             }
+            .padding(16)
+            .background(AppTheme.grey50)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Color.black.opacity(0.05), lineWidth: 1)
+            )
 
-            Divider().background(AppTheme.accent.opacity(0.12))
-
-            HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Trạng thái")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.white.opacity(0.4))
-                    if let msg = updateManager.lastCheckedMessage {
-                        Text(msg)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(updateManager.updateOffer != nil ? Color(hex: 0xFF5252) : Color.green)
+            Button {
+                Haptics.medium()
+                updateManager.checkForUpdate(showFeedback: true)
+            } label: {
+                HStack(spacing: 8) {
+                    if updateManager.isChecking {
+                        ProgressView().tint(AppTheme.ink).scaleEffect(0.85)
+                        Text("Đang kiểm tra…")
+                            .font(.system(size: 14, weight: .semibold))
                     } else {
-                        Text("Đang chạy v\(AppUpdateChecker.currentVersion)")
-                            .font(.system(size: 12, weight: .medium, design: .monospaced))
-                            .foregroundColor(.white.opacity(0.8))
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 15, weight: .semibold))
+                        Text("Kiểm tra cập nhật")
+                            .font(.system(size: 14, weight: .semibold))
                     }
                 }
-
-                Spacer()
-
-                Button {
-                    Haptics.light()
-                    updateManager.checkForUpdate(showFeedback: true)
-                } label: {
-                    HStack(spacing: 6) {
-                        if updateManager.isChecking {
-                            ProgressView()
-                                .scaleEffect(0.7)
-                                .tint(.white)
-                        } else {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 10, weight: .bold))
-                            Text("Kiểm tra")
-                                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                        }
-                    }
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(
-                        LinearGradient(
-                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.75)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                }
-                .disabled(updateManager.isChecking)
+                .foregroundStyle(AppTheme.ink)
+                .frame(maxWidth: .infinity, minHeight: 48)
             }
+            .buttonStyle(OutlineButtonStyle())
+            .disabled(updateManager.isChecking)
         }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(AppTheme.cyberSurface.opacity(0.6))
-                .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(.ultraThinMaterial))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(
-                            LinearGradient(
-                                colors: [AppTheme.accent.opacity(0.3), AppTheme.accent.opacity(0.08), Color.white.opacity(0.02)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                )
-                .shadow(color: .black.opacity(0.4), radius: 20, y: 10)
+        .padding(20)
+        .background(Color.white)
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(AppTheme.grey200, lineWidth: 1)
         )
+        .shadow(color: Color.black.opacity(0.06), radius: 18, x: 0, y: 8)
     }
 
-    private func keyDetailRow(
-        icon: String,
-        label: String,
-        value: String,
-        valueColor: Color = .white.opacity(0.8),
-        isCopyable: Bool = false,
-        isLast: Bool = false
-    ) -> some View {
-        VStack(spacing: 0) {
+    // MARK: - Session card
+
+    private var sessionCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
-                Image(systemName: icon)
-                    .font(.system(size: 12))
-                    .foregroundColor(AppTheme.accent.opacity(0.6))
-                    .frame(width: 20)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(label)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.white.opacity(0.4))
-                    Text(value)
-                        .font(.system(size: 12, weight: .medium, design: .monospaced))
-                        .foregroundColor(valueColor)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                ZStack {
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .fill(AppTheme.ink)
+                        .frame(width: 42, height: 42)
+                    Image(systemName: "rectangle.portrait.and.arrow.right")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(.white)
                 }
 
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Phiên đăng nhập")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(AppTheme.ink)
+                        .kerning(-0.25)
+                    Text("Quản lý license key đang sử dụng")
+                        .font(.system(size: 12))
+                        .foregroundStyle(AppTheme.grey500)
+                }
                 Spacer()
+            }
 
-                if isCopyable {
-                    Button(action: {
-                        Haptics.light()
-                        UIPasteboard.general.string = value
-                    }) {
-                        Image(systemName: "doc.on.doc")
-                            .font(.system(size: 10))
-                            .foregroundColor(AppTheme.accent.opacity(0.5))
-                            .frame(width: 26, height: 26)
-                            .background(AppTheme.accent.opacity(0.08))
-                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    }
+            Button {
+                Haptics.medium()
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.75)) {
+                    showLogoutModal = true
                 }
-            }
-            .padding(.vertical, 10)
+            } label: {
+                HStack(spacing: 13) {
+                    Image(systemName: "rectangle.portrait.and.arrow.right")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(AppTheme.ink)
+                        .frame(width: 24)
 
-            if !isLast {
-                Divider().background(Color.white.opacity(0.05))
-                    .padding(.leading, 32)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Đăng xuất key")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(AppTheme.ink)
+                        Text("Trở về màn hình nhập license key")
+                            .font(.system(size: 11))
+                            .foregroundStyle(AppTheme.grey500)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(AppTheme.grey400)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .frame(minHeight: 65)
+                .background(AppTheme.grey50)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(AppTheme.grey200, lineWidth: 1)
+                )
             }
+            .buttonStyle(PressableButtonStyle())
         }
+        .padding(20)
+        .background(Color.white)
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(AppTheme.grey200, lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.06), radius: 18, x: 0, y: 8)
     }
 
-    // MARK: - Developer Card
+    // MARK: - Developer card
 
     private var developerCard: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header
-            HStack(spacing: 8) {
-                Image(systemName: "person.fill")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(AppTheme.accent)
-                    .frame(width: 24, height: 24)
-                    .background(AppTheme.accent.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                Text("NHÀ PHÁT TRIỂN")
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .foregroundColor(AppTheme.accent)
-                    .tracking(1)
+            HStack(spacing: 13) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(AppTheme.ink, lineWidth: 1)
+                        .background(Color.white)
+                        .frame(width: 42, height: 42)
+                    Image(systemName: "person.fill")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(AppTheme.ink)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("NHÀ PHÁT TRIỂN")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(AppTheme.ink)
+                    Text("NovaX Developer")
+                        .font(.system(size: 12))
+                        .foregroundStyle(AppTheme.grey500)
+                }
                 Spacer()
             }
 
-            Divider().background(AppTheme.accent.opacity(0.12))
-                .padding(.vertical, 12)
+            Rectangle()
+                .fill(AppTheme.grey200)
+                .frame(height: 1)
+                .padding(.vertical, 16)
 
-            // Developer info
-            HStack(spacing: 14) {
-                // Avatar
+            HStack(spacing: 12) {
                 ZStack {
                     Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [AppTheme.accent.opacity(0.35), AppTheme.accent.opacity(0.1)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 52, height: 52)
-                        .overlay(
-                            Circle().stroke(AppTheme.accent.opacity(0.35), lineWidth: 1.5)
-                        )
+                        .fill(AppTheme.ink)
+                        .frame(width: 48, height: 48)
                     Text("MK")
-                        .font(.system(size: 17, weight: .black, design: .monospaced))
-                        .foregroundColor(.white)
+                        .font(.system(size: 16, weight: .black, design: .monospaced))
+                        .foregroundStyle(Color.white)
                 }
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text("Trần Minh Khải")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundColor(.white.opacity(0.95))
-                    Text("NovaX Developer")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(AppTheme.accent.opacity(0.7))
-                    HStack(spacing: 4) {
-                        Image(systemName: "phone.fill")
-                            .font(.system(size: 9))
-                            .foregroundColor(AppTheme.accent.opacity(0.5))
-                        Text("0342145707")
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundColor(.white.opacity(0.55))
-                    }
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(AppTheme.ink)
+                    Text("☎ 0342145707")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(AppTheme.grey500)
                 }
-
                 Spacer()
             }
 
-            Divider().background(Color.white.opacity(0.05))
-                .padding(.vertical, 12)
-
-            // Action buttons
-            HStack(spacing: 10) {
-                Button(action: {
-                    Haptics.light()
-                    UIPasteboard.general.string = "0342145707"
-                }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "doc.on.doc")
-                            .font(.system(size: 10))
-                        Text("Sao chép SĐT")
-                            .font(.system(size: 11, weight: .semibold))
-                    }
-                    .foregroundColor(AppTheme.accent)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
+            Button {
+                Haptics.light()
+                if let url = URL(string: "https://zalo.me/0342145707") {
+                    UIApplication.shared.open(url)
                 }
-                .buttonStyle(PremiumButtonStyle(color: AppTheme.accent.opacity(0.4), cornerRadius: 8))
-
-                Button(action: {
-                    Haptics.light()
-                    if let url = URL(string: "https://zalo.me/0342145707") {
-                        UIApplication.shared.open(url)
-                    }
-                }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "message.fill")
-                            .font(.system(size: 10))
-                        Text("Liên hệ Zalo")
-                            .font(.system(size: 11, weight: .bold))
-                    }
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                }
-                .buttonStyle(CyberGlowButtonStyle(cornerRadius: 8))
+            } label: {
+                Text("Liên hệ Zalo")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, minHeight: 46)
+                    .background(AppTheme.ink)
+                    .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
             }
-            .padding(.top, 4)
+            .buttonStyle(.plain)
+            .padding(.top, 16)
         }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(AppTheme.cyberSurface.opacity(0.6))
-                .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(.ultraThinMaterial))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(
-                            LinearGradient(
-                                colors: [AppTheme.cyberCyan.opacity(0.25), AppTheme.cyberPurple.opacity(0.12), Color.white.opacity(0.02)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                )
-                .shadow(color: .black.opacity(0.4), radius: 20, y: 10)
+        .padding(20)
+        .background(Color.white)
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(AppTheme.grey200, lineWidth: 1)
         )
+        .shadow(color: Color.black.opacity(0.05), radius: 14, x: 0, y: 6)
     }
 
-    // MARK: - Logout Button
+    // MARK: - Logout modal
 
-    private var logoutButton: some View {
-        Button(action: {
-            Haptics.medium()
-            auth.logout()
-        }) {
-            HStack(spacing: 8) {
-                Image(systemName: "rectangle.portrait.and.arrow.right")
-                    .font(.system(size: 13, weight: .semibold))
-                Text("Đăng xuất")
-                    .font(.system(size: 13, weight: .semibold))
+    private var logoutConfirmModal: some View {
+        ZStack {
+            Color.black.opacity(0.35)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+                        showLogoutModal = false
+                    }
+                }
+
+            VStack(spacing: 0) {
+                VStack(spacing: 14) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(AppTheme.ink)
+                            .frame(width: 62, height: 62)
+                        Image(systemName: "rectangle.portrait.and.arrow.right")
+                            .font(.system(size: 25, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                    .padding(.top, 4)
+
+                    Text("Đăng xuất key?")
+                        .font(.system(size: 24, weight: .bold))
+                        .foregroundStyle(AppTheme.ink)
+                        .kerning(-0.45)
+
+                    Text("Phiên license hiện tại sẽ được xóa khỏi NovaX và bạn sẽ trở về màn hình nhập key.")
+                        .font(.system(size: 14))
+                        .foregroundStyle(AppTheme.grey500)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 8)
+
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: "info.circle.fill")
+                            .font(.system(size: 16))
+                            .foregroundStyle(AppTheme.grey600)
+                            .padding(.top, 1)
+                        Text("Thao tác này không tự khôi phục những tệp đã áp dụng.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(AppTheme.grey700)
+                    }
+                    .padding(13)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(AppTheme.grey50)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 13, style: .continuous)
+                            .stroke(AppTheme.grey200, lineWidth: 1)
+                    )
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+
+                HStack(spacing: 10) {
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+                            showLogoutModal = false
+                        }
+                    } label: {
+                        Text("Hủy")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(AppTheme.ink)
+                            .frame(maxWidth: .infinity, minHeight: 48)
+                            .background(AppTheme.grey50)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .stroke(AppTheme.grey200, lineWidth: 1)
+                            )
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        performLogout()
+                    } label: {
+                        Text("Đăng xuất")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity, minHeight: 48)
+                            .background(AppTheme.ink)
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(18)
             }
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
+            .background(Color.white)
+            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .shadow(color: Color.black.opacity(0.20), radius: 40, x: 0, y: 18)
+            .padding(.horizontal, 28)
         }
-        .buttonStyle(PremiumButtonStyle(color: .red, cornerRadius: 10))
+    }
+
+    private func performLogout() {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+            showLogoutModal = false
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            auth.logout()
+        }
     }
 
     // MARK: - Helpers
 
     private var keyTypeLabel: String {
         switch auth.keyType {
-        case .vip, .admin: return "VIP SUPREME"
-        case .pro:         return "PRO EDITION"
-        case .basic:       return "FREE BASIC"
+        case .vip, .admin: return "Premium"
+        case .pro:         return "Pro"
+        case .basic:       return "Basic"
         }
     }
 
-    private var keyTypeIcon: String {
-        switch auth.keyType {
-        case .vip, .admin: return "crown.fill"
-        case .pro:         return "star.fill"
-        case .basic:       return "tag.fill"
-        }
-    }
-
-    private var keyTypeColor: Color {
-        switch auth.keyType {
-        case .vip, .admin: return Color(hex: 0xFFD700)
-        case .pro:         return AppTheme.accent
-        case .basic:       return .white.opacity(0.5)
-        }
-    }
-
-    private var statusColor: Color {
-        if auth.authState == .verified {
-            return Color(hex: 0x00CC66)
-        } else if case .error = auth.authState {
-            return .red
-        }
-        return .white.opacity(0.4)
-    }
-
-    private var statusLabel: String {
+    private var keyStatusLabel: String {
         switch auth.authState {
-        case .verified:
-            return "ĐANG HOẠT ĐỘNG"
-        case .loading:
-            return "DANG XAC THUC..."
-        case .error:
-            return "LỖI XÁC THỰC"
-        case .idle:
-            return "CHƯA XÁC THỰC"
+        case .verified: return "Đang hoạt động"
+        case .loading:  return "Đang xác thực…"
+        case .error:    return "Lỗi xác thực"
+        case .idle:     return "Chưa xác thực"
         }
     }
 
     private var remainingTime: String {
-        guard let expires = auth.expiresAt else { return "Không xác định" }
-        let now = Date()
-        let interval = expires.timeIntervalSince(now)
+        guard let expires = auth.expiresAt else { return "Vĩnh viễn" }
+        let interval = expires.timeIntervalSinceNow
         if interval <= 0 { return "Đã hết hạn" }
         let days = Int(interval / 86400)
         let hours = Int(interval.truncatingRemainder(dividingBy: 86400) / 3600)
         if days > 0 { return "\(days) ngày \(hours) giờ" }
-        let minutes = Int(interval.truncatingRemainder(dividingBy: 3600) / 60)
-        return "\(hours) giờ \(minutes) phút"
+        let mins = Int(interval.truncatingRemainder(dividingBy: 3600) / 60)
+        return "\(hours) giờ \(mins) phút"
     }
 
-    private func formatDateShort(_ date: Date) -> String {
+    private func formatDate(_ date: Date?) -> String {
+        guard let date = date else { return "Chưa kích hoạt" }
         let f = DateFormatter()
         f.dateFormat = "dd/MM/yyyy"
+        f.locale = Locale(identifier: "vi_VN")
         return f.string(from: date)
     }
 }

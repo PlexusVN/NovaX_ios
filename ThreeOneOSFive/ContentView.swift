@@ -22,7 +22,7 @@ struct ContentView: View {
         } else if arguments.contains("--simulate-patch-tab") {
             initialTab = 2
         } else {
-            initialTab = 0
+            initialTab = AppSection.features.rawValue
         }
         _tabNavigation = State(initialValue: AppTabNavigationState(selectedTab: initialTab))
 #else
@@ -38,21 +38,21 @@ struct ContentView: View {
                 compactLayout
             }
         }
-        .tint(AppTheme.accent)
+        .tint(AppTheme.ink)
         .imageScale(.small)
         .sheet(isPresented: $showSystemDashboard) {
             DashboardView(showCloseButton: true, onClose: { showSystemDashboard = false })
         }
         .onChange(of: patchDraftCoordinator.request?.id) { requestID in
-            if requestID != nil { tabNavigation.select(AppSection.patches.rawValue) }
+            // Patches tab đã bị ẩn - không làm gì
+            _ = requestID
         }
         .onChange(of: patchDraftCoordinator.importRequest?.id) { requestID in
-            if requestID != nil { tabNavigation.select(AppSection.patches.rawValue) }
+            _ = requestID
         }
         .onAppear {
             tabNavigation.reconcileSelection(with: featureVisibility)
             startHeartbeat()
-            showLoginSuccessPopup = true
         }
         .onDisappear {
             heartbeatTimer?.invalidate()
@@ -61,10 +61,9 @@ struct ContentView: View {
         .onChange(of: scenePhase) { phase in
             if phase == .active { startHeartbeat() }
         }
-        .overlay {
-            loginSuccessPopup
-        }
     }
+
+    // MARK: - Layouts
 
     private var compactLayout: some View {
         ZStack(alignment: .bottom) {
@@ -75,7 +74,7 @@ struct ContentView: View {
                         .toolbar(.hidden, for: .tabBar)
                 }
             }
-            
+
             customFloatingTabBar
         }
     }
@@ -84,41 +83,30 @@ struct ContentView: View {
         HStack(spacing: 0) {
             ForEach(featureVisibility.visibleSections) { section in
                 let isSelected = section.rawValue == tabNavigation.selectedTab
-                
+
                 Button {
                     Haptics.light()
-                    tabNavigation.select(section.rawValue)
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+                        tabNavigation.select(section.rawValue)
+                    }
                 } label: {
-                    VStack(spacing: 2) {
+                    VStack(spacing: 3) {
                         Image(systemName: section.systemImage)
-                            .font(.system(size: 18, weight: isSelected ? .bold : .medium))
-                            .foregroundColor(isSelected ? AppTheme.cyberCyan : .white.opacity(0.45))
-                            .frame(height: 20)
-                            .shadow(color: isSelected ? AppTheme.cyberCyan.opacity(0.6) : .clear, radius: 8)
-                        
+                            .font(.system(size: 19, weight: isSelected ? .bold : .medium))
+                            .foregroundColor(isSelected ? .white : AppTheme.grey500)
                         Text(language.text(section.titleKey))
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
-                            .foregroundColor(isSelected ? AppTheme.cyberCyan : .white.opacity(0.45))
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .foregroundColor(isSelected ? .white : AppTheme.grey500)
                             .lineLimit(1)
                             .minimumScaleFactor(0.8)
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 6)
+                    .padding(.vertical, 8)
                     .background(
                         ZStack {
                             if isSelected {
                                 Capsule()
-                                    .fill(
-                                        LinearGradient(
-                                            colors: [AppTheme.cyberCyan.opacity(0.22), AppTheme.cyberPurple.opacity(0.22)],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
-                                    .overlay(
-                                        Capsule()
-                                            .stroke(AppTheme.cyberCyan.opacity(0.4), lineWidth: 1)
-                                    )
+                                    .fill(AppTheme.ink)
                                     .matchedGeometryEffect(id: "TAB_BG", in: tabAnimationNamespace)
                             }
                         }
@@ -127,44 +115,36 @@ struct ContentView: View {
                 .buttonStyle(.plain)
             }
         }
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: tabNavigation.selectedTab)
         .padding(.horizontal, 6)
-        .padding(.vertical, 4)
+        .padding(.vertical, 5)
         .background(
             Capsule()
-                .fill(AppTheme.cyberOLED.opacity(0.8))
-                .background(
-                    Capsule().fill(.ultraThinMaterial)
-                )
+                .fill(.ultraThinMaterial)
         )
         .overlay(
             Capsule()
-                .stroke(
-                    LinearGradient(
-                        colors: [AppTheme.cyberCyan.opacity(0.45), AppTheme.cyberPurple.opacity(0.25), Color.white.opacity(0.06)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1
-                )
+                .stroke(AppTheme.grey200, lineWidth: 1)
         )
-        .shadow(color: AppTheme.cyberCyan.opacity(0.12), radius: 20, y: 10)
-        .shadow(color: .black.opacity(0.6), radius: 30, y: 15)
-        .padding(.horizontal, 24)
-        .padding(.bottom, 16)
+        .shadow(color: Color.black.opacity(0.16), radius: 22, x: 0, y: 12)
+        .padding(.horizontal, 20)
+        .padding(.bottom, 18)
         .highPriorityGesture(
             DragGesture()
                 .onEnded { value in
                     let translation = value.translation.width
                     let sections = featureVisibility.visibleSections
                     guard let currentIndex = sections.firstIndex(where: { $0.rawValue == tabNavigation.selectedTab }) else { return }
-                    
+
                     if translation < -40 && currentIndex < sections.count - 1 {
                         Haptics.light()
-                        tabNavigation.select(sections[currentIndex + 1].rawValue)
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+                            tabNavigation.select(sections[currentIndex + 1].rawValue)
+                        }
                     } else if translation > 40 && currentIndex > 0 {
                         Haptics.light()
-                        tabNavigation.select(sections[currentIndex - 1].rawValue)
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+                            tabNavigation.select(sections[currentIndex - 1].rawValue)
+                        }
                     }
                 }
         )
@@ -187,7 +167,7 @@ struct ContentView: View {
                     .buttonStyle(.plain)
                     .listRowBackground(
                         section.rawValue == tabNavigation.selectedTab
-                            ? AppTheme.accent.opacity(0.14)
+                            ? AppTheme.grey100
                             : Color.clear
                     )
                     .accessibilityAddTraits(
@@ -210,9 +190,7 @@ struct ContentView: View {
         case .home:
             DashboardView()
         case .files:
-            AppDataBrowserView(
-                tabSession: filesTabSession
-            )
+            AppDataBrowserView(tabSession: filesTabSession)
         case .patches:
             PatchProjectsView()
         case .features:
@@ -224,7 +202,8 @@ struct ContentView: View {
         case .wallpapers:
             EmptyView()
         case .dns:
-            DNSManagerView(showSystemDashboard: $showSystemDashboard)
+            // DNS đã bỏ - fallback trống
+            EmptyView()
         case .profile:
             ProfileView(showSystemDashboard: $showSystemDashboard)
                 .environmentObject(authManager)
@@ -274,24 +253,7 @@ struct ContentView: View {
     }
 }
 
-private struct CompactTabLabel: View {
-    let title: String
-    let systemImage: String
-
-    @ViewBuilder
-    var body: some View {
-        if let image = UIImage(
-            systemName: systemImage,
-            withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .medium)
-        )?.withRenderingMode(.alwaysTemplate) {
-            Image(uiImage: image)
-        } else {
-            Image(systemName: systemImage)
-                .font(.system(size: 17, weight: .medium))
-        }
-        Text(title)
-    }
-}
+// MARK: - Section titles & icons
 
 private extension AppSection {
     var titleKey: String {
@@ -323,131 +285,7 @@ private extension AppSection {
     }
 }
 
-extension ContentView {
-    // MARK: - Login Success Popup
-    
-    @ViewBuilder
-    private var loginSuccessPopup: some View {
-        if showLoginSuccessPopup {
-            ZStack {
-                Color.black.opacity(0.6)
-                    .ignoresSafeArea()
-                    .onTapGesture {
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
-                            showLoginSuccessPopup = false
-                        }
-                    }
-                
-                VStack(spacing: 24) {
-                    ZStack {
-                        Circle()
-                            .fill(
-                                RadialGradient(
-                                    colors: [AppTheme.cyberCyan.opacity(0.3), AppTheme.cyberPurple.opacity(0.15), Color.clear],
-                                    center: .center,
-                                    startRadius: 10,
-                                    endRadius: 50
-                                )
-                            )
-                            .frame(width: 100, height: 100)
-                        Image(systemName: "checkmark.shield.fill")
-                            .font(.system(size: 64))
-                            .foregroundStyle(AppTheme.cyberGradient)
-                            .shadow(color: AppTheme.cyberCyan.opacity(0.6), radius: 15)
-                    }
-                        
-                    VStack(spacing: 8) {
-                        Text("Đăng Nhập Thành Công")
-                            .font(.system(size: 20, weight: .black, design: .rounded))
-                            .foregroundColor(.white)
-                            
-                        Text("Hệ thống đã sẵn sàng hoạt động")
-                            .font(.system(size: 13))
-                            .foregroundColor(.white.opacity(0.6))
-                    }
-                    
-                    VStack(spacing: 12) {
-                        HStack {
-                            Text("License Key")
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundColor(.white.opacity(0.5))
-                            Spacer()
-                            Text(authManager.licenseKey.isEmpty ? "N/A" : String(authManager.licenseKey.prefix(12)) + "...")
-                                .font(.system(size: 14, weight: .bold, design: .monospaced))
-                                .foregroundColor(.white)
-                        }
-                        
-                        Divider().background(Color.white.opacity(0.1))
-                        
-                        HStack {
-                            Text("Thời hạn")
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundColor(.white.opacity(0.5))
-                            Spacer()
-                            Text(getRemainingTime(from: authManager.expiresAt))
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundColor(AppTheme.cyberCyan)
-                        }
-                    }
-                    .padding(16)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(Color.black.opacity(0.3))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .stroke(Color.white.opacity(0.05), lineWidth: 1)
-                            )
-                    )
-                    
-                    Button {
-                        Haptics.light()
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
-                            showLoginSuccessPopup = false
-                        }
-                    } label: {
-                        Text("Bắt đầu ngay")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                    }
-                    .buttonStyle(CyberGlowButtonStyle(cornerRadius: 14))
-                }
-                .padding(24)
-                .background(
-                    RoundedRectangle(cornerRadius: 28, style: .continuous)
-                        .fill(AppTheme.cyberSurface.opacity(0.85))
-                        .background(RoundedRectangle(cornerRadius: 28, style: .continuous).fill(.ultraThinMaterial))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                                .stroke(AppTheme.cyberBorderGradient, lineWidth: 1.2)
-                        )
-                )
-                .shadow(color: .black.opacity(0.5), radius: 40, y: 20)
-                .padding(.horizontal, 32)
-                .transition(.scale(scale: 0.95).combined(with: .opacity))
-            }
-            .zIndex(100)
-        }
-    }
-    
-    private func getRemainingTime(from date: Date?) -> String {
-        guard let date = date else { return "Vĩnh viễn" }
-        let now = Date()
-        if date < now { return "Đã hết hạn" }
-        
-        let components = Calendar.current.dateComponents([.day, .hour, .minute], from: now, to: date)
-        if let days = components.day, days > 0 {
-            return "\(days) ngày \(components.hour ?? 0) giờ"
-        } else if let hours = components.hour, hours > 0 {
-            return "\(hours) giờ \(components.minute ?? 0) phút"
-        } else if let minutes = components.minute, minutes > 0 {
-            return "\(minutes) phút"
-        } else {
-            return "Dưới 1 phút"
-        }
-    }
-}
+// MARK: - System Dashboard
 
 private struct DashboardView: View {
     @Environment(\.appLanguage) private var language
@@ -458,10 +296,10 @@ private struct DashboardView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                MeshBackground()
+                AppTheme.pageBackground.ignoresSafeArea()
 
                 ScrollView {
-                    VStack(spacing: 20) {
+                    VStack(spacing: 16) {
                         headerCard
                         deviceInfoPanel
                         systemInfoPanel
@@ -485,98 +323,83 @@ private struct DashboardView: View {
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .font(.system(size: 20))
-                                .foregroundColor(.white.opacity(0.7))
+                                .foregroundStyle(AppTheme.grey600)
                         }
                     }
                 }
             }
-            .tint(AppTheme.accent)
+            .tint(AppTheme.ink)
         }
     }
 
-    // MARK: - Header
+    // MARK: Header
 
     private var headerCard: some View {
-        VStack(spacing: 12) {
+        HStack(spacing: 14) {
             ZStack {
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [AppTheme.cyberCyan.opacity(0.2), AppTheme.cyberPurple.opacity(0.2)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 72, height: 72)
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(AppTheme.ink)
+                    .frame(width: 64, height: 64)
                 Image(systemName: "shield.checkered")
-                    .font(.system(size: 30, weight: .medium))
-                    .foregroundStyle(AppTheme.cyberGradient)
+                    .font(.system(size: 26, weight: .medium))
+                    .foregroundStyle(.white)
             }
-            .shadow(color: AppTheme.cyberCyan.opacity(0.4), radius: 20)
 
-            VStack(spacing: 4) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text("NovaX")
-                    .font(.system(size: 22, weight: .black, design: .rounded))
-                    .foregroundColor(.white)
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .foregroundStyle(AppTheme.ink)
                 Text("Hệ thống & Thiết bị")
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    .foregroundColor(AppTheme.cyberCyan.opacity(0.7))
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(AppTheme.grey500)
             }
+            Spacer()
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 20)
-        .background(
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white)
+        .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(AppTheme.cyberSurface.opacity(0.6))
-                .background(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(.ultraThinMaterial)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(AppTheme.cyberBorderGradient, lineWidth: 1.2)
-                )
-                .shadow(color: AppTheme.cyberCyan.opacity(0.12), radius: 24, y: 4)
+                .stroke(AppTheme.grey200, lineWidth: 1)
         )
+        .shadow(color: Color.black.opacity(0.05), radius: 14, x: 0, y: 6)
     }
 
-    // MARK: - Device Info
+    // MARK: Device Info
 
     private var deviceInfoPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
             sectionHeader(icon: "iphone.gen3", title: "Thiết bị")
-
             infoRow(label: "Model", value: AppInfo.displayMachineName, icon: "cpu")
-            Divider().background(Color.white.opacity(0.06))
+            divider
             infoRow(label: "Tên thiết bị", value: UIDevice.current.name, icon: "person.crop.rectangle")
-            Divider().background(Color.white.opacity(0.06))
+            divider
             infoRow(label: "Hệ điều hành", value: "iOS \(AppInfo.osVersion)", icon: "apple.logo")
-            Divider().background(Color.white.opacity(0.06))
+            divider
             infoRow(label: "Build", value: AppInfo.osBuild, icon: "number")
         }
         .padding(16)
         .background(cardBackground)
     }
 
-    // MARK: - System Info
+    // MARK: System Info
 
     private var systemInfoPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
             sectionHeader(icon: "cpu", title: "Thông số hệ thống")
-
             infoRow(label: "Bộ nhớ RAM", value: ramString, icon: "memorychip")
-            Divider().background(Color.white.opacity(0.06))
+            divider
             infoRow(label: "Dung lượng", value: diskString, icon: "internaldrive")
-            Divider().background(Color.white.opacity(0.06))
-            infoRow(label: " pin", value: batteryString, icon: "battery.full")
-            Divider().background(Color.white.opacity(0.06))
+            divider
+            infoRow(label: "Pin", value: batteryString, icon: "battery.full")
+            divider
             infoRow(label: "Màn hình", value: screenString, icon: "rectangle.landscape.rotate")
         }
         .padding(16)
         .background(cardBackground)
     }
 
-    // MARK: - Status Panel
+    // MARK: Status
 
     private var statusPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -585,45 +408,41 @@ private struct DashboardView: View {
             HStack {
                 Image(systemName: appState.isSupported ? "checkmark.circle.fill" : "xmark.circle.fill")
                     .font(.system(size: 14))
-                    .foregroundColor(appState.isSupported ? AppTheme.cyberCyan : .red.opacity(0.8))
+                    .foregroundStyle(appState.isSupported ? AppTheme.ink : AppTheme.ink)
                 Text("Tương thích")
                     .font(.system(size: 13, weight: .medium, design: .rounded))
-                    .foregroundColor(.white.opacity(0.7))
+                    .foregroundStyle(AppTheme.grey700)
                 Spacer()
                 Text(appState.accessLevelDescription)
                     .font(.system(size: 12, weight: .bold, design: .monospaced))
-                    .foregroundColor(appState.isSupported ? AppTheme.cyberCyan : .red.opacity(0.8))
+                    .foregroundStyle(AppTheme.ink)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
-                    .background(
-                        Capsule()
-                            .fill((appState.isSupported ? AppTheme.cyberCyan : .red).opacity(0.12))
-                    )
+                    .background(AppTheme.grey100)
+                    .clipShape(Capsule())
             }
 
             if appState.kernelExploitApplicable {
-                Divider().background(Color.white.opacity(0.06))
+                divider
                 HStack {
                     Image(systemName: appState.kernelExploitRunning ? "bolt.fill" : "bolt.slash.fill")
                         .font(.system(size: 14))
-                        .foregroundColor(appState.kernelExploitRunning ? AppTheme.cyberCyan : .orange.opacity(0.8))
+                        .foregroundStyle(AppTheme.ink)
                     Text("Kernel Exploit")
                         .font(.system(size: 13, weight: .medium, design: .rounded))
-                        .foregroundColor(.white.opacity(0.7))
+                        .foregroundStyle(AppTheme.grey700)
                     Spacer()
                     if appState.kernelExploitRunning {
                         HStack(spacing: 6) {
-                            ProgressView()
-                                .tint(AppTheme.cyberCyan)
-                                .scaleEffect(0.7)
+                            ProgressView().tint(AppTheme.ink).scaleEffect(0.7)
                             Text("Đang chạy")
                                 .font(.system(size: 11, weight: .medium, design: .monospaced))
-                                .foregroundColor(AppTheme.cyberCyan)
+                                .foregroundStyle(AppTheme.ink)
                         }
                     } else {
                         Text(appState.exploitStatus.isSuccess ? "Đã kích hoạt" : "Chưa hoạt động")
                             .font(.system(size: 12, weight: .bold, design: .monospaced))
-                            .foregroundColor(appState.exploitStatus.isSuccess ? AppTheme.cyberCyan : .white.opacity(0.35))
+                            .foregroundStyle(AppTheme.ink)
                     }
                 }
             }
@@ -632,33 +451,38 @@ private struct DashboardView: View {
         .background(cardBackground)
     }
 
-    // MARK: - App Info
+    // MARK: App Info
 
     private var appInfoPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
             sectionHeader(icon: "info.circle", title: "Ứng dụng")
-
             infoRow(label: "Phiên bản", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0", icon: "tag")
-            Divider().background(Color.white.opacity(0.06))
+            divider
             infoRow(label: "Build Number", value: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1", icon: "number")
-            Divider().background(Color.white.opacity(0.06))
+            divider
             infoRow(label: "Developer", value: "Trần Minh Khải", icon: "person.fill")
         }
         .padding(16)
         .background(cardBackground)
     }
 
-    // MARK: - Helpers
+    // MARK: Helpers
+
+    private var divider: some View {
+        Rectangle()
+            .fill(AppTheme.grey200)
+            .frame(height: 1)
+            .padding(.leading, 32)
+    }
 
     private func sectionHeader(icon: String, title: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
                 .font(.system(size: 13, weight: .bold))
-                .foregroundColor(AppTheme.cyberCyan)
-                .shadow(color: AppTheme.cyberCyan.opacity(0.4), radius: 4)
+                .foregroundStyle(AppTheme.ink)
             Text(title)
                 .font(.system(size: 14, weight: .bold, design: .rounded))
-                .foregroundColor(.white)
+                .foregroundStyle(AppTheme.ink)
             Spacer()
         }
     }
@@ -667,37 +491,26 @@ private struct DashboardView: View {
         HStack(spacing: 10) {
             Image(systemName: icon)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundColor(AppTheme.cyberCyan.opacity(0.7))
+                .foregroundStyle(AppTheme.ink)
                 .frame(width: 20)
             Text(label)
                 .font(.system(size: 13, weight: .medium, design: .rounded))
-                .foregroundColor(.white.opacity(0.6))
+                .foregroundStyle(AppTheme.grey700)
             Spacer()
             Text(value)
                 .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                .foregroundColor(.white.opacity(0.9))
+                .foregroundStyle(AppTheme.ink)
         }
     }
 
     private var cardBackground: some View {
         RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .fill(AppTheme.cyberSurface.opacity(0.55))
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(.ultraThinMaterial)
-            )
+            .fill(Color.white)
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            colors: [AppTheme.cyberCyan.opacity(0.25), AppTheme.cyberPurple.opacity(0.12), Color.white.opacity(0.03)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
+                    .stroke(AppTheme.grey200, lineWidth: 1)
             )
-            .shadow(color: .black.opacity(0.4), radius: 20, y: 10)
+            .shadow(color: Color.black.opacity(0.05), radius: 14, x: 0, y: 6)
     }
 
     private var ramString: String {

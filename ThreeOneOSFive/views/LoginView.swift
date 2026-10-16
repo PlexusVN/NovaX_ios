@@ -1,808 +1,550 @@
 import SwiftUI
+import UIKit
 
+/// LoginView - 2026 enterprise, doanh nghiệp, trắng-đen:
+/// - Logo `NovaX-Logo-new.png` đơn sắc (đã grayscale), không vòng tròn trang trí.
+/// - Card trắng, viền đen nhẹ, shadow mềm.
+/// - Input key có icon chìa khóa đơn sắc, label lớn dễ đọc.
+/// - Nút "XÁC THỰC NGAY" nền đen.
+/// - Card "THÔNG TIN THIẾT BỊ" + "NHÀ PHÁT TRIỂN" đồng nhất.
+/// - HWID có nút copy dễ thao tác.
 struct LoginView: View {
     @ObservedObject var auth: AuthManager
     @EnvironmentObject var appState: AppState
 
     @State private var showKey: Bool = false
-    @State private var logoScale: CGFloat = 0.8
-    @State private var logoOpacity: Double = 0
-    @State private var glowOpacity: Double = 0
     @State private var cardOpacity: Double = 0
-    @State private var cardOffset: CGFloat = 30
-    @State private var ringRotation: Double = 0
-    @State private var particleOpacity: Double = 0
-    @State private var scanLineOffset: CGFloat = -200
-    @State private var pulseScale: CGFloat = 1.0
-    @State private var gridOpacity: Double = 0
+    @State private var cardOffset: CGFloat = 18
+    @State private var logoAppear: Bool = false
     @State private var showCommunityAlert: Bool = false
 
     var body: some View {
         ZStack {
-            MeshBackground()
-
-            gridBackground
-
-            scanLineEffect
+            AppTheme.pageBackground.ignoresSafeArea()
 
             ScrollView {
                 VStack(spacing: 0) {
-                    Spacer().frame(height: 50)
+                    Spacer().frame(height: 56)
 
-                    logoSection
+                    // Logo - đơn sắc, không glow quanh
+                    logoBlock
+                        .padding(.bottom, 22)
 
-                    Spacer().frame(height: 12)
+                    // Brand title
+                    brandTitle
+                        .padding(.bottom, 30)
 
-                    titleSection
+                    // Card kích hoạt
+                    activationCard
+                        .padding(.horizontal, 20)
 
-                    Spacer().frame(height: 36)
-
-                    inputCardSection
-
-                    if case .error(let msg) = auth.authState {
-                        errorSection(msg)
-                    }
-
+                    // Nút XÁC THỰC NGAY
                     activateButton
+                        .padding(.horizontal, 20)
+                        .padding(.top, 18)
+                        .padding(.bottom, 24)
 
-                    Spacer().frame(height: 20)
+                    // Thông tin thiết bị
+                    deviceCard
+                        .padding(.horizontal, 20)
 
-                    osSupportCard
-
-                    Spacer().frame(height: 16)
-
-                    adminContactCard
-
-                    Spacer().frame(height: 40)
+                    // Nhà phát triển
+                    developerCard
+                        .padding(.horizontal, 20)
+                        .padding(.top, 16)
+                        .padding(.bottom, 56)
                 }
-                .padding(.horizontal, 24)
             }
-            .opacity(cardOpacity)
+            .scrollBounceBehavior(.basedOnSize)
         }
-        .onAppear {
-            startEntryAnimation()
-        }
+        .onAppear { startEntryAnimation() }
         .overlay {
             if showCommunityAlert {
-                ZStack {
-                    Color.black.opacity(0.6)
-                        .ignoresSafeArea()
-                        .onTapGesture {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                showCommunityAlert = false
-                            }
-                        }
-                    
-                    customCommunityAlert
-                        .transition(.scale(scale: 0.95).combined(with: .opacity))
-                }
-                .zIndex(100)
+                communityAlert
+                    .transition(.scale(scale: 0.96).combined(with: .opacity))
+                    .zIndex(100)
             }
         }
     }
 
-    private var customCommunityAlert: some View {
-        VStack(spacing: 0) {
-            // Header
-            VStack(spacing: 8) {
-                Image(systemName: "person.3.fill")
-                    .font(.system(size: 28))
-                    .foregroundColor(AppTheme.cyberCyan)
-                    .shadow(color: AppTheme.cyberCyan.opacity(0.5), radius: 8)
-                    .padding(.top, 8)
-                
-                Text("Tham gia cộng đồng")
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
-                
-                Text("Vui lòng chọn nhóm Zalo bạn muốn tham gia để nhận key và hỗ trợ.")
-                    .font(.system(size: 13))
-                    .foregroundColor(.white.opacity(0.6))
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 24)
-            }
-            .padding(.vertical, 20)
-            
-            Divider().background(Color.white.opacity(0.1))
-            
-            // Buttons
-            VStack(spacing: 12) {
-                Button {
-                    Haptics.light()
-                    if let url = URL(string: "https://zalo.me/g/i1bffsvvb6wijb3l0gc8") {
-                        UIApplication.shared.open(url)
-                    }
-                    withAnimation { showCommunityAlert = false }
-                } label: {
-                    HStack {
-                        Image(systemName: "bubble.left.and.bubble.right.fill")
-                        Text("BOX 1 - NovaX")
-                    }
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(
-                        LinearGradient(
-                            colors: [AppTheme.cyberCyan.opacity(0.3), AppTheme.cyberPurple.opacity(0.2)],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .cornerRadius(12)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(AppTheme.cyberCyan.opacity(0.5), lineWidth: 1)
-                    )
-                }
-                
-                Button {
-                    Haptics.light()
-                    if let url = URL(string: "https://zalo.me/g/wbsfu5a3mcp4uodtebft") {
-                        UIApplication.shared.open(url)
-                    }
-                    withAnimation { showCommunityAlert = false }
-                } label: {
-                    HStack {
-                        Image(systemName: "bubble.left.and.bubble.right.fill")
-                        Text("BOX 2 - NovaX")
-                    }
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(
-                        LinearGradient(
-                            colors: [AppTheme.cyberPurple.opacity(0.3), AppTheme.cyberCyan.opacity(0.2)],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .cornerRadius(12)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(AppTheme.cyberPurple.opacity(0.5), lineWidth: 1)
-                    )
-                }
-            }
-            .padding(16)
-            
-            Divider().background(Color.white.opacity(0.1))
-            
-            Button {
-                Haptics.light()
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                    showCommunityAlert = false
-                }
-            } label: {
-                Text("Đóng")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundColor(.white.opacity(0.7))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-            }
-        }
-        .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(AppTheme.cyberSurface.opacity(0.92))
-                .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(.ultraThinMaterial))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(AppTheme.cyberBorderGradient, lineWidth: 1.5)
-        )
-        .shadow(color: AppTheme.cyberCyan.opacity(0.25), radius: 35, x: 0, y: 15)
-        .shadow(color: .black.opacity(0.5), radius: 40, x: 0, y: 20)
-        .padding(.horizontal, 32)
-        .buttonStyle(PressableButtonStyle())
+    // MARK: - Sections
+
+    private var logoBlock: some View {
+        AppLogo(size: 92)
+            .background(Color.white)
+            .overlay(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(Color.black.opacity(0.14), lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.13), radius: 22, x: 0, y: 12)
+            .saturation(0)
+            .contrast(1.08)
+            .opacity(logoAppear ? 1 : 0)
+            .scaleEffect(logoAppear ? 1 : 0.96)
     }
 
-    // MARK: - Grid Background
-
-    private var gridBackground: some View {
-        ZStack {
-
-            GeometryReader { geo in
-                let spacing: CGFloat = 40
-                // Vertical lines
-                ForEach(0..<Int(geo.size.width / spacing) + 1, id: \.self) { i in
-                    let x = CGFloat(i) * spacing
-                    Path { p in
-                        p.move(to: CGPoint(x: x, y: 0))
-                        p.addLine(to: CGPoint(x: x, y: geo.size.height))
-                    }
-                    .stroke(AppTheme.accent.opacity(0.06), lineWidth: 0.5)
-                }
-                // Horizontal lines
-                ForEach(0..<Int(geo.size.height / spacing) + 1, id: \.self) { i in
-                    let y = CGFloat(i) * spacing
-                    Path { p in
-                        p.move(to: CGPoint(x: 0, y: y))
-                        p.addLine(to: CGPoint(x: geo.size.width, y: y))
-                    }
-                    .stroke(AppTheme.accent.opacity(0.06), lineWidth: 0.5)
-                }
-            }
-            .opacity(gridOpacity)
-
-            // Corner accents
-            VStack {
-                HStack {
-                    cornerAccent(alignment: .topLeading)
-                    Spacer()
-                    cornerAccent(alignment: .topTrailing)
-                }
-                Spacer()
-                HStack {
-                    cornerAccent(alignment: .bottomLeading)
-                    Spacer()
-                    cornerAccent(alignment: .bottomTrailing)
-                }
-            }
-            .padding(12)
-            .opacity(gridOpacity * 0.8)
-        }
-    }
-
-    private func cornerAccent(alignment: Alignment) -> some View {
-        ZStack {
-            if alignment == .topLeading || alignment == .bottomTrailing {
-                Path { p in
-                    p.move(to: CGPoint(x: 0, y: 20))
-                    p.addLine(to: CGPoint(x: 0, y: 0))
-                    p.addLine(to: CGPoint(x: 20, y: 0))
-                }
-                .stroke(AppTheme.accent.opacity(0.5), lineWidth: 1.5)
-            } else {
-                Path { p in
-                    p.move(to: CGPoint(x: 20, y: 0))
-                    p.addLine(to: CGPoint(x: 0, y: 0))
-                    p.addLine(to: CGPoint(x: 0, y: 20))
-                }
-                .stroke(AppTheme.accent.opacity(0.5), lineWidth: 1.5)
-            }
-        }
-        .frame(width: 20, height: 20)
-    }
-
-    // MARK: - Scan Line Effect
-
-    private var scanLineEffect: some View {
-        GeometryReader { geo in
-            Rectangle()
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            AppTheme.accent.opacity(0),
-                            AppTheme.accent.opacity(0.08),
-                            AppTheme.accent.opacity(0)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .frame(height: 120)
-                .offset(y: scanLineOffset)
-                .onAppear {
-                    withAnimation(
-                        .linear(duration: 4.0)
-                        .repeatForever(autoreverses: false)
-                    ) {
-                        scanLineOffset = geo.size.height + 200
-                    }
-                }
-        }
-        .ignoresSafeArea()
-    }
-
-    // MARK: - Logo Section
-
-    private var logoSection: some View {
-        ZStack {
-            // Outer glow ring
-            Circle()
-                .stroke(AppTheme.accent.opacity(0.3), lineWidth: 1)
-                .frame(width: 130, height: 130)
-                .opacity(glowOpacity)
-                .rotationEffect(.degrees(ringRotation))
-
-            // Inner glow blur
-            Circle()
-                .stroke(AppTheme.accent.opacity(0.15), lineWidth: 20)
-                .frame(width: 130, height: 130)
-                .blur(radius: 20)
-                .opacity(glowOpacity)
-
-            // Dashed orbit
-            Circle()
-                .stroke(style: StrokeStyle(lineWidth: 1, dash: [4, 8]))
-                .frame(width: 150, height: 150)
-                .opacity(glowOpacity * 0.5)
-                .rotationEffect(.degrees(-ringRotation * 0.7))
-
-            // Logo container
-            ZStack {
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                AppTheme.accent.opacity(0.2),
-                                AppTheme.accent.opacity(0.05)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 96, height: 96)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 28, style: .continuous)
-                            .stroke(AppTheme.accent.opacity(0.4), lineWidth: 1.5)
-                    )
-
-                if let icon = UIImage(named: "AppIcon60x60")
-                    ?? Bundle.main.path(forResource: "AppIcon60x60@2x", ofType: "png").flatMap(UIImage.init(contentsOfFile:))
-                    ?? UIImage(named: "AppIcon") {
-                    Image(uiImage: icon)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 88, height: 88)
-                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                } else {
-                    Image(systemName: "bolt.fill")
-                        .font(.system(size: 36, weight: .bold))
-                        .foregroundStyle(AppTheme.accent)
-                }
-            }
-            .scaleEffect(logoScale * pulseScale)
-            .opacity(logoOpacity)
-            .onAppear {
-                withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
-                    pulseScale = 1.05
-                }
-            }
-
-            // Particles
-            ForEach(0..<8, id: \.self) { i in
-                let angle = Double(i) * (360.0 / 8.0)
-                let radius: Double = 88
-                let x = cos(angle * .pi / 180) * radius
-                let y = sin(angle * .pi / 180) * radius
-
-                Circle()
-                    .fill(AppTheme.accent)
-                    .frame(width: 2, height: 2)
-                    .offset(x: x, y: y)
-                    .opacity(particleOpacity * (Double(i % 2 == 0 ? 1 : 0.4)))
-            }
-        }
-    }
-
-    // MARK: - Title Section
-
-    private var titleSection: some View {
-        VStack(spacing: 8) {
+    private var brandTitle: some View {
+        VStack(spacing: 9) {
             Text("NovaX")
-                .font(.system(size: 32, weight: .black, design: .rounded))
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [AppTheme.accent, AppTheme.accentLight],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .shadow(color: AppTheme.accent.opacity(0.5), radius: 8)
+                .font(.system(size: 40, weight: .bold, design: .rounded))
+                .foregroundStyle(AppTheme.ink)
+                .kerning(-1.5)
+                .lineSpacing(0)
 
             Text("KHAI PHÁ HỆ THỐNG")
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                .foregroundStyle(AppTheme.accent.opacity(0.7))
-                .tracking(3)
-
-            HStack(spacing: 4) {
-                Rectangle().frame(width: 24, height: 1).foregroundColor(AppTheme.accent.opacity(0.4))
-                Image(systemName: "bolt.fill")
-                    .font(.system(size: 8))
-                    .foregroundColor(AppTheme.accent.opacity(0.6))
-                Rectangle().frame(width: 24, height: 1).foregroundColor(AppTheme.accent.opacity(0.4))
-            }
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(AppTheme.grey500)
+                .tracking(2.2)
         }
-        .opacity(logoOpacity)
+        .opacity(logoAppear ? 1 : 0)
+        .offset(y: logoAppear ? 0 : 8)
     }
 
-    // MARK: - Input Card
-
-    private var inputCardSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
+    private var activationCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
             // Header
-            HStack(spacing: 8) {
+            HStack(spacing: 13) {
                 ZStack {
-                    Circle()
-                        .fill(AppTheme.accent.opacity(0.15))
-                        .frame(width: 28, height: 28)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(AppTheme.ink, lineWidth: 1)
+                        .background(Color.white)
+                        .frame(width: 42, height: 42)
                     Image(systemName: "key.fill")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(AppTheme.accent)
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(AppTheme.ink)
                 }
-
                 VStack(alignment: .leading, spacing: 2) {
                     Text("KÍCH HOẠT HỆ THỐNG")
-                        .font(.system(size: 12, weight: .bold, design: .monospaced))
-                        .foregroundColor(AppTheme.accent)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(AppTheme.ink)
                     Text("Nhập license key để bắt đầu")
-                        .font(.system(size: 10))
-                        .foregroundColor(.white.opacity(0.4))
+                        .font(.system(size: 12))
+                        .foregroundStyle(AppTheme.grey500)
                 }
-
                 Spacer()
-
-                // Status indicator
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(auth.authState == .verified ? Color.green : AppTheme.accent.opacity(0.5))
-                        .frame(width: 6, height: 6)
-                    Text(auth.authState == .verified ? "ON" : "OFF")
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                        .foregroundColor(auth.authState == .verified ? .green : .white.opacity(0.4))
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.white.opacity(0.05))
-                .clipShape(Capsule())
+                statusPill
             }
 
-            Divider().background(AppTheme.accent.opacity(0.2))
+            Rectangle()
+                .fill(AppTheme.grey200)
+                .frame(height: 1)
+                .padding(.vertical, 18)
 
-            // Key input
-            VStack(alignment: .leading, spacing: 6) {
-                Text("MÃ KÍCH HOẠT")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.4))
-                    .tracking(1)
+            // Key label + input
+            Text("MÃ KÍCH HOẠT")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(AppTheme.grey700)
+                .tracking(0.7)
+                .padding(.bottom, 9)
 
-                HStack(spacing: 10) {
+            HStack(spacing: 11) {
+                Image(systemName: "key.fill")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(AppTheme.ink)
+                    .frame(width: 22)
+
+                Group {
                     if showKey {
                         TextField("Nhập license key", text: $auth.licenseKey)
-                            .font(.system(size: 14, design: .monospaced))
-                            .foregroundColor(.white)
-                            .autocapitalization(.none)
-                            .disableAutocorrection(true)
                     } else {
                         SecureField("Nhập license key", text: $auth.licenseKey)
-                            .font(.system(size: 14, design: .monospaced))
-                            .foregroundColor(.white)
-                            .autocapitalization(.none)
-                            .disableAutocorrection(true)
-                    }
-
-                    Button(action: { showKey.toggle() }) {
-                        Image(systemName: showKey ? "eye.slash" : "eye")
-                            .font(.system(size: 13))
-                            .foregroundColor(AppTheme.accent.opacity(0.6))
                     }
                 }
-                .padding(12)
-                .background(Color.white.opacity(0.04))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(AppTheme.accent.opacity(0.2), lineWidth: 1)
-                )
-            }
+                .textInputAutocapitalization(.never)
+                .disableAutocorrection(true)
+                .font(.system(size: 16, design: .monospaced))
+                .foregroundStyle(AppTheme.ink)
 
-            // HWID
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
+                Button {
+                    Haptics.light()
+                    showKey.toggle()
+                } label: {
+                    Image(systemName: showKey ? "eye.slash.fill" : "eye.fill")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(AppTheme.ink)
+                        .frame(width: 40, height: 40)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 15)
+            .frame(height: 58)
+            .background(Color(red: 0.984, green: 0.984, blue: 0.988))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(AppTheme.grey300, lineWidth: 1)
+            )
+
+            // HWID row
+            HStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text("HWID")
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.4))
+                        .tracking(0.5)
+                        .foregroundStyle(AppTheme.grey500)
                     Text(auth.hwid)
                         .font(.system(size: 12, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.7))
+                        .foregroundStyle(AppTheme.grey700)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
-
                 Spacer()
-
-                Button(action: {
+                Button {
                     Haptics.light()
                     UIPasteboard.general.string = auth.hwid
-                }) {
-                    Image(systemName: "doc.on.doc")
-                        .font(.system(size: 11))
-                        .foregroundColor(AppTheme.accent)
-                        .frame(width: 30, height: 30)
-                        .background(AppTheme.accent.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    Haptics.success()
+                } label: {
+                    Image(systemName: "doc.on.doc.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(AppTheme.ink)
+                        .frame(width: 36, height: 36)
+                        .background(Color.white)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .stroke(AppTheme.grey200, lineWidth: 1)
+                        )
                 }
+                .buttonStyle(.plain)
             }
-            .padding(10)
-            .background(Color.white.opacity(0.02))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 13)
+            .background(AppTheme.grey50)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(AppTheme.grey100, lineWidth: 1)
+            )
+            .padding(.top, 14)
         }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(AppTheme.cyberSurface.opacity(0.7))
-                .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(.ultraThinMaterial))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(AppTheme.cyberBorderGradient, lineWidth: 1.2)
-                )
-                .shadow(color: AppTheme.cyberCyan.opacity(0.1), radius: 20, y: 8)
-        )
-        .offset(y: cardOffset)
-        .opacity(cardOpacity)
-    }
-
-    // MARK: - Error
-
-    private func errorSection(_ msg: String) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 12))
-                .foregroundColor(.red)
-            Text(msg)
-                .font(.system(size: 12))
-                .foregroundColor(.red)
-                .multilineTextAlignment(.center)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity)
-        .background(Color.red.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .padding(20)
+        .background(Color.white)
         .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(Color.red.opacity(0.3), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(AppTheme.grey200, lineWidth: 1)
         )
-        .transition(.move(edge: .top).combined(with: .opacity))
+        .shadow(color: Color.black.opacity(0.07), radius: 22, x: 0, y: 12)
+        .opacity(cardOpacity)
+        .offset(y: cardOffset)
     }
 
-    // MARK: - Activate Button
+    private var statusPill: some View {
+        let isOn = auth.authState == .verified
+        return HStack(spacing: 4) {
+            Circle()
+                .fill(isOn ? AppTheme.ink : AppTheme.grey400)
+                .frame(width: 6, height: 6)
+            Text(isOn ? "ON" : "OFF")
+                .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                .foregroundStyle(isOn ? AppTheme.ink : AppTheme.grey500)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .background(AppTheme.grey50)
+        .clipShape(Capsule())
+    }
 
     private var activateButton: some View {
-        Button(action: {
+        Button {
             Haptics.medium()
             Task { await auth.login() }
-        }) {
-            ZStack {
+        } label: {
+            HStack(spacing: 9) {
                 if case .loading(let text) = auth.authState {
-                    HStack(spacing: 10) {
-                        ProgressView()
-                            .tint(.white)
-                            .scaleEffect(0.8)
-                        Text(text)
-                            .font(.system(size: 14, weight: .semibold, design: .monospaced))
-                    }
-                    .foregroundColor(.white)
+                    ProgressView()
+                        .tint(.white)
+                        .scaleEffect(0.85)
+                    Text(text)
+                        .font(.system(size: 15, weight: .semibold))
                 } else {
-                    HStack(spacing: 8) {
-                        Image(systemName: "bolt.shield.fill")
-                            .font(.system(size: 15))
-                        Text("XÁC THỰC NGAY")
-                            .font(.system(size: 14, weight: .black, design: .monospaced))
-                    }
-                    .foregroundColor(.white)
+                    Image(systemName: "checkmark.shield.fill")
+                        .font(.system(size: 17, weight: .semibold))
+                    Text("XÁC THỰC NGAY")
+                        .font(.system(size: 15, weight: .semibold))
+                        .tracking(0.2)
                 }
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
+            .foregroundStyle(.white)
         }
-        .buttonStyle(CyberGlowButtonStyle(
-            cornerRadius: 14,
-            isEnabled: !auth.licenseKey.trimmingCharacters(in: .whitespaces).isEmpty
-        ))
+        .buttonStyle(PrimaryButtonStyle())
+        .opacity(cardOpacity)
+        .offset(y: cardOffset)
         .disabled(auth.licenseKey.trimmingCharacters(in: .whitespaces).isEmpty)
-        .offset(y: cardOffset)
-        .opacity(cardOpacity)
     }
 
-    // MARK: - OS Support Card
-
-    private var osSupportCard: some View {
-        let isSupported = appState.isSupported
-        
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
+    private var deviceCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 7) {
                 Image(systemName: "iphone")
-                    .font(.system(size: 11))
-                    .foregroundColor(AppTheme.accent.opacity(0.7))
+                    .font(.system(size: 13))
                 Text("THÔNG TIN THIẾT BỊ")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundColor(AppTheme.accent.opacity(0.7))
-                    .tracking(1)
+                    .font(.system(size: 12, weight: .semibold))
+                    .tracking(0.4)
             }
+            .foregroundStyle(AppTheme.ink)
 
-            HStack {
-                Text("Phiên bản iOS:")
-                    .font(.system(size: 12))
-                    .foregroundColor(.white.opacity(0.6))
-                Spacer()
-                Text("\(UIDevice.current.systemVersion)")
-                    .font(.system(size: 12, weight: .bold, design: .monospaced))
-                    .foregroundColor(.white)
-            }
-            
-            HStack {
-                Text("Trạng thái hỗ trợ:")
-                    .font(.system(size: 12))
-                    .foregroundColor(.white.opacity(0.6))
-                Spacer()
-                Text(appState.accessLevelDescription.uppercased())
-                    .font(.system(size: 12, weight: .bold, design: .monospaced))
-                    .foregroundColor(isSupported ? .green : .red)
-            }
+            Divider().background(AppTheme.grey200)
+
+            deviceRow("Phiên bản iOS:", value: "iOS \(AppInfo.osVersion)", isMonoValue: true)
+            deviceRow("Trạng thái hỗ trợ:",
+                      value: appState.accessLevelDescription.uppercased(),
+                      isMonoValue: true, valueColor: appState.isSupported ? AppTheme.ink : AppTheme.ink)
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color(uiColor: .systemBackground).opacity(0.1))
-                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(.ultraThinMaterial))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(
-                            LinearGradient(
-                                colors: [Color.white.opacity(0.2), Color.white.opacity(0.02)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                )
+        .padding(19)
+        .background(Color.white)
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(AppTheme.grey200, lineWidth: 1)
         )
-        .offset(y: cardOffset)
+        .shadow(color: Color.black.opacity(0.06), radius: 18, x: 0, y: 10)
         .opacity(cardOpacity)
+        .offset(y: cardOffset)
     }
 
-    // MARK: - Admin Contact Card
+    private func deviceRow(_ label: String, value: String, isMonoValue: Bool = false, valueColor: Color = AppTheme.ink) -> some View {
+        HStack {
+            Text(label)
+                .font(.system(size: 14))
+                .foregroundStyle(AppTheme.grey700)
+            Spacer()
+            Text(value)
+                .font(.system(size: isMonoValue ? 12 : 14, weight: .semibold, design: isMonoValue ? .monospaced : .rounded))
+                .foregroundStyle(valueColor)
+        }
+        .padding(.vertical, 4)
+    }
 
-    private var adminContactCard: some View {
+    private var developerCard: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header
-            HStack(spacing: 8) {
+            HStack(spacing: 13) {
                 ZStack {
-                    Circle()
-                        .fill(AppTheme.accent.opacity(0.15))
-                        .frame(width: 32, height: 32)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(AppTheme.ink, lineWidth: 1)
+                        .background(Color.white)
+                        .frame(width: 42, height: 42)
                     Image(systemName: "person.fill")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(AppTheme.accent)
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(AppTheme.ink)
                 }
-
                 VStack(alignment: .leading, spacing: 2) {
                     Text("NHÀ PHÁT TRIỂN")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundColor(AppTheme.accent)
-                        .tracking(1)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(AppTheme.ink)
                     Text("Liên hệ hỗ trợ trực tiếp")
-                        .font(.system(size: 10))
-                        .foregroundColor(.white.opacity(0.35))
+                        .font(.system(size: 11))
+                        .foregroundStyle(AppTheme.grey500)
                 }
                 Spacer()
             }
 
-            Divider().background(AppTheme.accent.opacity(0.15))
-                .padding(.vertical, 10)
+            Rectangle()
+                .fill(AppTheme.grey200)
+                .frame(height: 1)
+                .padding(.vertical, 16)
 
             // Admin info
             HStack(spacing: 12) {
-                // Avatar
                 ZStack {
                     Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [AppTheme.accent.opacity(0.35), AppTheme.accent.opacity(0.12)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+                        .fill(AppTheme.ink)
                         .frame(width: 44, height: 44)
-                        .overlay(
-                            Circle().stroke(AppTheme.accent.opacity(0.4), lineWidth: 1.5)
-                        )
                     Text("MK")
                         .font(.system(size: 15, weight: .black, design: .monospaced))
-                        .foregroundColor(.white)
+                        .foregroundStyle(Color.white)
                 }
-
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Trần Minh Khải")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(.white.opacity(0.95))
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(AppTheme.ink)
                     Text("Nhà phát triển NovaX")
                         .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(AppTheme.accent.opacity(0.7))
+                        .foregroundStyle(AppTheme.grey500)
                     HStack(spacing: 4) {
                         Image(systemName: "phone.fill")
                             .font(.system(size: 9))
-                            .foregroundColor(AppTheme.accent.opacity(0.5))
+                            .foregroundStyle(AppTheme.grey500)
                         Text("0342145707")
                             .font(.system(size: 11, design: .monospaced))
-                            .foregroundColor(.white.opacity(0.6))
+                            .foregroundStyle(AppTheme.grey600)
                     }
                 }
-
                 Spacer()
             }
-            .padding(.vertical, 2)
-            
-            // Buttons
-            HStack(spacing: 12) {
-                Button(action: {
+
+            HStack(spacing: 10) {
+                Button {
                     Haptics.light()
                     if let url = URL(string: "https://zalo.me/0342145707") {
                         UIApplication.shared.open(url)
                     }
-                }) {
-                    HStack {
+                } label: {
+                    HStack(spacing: 7) {
                         Image(systemName: "message.fill")
+                            .font(.system(size: 13, weight: .semibold))
                         Text("Liên hệ Zalo")
+                            .font(.system(size: 13, weight: .semibold))
                     }
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
+                    .frame(height: 44)
+                    .background(AppTheme.ink)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
-                .buttonStyle(PremiumButtonStyle(color: Color(hex: 0x0068FF), cornerRadius: 8))
-                
-                Button(action: {
+
+                Button {
                     Haptics.light()
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                         showCommunityAlert = true
                     }
-                }) {
-                    HStack {
+                } label: {
+                    HStack(spacing: 7) {
                         Image(systemName: "person.3.fill")
+                            .font(.system(size: 13, weight: .semibold))
                         Text("Cộng đồng")
+                            .font(.system(size: 13, weight: .semibold))
                     }
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundColor(.white)
+                    .foregroundStyle(AppTheme.ink)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
+                    .frame(height: 44)
+                    .background(Color.white)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(AppTheme.ink, lineWidth: 1)
+                    )
                 }
-                .buttonStyle(PremiumButtonStyle(cornerRadius: 8))
             }
-            .padding(.top, 12)
+            .padding(.top, 16)
         }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(uiColor: .systemBackground).opacity(0.1))
-                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.ultraThinMaterial))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(
-                            LinearGradient(
-                                colors: [Color.white.opacity(0.2), Color.white.opacity(0.02)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                )
+        .padding(19)
+        .background(Color.white)
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(AppTheme.grey200, lineWidth: 1)
         )
-        .offset(y: cardOffset)
+        .shadow(color: Color.black.opacity(0.06), radius: 18, x: 0, y: 10)
         .opacity(cardOpacity)
+        .offset(y: cardOffset)
     }
 
-    // MARK: - Animation
+    // MARK: - Community alert
+
+    private var communityAlert: some View {
+        ZStack {
+            Color.black.opacity(0.35)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                        showCommunityAlert = false
+                    }
+                }
+
+            VStack(spacing: 0) {
+                VStack(spacing: 8) {
+                    Image(systemName: "person.3.fill")
+                        .font(.system(size: 28))
+                        .foregroundStyle(AppTheme.ink)
+                        .padding(.top, 8)
+                    Text("Tham gia cộng đồng")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(AppTheme.ink)
+                    Text("Vui lòng chọn nhóm Zalo bạn muốn tham gia để nhận key và hỗ trợ.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(AppTheme.grey600)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
+                }
+                .padding(.vertical, 20)
+
+                Rectangle().fill(AppTheme.grey200).frame(height: 1)
+
+                VStack(spacing: 12) {
+                    communityButton(title: "BOX 1 - NovaX",
+                                    url: "https://zalo.me/g/i1bffsvvb6wijb3l0gc8")
+                    communityButton(title: "BOX 2 - NovaX",
+                                    url: "https://zalo.me/g/wbsfu5a3mcp4uodtebft")
+                }
+                .padding(16)
+
+                Rectangle().fill(AppTheme.grey200).frame(height: 1)
+
+                Button {
+                    Haptics.light()
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                        showCommunityAlert = false
+                    }
+                } label: {
+                    Text("Đóng")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(AppTheme.grey600)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                }
+            }
+            .background(Color.white)
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .shadow(color: Color.black.opacity(0.18), radius: 35, x: 0, y: 15)
+            .padding(.horizontal, 28)
+        }
+    }
+
+    private func communityButton(title: String, url: String) -> some View {
+        Button {
+            Haptics.light()
+            if let url = URL(string: url) { UIApplication.shared.open(url) }
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                showCommunityAlert = false
+            }
+        } label: {
+            HStack {
+                Image(systemName: "bubble.left.and.bubble.right.fill")
+                Text(title)
+            }
+            .font(.system(size: 15, weight: .bold))
+            .foregroundStyle(AppTheme.ink)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(AppTheme.grey50)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(AppTheme.ink, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Error section (nếu có)
+
+    @ViewBuilder
+    private func errorSection(_ msg: String) -> some View {
+        if case .error(let msg) = auth.authState {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 12))
+                    .foregroundColor(AppTheme.ink)
+                Text(msg)
+                    .font(.system(size: 12))
+                    .foregroundColor(AppTheme.ink)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity)
+            .background(AppTheme.grey50)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(AppTheme.ink, lineWidth: 1)
+            )
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
+            .transition(.move(edge: .top).combined(with: .opacity))
+        }
+    }
+
+    // MARK: - Entry animation
 
     private func startEntryAnimation() {
-        withAnimation(.easeOut(duration: 0.8)) {
-            logoScale = 1.0
-            logoOpacity = 1.0
-            glowOpacity = 1.0
-            particleOpacity = 1.0
-            gridOpacity = 1.0
+        withAnimation(.easeOut(duration: 0.6)) {
+            logoAppear = true
         }
-
-        withAnimation(.easeOut(duration: 1.0).delay(0.3)) {
-            cardOpacity = 1.0
+        withAnimation(.easeOut(duration: 0.55).delay(0.35)) {
+            cardOpacity = 1
             cardOffset = 0
-        }
-
-        withAnimation(.linear(duration: 6.0).repeatForever(autoreverses: false)) {
-            ringRotation = 360
         }
     }
 }

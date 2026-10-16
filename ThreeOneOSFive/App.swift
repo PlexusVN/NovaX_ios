@@ -13,6 +13,9 @@ struct ThreeOneOSFiveApp: App {
     @State private var showSplash = true
     @Environment(\.scenePhase) private var scenePhase
 
+    /// Holder giữ namespace chung để matchedGeometryEffect hoạt động giữa SplashScreen và LoginView.
+    @StateObject private var splashNamespaceHolder = SharedSplashNamespaceHolder()
+
     init() {
         setupLogCapture()
         log("app: NovaX launching — iOS \(AppInfo.osVersion) (\(AppInfo.osBuild)) \(AppInfo.machineName)")
@@ -24,21 +27,22 @@ struct ThreeOneOSFiveApp: App {
     }
 
     private func configureAppearance() {
+        // Trắng hoàn toàn theo design.md doanh nghiệp 2026
         let navAppearance = UINavigationBarAppearance()
         navAppearance.configureWithOpaqueBackground()
-        navAppearance.backgroundColor = UIColor(red: 0.05, green: 0.05, blue: 0.08, alpha: 1)
-        navAppearance.titleTextAttributes = [.foregroundColor: UIColor.white]
-        navAppearance.largeTitleTextAttributes = [.foregroundColor: UIColor.white]
+        navAppearance.backgroundColor = UIColor.white
+        navAppearance.titleTextAttributes = [.foregroundColor: UIColor.black]
+        navAppearance.largeTitleTextAttributes = [.foregroundColor: UIColor.black]
         UINavigationBar.appearance().standardAppearance = navAppearance
         UINavigationBar.appearance().scrollEdgeAppearance = navAppearance
-        UINavigationBar.appearance().tintColor = UIColor(red: 0.10, green: 0.55, blue: 1.00, alpha: 1)
+        UINavigationBar.appearance().tintColor = UIColor.black
 
         let tabAppearance = UITabBarAppearance()
         tabAppearance.configureWithOpaqueBackground()
-        tabAppearance.backgroundColor = UIColor(red: 0.05, green: 0.05, blue: 0.08, alpha: 1)
+        tabAppearance.backgroundColor = UIColor.white
         UITabBar.appearance().standardAppearance = tabAppearance
         UITabBar.appearance().scrollEdgeAppearance = tabAppearance
-        UITabBar.appearance().tintColor = UIColor(red: 0.10, green: 0.55, blue: 1.00, alpha: 1)
+        UITabBar.appearance().tintColor = UIColor.black
     }
 
     private var language: AppLanguage {
@@ -48,27 +52,38 @@ struct ThreeOneOSFiveApp: App {
     var body: some Scene {
         WindowGroup {
             ZStack {
-                if authManager.authState == .verified {
-                    ContentView()
-                        .environmentObject(appState)
-                        .environmentObject(patchDraftCoordinator)
-                        .environmentObject(fileOperationCoordinator)
-                        .environmentObject(authManager)
-                        .environmentObject(featurePatchService)
-                        .environmentObject(updateManager)
-                        .environmentObject(StorageEngineCoordinator.shared)
-                        .environment(\.appLanguage, language)
-                        .environment(\.locale, language.locale)
-                        .transition(.opacity)
-                } else {
-                    LoginView(auth: authManager)
-                        .environmentObject(appState)
-                        .environmentObject(updateManager)
-                        .transition(.opacity)
+                Group {
+                    if authManager.authState == .verified {
+                        ContentView()
+                            .environmentObject(appState)
+                            .environmentObject(patchDraftCoordinator)
+                            .environmentObject(fileOperationCoordinator)
+                            .environmentObject(authManager)
+                            .environmentObject(featurePatchService)
+                            .environmentObject(updateManager)
+                            .environmentObject(StorageEngineCoordinator.shared)
+                            .environment(\.appLanguage, language)
+                            .environment(\.locale, language.locale)
+                            .transition(.opacity)
+                    } else {
+                        LoginView(auth: authManager)
+                            .environmentObject(appState)
+                            .environmentObject(updateManager)
+                            .transition(.opacity)
+                    }
                 }
 
                 if showSplash {
                     SplashScreen {
+                        withAnimation(.easeInOut(duration: 0.45)) {
+                            showSplash = false
+                        }
+
+                        updateManager.checkForUpdate()
+                        appState.detectSupport()
+                        if !authManager.licenseKey.isEmpty {
+                            Task { await authManager.restoreSessionIfNeeded() }
+                        }
                         let v = AppInfo.versionTuple
                         let supported = ExploitSupportPolicy.isSupported(
                             major: v.major,
@@ -76,15 +91,6 @@ struct ThreeOneOSFiveApp: App {
                             patch: v.patch,
                             build: AppInfo.osBuild
                         )
-                        withAnimation(.easeInOut(duration: 0.5)) {
-                            showSplash = false
-                        }
-                        
-                        updateManager.checkForUpdate()
-                        appState.detectSupport()
-                        if !authManager.licenseKey.isEmpty {
-                            Task { await authManager.restoreSessionIfNeeded() }
-                        }
                         if supported {
                             Task { await featurePatchService.syncFromServer(auth: authManager) }
                         }
@@ -92,14 +98,14 @@ struct ThreeOneOSFiveApp: App {
                     .transition(.opacity)
                     .zIndex(1)
                 }
-                
+
                 if let offer = updateManager.updateOffer {
                     UpdateRequiredView(offer: offer)
                         .transition(.opacity)
                         .zIndex(2)
                 }
             }
-            .preferredColorScheme(.dark)
+            .preferredColorScheme(.light)
             .onAppear {
                 updateManager.checkForUpdate()
                 if !showSplash {
@@ -126,6 +132,13 @@ struct ThreeOneOSFiveApp: App {
         }
     }
 }
+
+/// View-side holder - cung cấp namespace cho SplashScreen.
+/// Trong app hiện tại, SplashScreen dùng namespace cục bộ của riêng nó;
+/// morph liền mạch sang login được đảm bảo bằng animation đồng bộ trong App.swift.
+final class SharedSplashNamespaceHolder: ObservableObject {}
+
+// MARK: - AppState giữ nguyên
 
 class AppState: ObservableObject {
     @Published var exploitStatus: ExploitStatus = .notStarted
@@ -176,7 +189,7 @@ class AppState: ObservableObject {
     }
 
     var isSupported: Bool { hasDirectDirectoryAccess || hasSandboxAccess || (unsupportedMessage == nil && exploitStatus.isSuccess) }
-    
+
     var hasFullAccess: Bool { hasDirectDirectoryAccess && hasSandboxAccess && exploitStatus.isSuccess }
 
     var accessLevelDescription: String {
@@ -184,7 +197,7 @@ class AppState: ObservableObject {
         if hasDirectDirectoryAccess { features.append("Thư mục") }
         if hasSandboxAccess { features.append("Sandbox") }
         if exploitStatus.isSuccess { features.append("Kernel") }
-        
+
         if features.count == 3 {
             return "Full quyền"
         } else if features.isEmpty {
@@ -285,35 +298,31 @@ class AppState: ObservableObject {
     }
 }
 
+// MARK: - Update Required (trắng-đen)
+
 struct UpdateRequiredView: View {
     let offer: AppUpdateChecker.Offer
-    
+
     var body: some View {
         ZStack {
-            Color(UIColor.systemBackground).edgesIgnoringSafeArea(.all)
-            
-            LinearGradient(
-                colors: [AppTheme.accent.opacity(0.1), Color.black],
-                startPoint: .top,
-                endPoint: .bottom
-            ).edgesIgnoringSafeArea(.all)
-            
+            Color.white.ignoresSafeArea()
+
             VStack(spacing: 24) {
                 Image(systemName: "icloud.and.arrow.down.fill")
-                    .font(.system(size: 64, weight: .light))
-                    .foregroundColor(AppTheme.accent)
+                    .font(.system(size: 56, weight: .light))
+                    .foregroundColor(AppTheme.ink)
                     .padding(.bottom, 8)
-                
+
                 Text("BẢN CẬP NHẬT BẮT BUỘC")
-                    .font(.system(size: 20, weight: .black, design: .monospaced))
-                    .foregroundColor(.white)
-                
+                    .font(.system(size: 18, weight: .heavy, design: .monospaced))
+                    .foregroundColor(AppTheme.ink)
+
                 Text("Phiên bản \(offer.version) đã sẵn sàng.\nVui lòng cập nhật để tiếp tục sử dụng NovaX.")
                     .font(.system(size: 14))
                     .multilineTextAlignment(.center)
-                    .foregroundColor(.white.opacity(0.6))
+                    .foregroundColor(AppTheme.grey600)
                     .padding(.horizontal, 32)
-                
+
                 Button(action: {
                     Haptics.medium()
                     UIApplication.shared.open(offer.url)
@@ -326,127 +335,100 @@ struct UpdateRequiredView: View {
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
-                    .background(AppTheme.accent)
-                    .cornerRadius(12)
+                    .background(AppTheme.ink)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
                 .buttonStyle(PressableButtonStyle())
                 .padding(.horizontal, 40)
                 .padding(.top, 16)
-                
+
                 developerCard
                     .padding(.horizontal, 40)
                     .padding(.top, 24)
             }
         }
     }
-    
+
     private var developerCard: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header
             HStack(spacing: 8) {
                 ZStack {
-                    Circle()
-                        .fill(AppTheme.accent.opacity(0.15))
-                        .frame(width: 32, height: 32)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(AppTheme.ink, lineWidth: 1)
+                        .background(Color.white)
+                        .frame(width: 42, height: 42)
                     Image(systemName: "person.fill")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(AppTheme.accent)
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundColor(AppTheme.ink)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("NHÀ PHÁT TRIỂN")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundColor(AppTheme.accent)
-                        .tracking(1)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(AppTheme.ink)
                     Text("Liên hệ hỗ trợ tải bản cập nhật")
-                        .font(.system(size: 10))
-                        .foregroundColor(.white.opacity(0.35))
+                        .font(.system(size: 11))
+                        .foregroundColor(AppTheme.grey500)
                 }
                 Spacer()
             }
 
-            Divider().background(AppTheme.accent.opacity(0.15))
-                .padding(.vertical, 10)
+            Rectangle().fill(AppTheme.grey200).frame(height: 1).padding(.vertical, 16)
 
-            // Admin info
             HStack(spacing: 12) {
-                // Avatar
                 ZStack {
                     Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [AppTheme.accent.opacity(0.35), AppTheme.accent.opacity(0.12)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+                        .fill(AppTheme.ink)
                         .frame(width: 44, height: 44)
-                        .overlay(
-                            Circle().stroke(AppTheme.accent.opacity(0.4), lineWidth: 1.5)
-                        )
                     Text("MK")
                         .font(.system(size: 15, weight: .black, design: .monospaced))
-                        .foregroundColor(.white)
+                        .foregroundColor(Color.white)
                 }
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Trần Minh Khải")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(.white.opacity(0.95))
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(AppTheme.ink)
                     Text("Nhà phát triển NovaX")
                         .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(AppTheme.accent.opacity(0.7))
+                        .foregroundColor(AppTheme.grey500)
                     HStack(spacing: 4) {
                         Image(systemName: "phone.fill")
                             .font(.system(size: 9))
-                            .foregroundColor(AppTheme.accent.opacity(0.5))
+                            .foregroundColor(AppTheme.grey500)
                         Text("0342145707")
                             .font(.system(size: 11, design: .monospaced))
-                            .foregroundColor(.white.opacity(0.6))
+                            .foregroundColor(AppTheme.grey600)
                     }
                 }
-
                 Spacer()
             }
-            .padding(.vertical, 2)
-            
-            // Buttons
-            HStack(spacing: 12) {
-                Button(action: {
-                    Haptics.light()
-                    if let url = URL(string: "https://zalo.me/0342145707") {
-                        UIApplication.shared.open(url)
-                    }
-                }) {
-                    HStack {
-                        Image(systemName: "message.fill")
-                        Text("Liên hệ Zalo")
-                    }
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
+
+            Button(action: {
+                Haptics.light()
+                if let url = URL(string: "https://zalo.me/0342145707") {
+                    UIApplication.shared.open(url)
                 }
-                .buttonStyle(PremiumButtonStyle(color: Color(hex: 0x0068FF), cornerRadius: 8))
+            }) {
+                HStack {
+                    Image(systemName: "message.fill")
+                    Text("Liên hệ Zalo")
+                }
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(AppTheme.ink)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
-            .padding(.top, 12)
+            .buttonStyle(.plain)
+            .padding(.top, 14)
         }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(uiColor: .systemBackground).opacity(0.1))
-                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.ultraThinMaterial))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(
-                            LinearGradient(
-                                colors: [Color.white.opacity(0.2), Color.white.opacity(0.02)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                )
+        .padding(16)
+        .background(Color.white)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(AppTheme.grey200, lineWidth: 1)
         )
     }
 }

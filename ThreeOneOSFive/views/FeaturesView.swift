@@ -25,7 +25,7 @@ struct FeaturesView: View {
             }
             .navigationTitle("Chức năng")
             .navigationBarTitleDisplayMode(.inline)
-            .tint(AppTheme.accent)
+            .tint(AppTheme.ink)
             .toolbar {
                 if let showSystemDashboard = showSystemDashboard {
                     ToolbarItem(placement: .navigationBarTrailing) {
@@ -35,11 +35,11 @@ struct FeaturesView: View {
                         } label: {
                             Image(systemName: "gearshape.fill")
                                 .font(.system(size: 15, weight: .bold))
-                                .foregroundColor(AppTheme.cyberCyan)
+                                .foregroundStyle(AppTheme.ink)
                                 .frame(width: 32, height: 32)
-                                .background(Circle().fill(AppTheme.cyberSurface.opacity(0.8)))
-                                .overlay(Circle().stroke(AppTheme.cyberCyan.opacity(0.35), lineWidth: 1))
-                                .shadow(color: AppTheme.cyberCyan.opacity(0.3), radius: 6)
+                                .background(Color.white)
+                                .clipShape(Circle())
+                                .overlay(Circle().stroke(AppTheme.grey200, lineWidth: 1))
                         }
                     }
                 }
@@ -62,14 +62,14 @@ struct FeaturesView: View {
         .overlay {
             if showCategoryPicker {
                 ZStack {
-                    Color.black.opacity(0.6)
+                    Color.black.opacity(0.35)
                         .ignoresSafeArea()
                         .onTapGesture {
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                                 showCategoryPicker = false
                             }
                         }
-                    
+
                     customCategoryPicker
                         .transition(.scale(scale: 0.95).combined(with: .opacity))
                 }
@@ -83,13 +83,12 @@ struct FeaturesView: View {
     private var categoryPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                Image(systemName: "gamecontroller.fill")
+                Image(systemName: "square.grid.2x2.fill")
                     .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(AppTheme.cyberCyan)
-                    .shadow(color: AppTheme.cyberCyan.opacity(0.4), radius: 4)
+                    .foregroundStyle(AppTheme.ink)
                 Text("Danh mục")
                     .font(.system(size: 15, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
+                    .foregroundStyle(AppTheme.ink)
                 Spacer()
             }
 
@@ -97,11 +96,10 @@ struct FeaturesView: View {
                 HStack {
                     Spacer()
                     VStack(spacing: 8) {
-                        ProgressView()
-                            .tint(AppTheme.cyberCyan)
+                        ProgressView().tint(AppTheme.ink)
                         Text("Đang tải danh mục...")
                             .font(.system(size: 12, design: .monospaced))
-                            .foregroundColor(.white.opacity(0.3))
+                            .foregroundStyle(AppTheme.grey500)
                     }
                     .padding(.vertical, 16)
                     Spacer()
@@ -111,16 +109,12 @@ struct FeaturesView: View {
             }
         }
         .padding(16)
-        .background(
+        .background(Color.white)
+        .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(AppTheme.cyberSurface.opacity(0.65))
-                .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(.ultraThinMaterial))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(AppTheme.cyberBorderGradient, lineWidth: 1.2)
-                )
-                .shadow(color: AppTheme.cyberCyan.opacity(0.12), radius: 20, y: 8)
+                .stroke(AppTheme.grey200, lineWidth: 1)
         )
+        .shadow(color: Color.black.opacity(0.05), radius: 14, x: 0, y: 6)
     }
 
     private var categorySelect: some View {
@@ -133,37 +127,32 @@ struct FeaturesView: View {
             HStack(spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [AppTheme.cyberCyan.opacity(0.2), AppTheme.cyberPurple.opacity(0.2)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+                        .fill(AppTheme.ink)
+                        .frame(width: 36, height: 36)
 
                     if let cat = selectedCategory, let uiImage = service.categoryImage(for: cat.id) {
                         Image(uiImage: uiImage)
                             .resizable()
                             .aspectRatio(contentMode: .fill)
                             .frame(width: 36, height: 36)
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     } else if let imageURL = selectedCategory?.imageUrl, !imageURL.isEmpty, let url = URL(string: imageURL) {
                         AsyncImage(url: url) { phase in
                             switch phase {
                             case .success(let image):
                                 image.resizable().aspectRatio(contentMode: .fill)
                             default:
-                                Image(systemName: selectedCategory?.icon.isEmpty == false ? selectedCategory!.icon : "gamecontroller.fill")
+                                Image(systemName: selectedCategory?.icon.isEmpty == false ? selectedCategory!.icon : "square.grid.2x2.fill")
                                     .font(.system(size: 16, weight: .medium))
-                                    .foregroundColor(AppTheme.cyberCyan)
+                                    .foregroundStyle(.white)
                             }
                         }
                         .frame(width: 36, height: 36)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     } else {
                         Image(systemName: selectedCategory?.icon.isEmpty == false ? selectedCategory!.icon : "square.grid.2x2.fill")
                             .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(AppTheme.cyberCyan)
+                            .foregroundStyle(.white)
                     }
                 }
                 .frame(width: 36, height: 36)
@@ -171,12 +160,12 @@ struct FeaturesView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(selectedCategory?.name ?? "Chọn danh mục")
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
-                        .foregroundColor(selectedCategory != nil ? .white : .white.opacity(0.4))
+                        .foregroundStyle(selectedCategory != nil ? AppTheme.ink : AppTheme.grey500)
 
                     if selectedCategory != nil {
                         Text("\(filteredPatches.count) chức năng")
                             .font(.system(size: 11, design: .monospaced))
-                            .foregroundColor(AppTheme.cyberCyan.opacity(0.7))
+                            .foregroundStyle(AppTheme.grey500)
                     }
                 }
 
@@ -184,28 +173,17 @@ struct FeaturesView: View {
 
                 Image(systemName: "chevron.down")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(AppTheme.cyberCyan.opacity(0.7))
+                    .foregroundStyle(AppTheme.grey500)
                     .rotationEffect(.degrees(showCategoryPicker ? 180 : 0))
                     .animation(.spring(response: 0.3), value: showCategoryPicker)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 14)
-            .background(
+            .background(AppTheme.grey50)
+            .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(AppTheme.cyberOLED.opacity(0.6))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(
-                                LinearGradient(
-                                    colors: [AppTheme.cyberCyan.opacity(0.35), AppTheme.cyberPurple.opacity(0.2)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 1
-                            )
-                    )
+                    .stroke(AppTheme.grey200, lineWidth: 1)
             )
-            .shadow(color: AppTheme.cyberCyan.opacity(0.08), radius: 8, y: 2)
         }
         .buttonStyle(.plain)
     }
@@ -219,13 +197,13 @@ struct FeaturesView: View {
         VStack(spacing: 0) {
             Text("Chọn danh mục")
                 .font(.system(size: 16, weight: .bold, design: .rounded))
-                .foregroundColor(.white)
+                .foregroundStyle(AppTheme.ink)
                 .padding(.vertical, 18)
-            
-            Divider().background(Color.white.opacity(0.1))
-            
+
+            Rectangle().fill(AppTheme.grey200).frame(height: 1)
+
             ScrollView {
-                VStack(spacing: 12) {
+                VStack(spacing: 10) {
                     ForEach(service.categories) { cat in
                         Button {
                             Haptics.light()
@@ -237,14 +215,8 @@ struct FeaturesView: View {
                             HStack(spacing: 14) {
                                 ZStack {
                                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .fill(
-                                            LinearGradient(
-                                                colors: [AppTheme.cyberCyan.opacity(0.2), AppTheme.cyberPurple.opacity(0.2)],
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
-                                            )
-                                        )
-                                    
+                                        .fill(AppTheme.ink)
+
                                     if let uiImage = service.categoryImage(for: cat.id) {
                                         Image(uiImage: uiImage)
                                             .resizable()
@@ -257,56 +229,45 @@ struct FeaturesView: View {
                                             case .success(let image):
                                                 image.resizable().aspectRatio(contentMode: .fill)
                                             default:
-                                                Image(systemName: cat.icon.isEmpty ? "gamecontroller.fill" : cat.icon)
-                                                    .foregroundColor(AppTheme.cyberCyan)
+                                                Image(systemName: cat.icon.isEmpty ? "square.grid.2x2.fill" : cat.icon)
+                                                    .foregroundStyle(.white)
                                             }
                                         }
                                         .frame(width: 42, height: 42)
                                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                                     } else {
-                                        Image(systemName: cat.icon.isEmpty ? "gamecontroller.fill" : cat.icon)
+                                        Image(systemName: cat.icon.isEmpty ? "square.grid.2x2.fill" : cat.icon)
                                             .font(.system(size: 20, weight: .medium))
-                                            .foregroundColor(AppTheme.cyberCyan)
+                                            .foregroundStyle(.white)
                                     }
                                 }
                                 .frame(width: 42, height: 42)
-                                
+
                                 Text(cat.name)
                                     .font(.system(size: 15, weight: .semibold, design: .rounded))
-                                    .foregroundColor(.white)
-                                
+                                    .foregroundStyle(AppTheme.ink)
+
                                 Spacer()
-                                
+
                                 ZStack {
                                     Circle()
-                                        .stroke(selectedCategoryID == cat.id ? AppTheme.cyberCyan : Color.white.opacity(0.2), lineWidth: 2)
+                                        .stroke(selectedCategoryID == cat.id ? AppTheme.ink : AppTheme.grey200, lineWidth: 2)
                                         .frame(width: 22, height: 22)
-                                    
+
                                     if selectedCategoryID == cat.id {
                                         Circle()
-                                            .fill(AppTheme.cyberCyan)
+                                            .fill(AppTheme.ink)
                                             .frame(width: 12, height: 12)
-                                            .shadow(color: AppTheme.cyberCyan.opacity(0.8), radius: 6)
                                     }
                                 }
                             }
                             .padding(12)
                             .background(
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(
-                                        selectedCategoryID == cat.id
-                                            ? LinearGradient(colors: [AppTheme.cyberCyan.opacity(0.18), AppTheme.cyberPurple.opacity(0.18)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                                            : LinearGradient(colors: [Color.white.opacity(0.03), Color.white.opacity(0.03)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                                    )
+                                selectedCategoryID == cat.id ? AppTheme.grey50 : Color.white
                             )
                             .overlay(
                                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .stroke(
-                                        selectedCategoryID == cat.id
-                                            ? AppTheme.cyberBorderGradient
-                                            : LinearGradient(colors: [Color.white.opacity(0.06), Color.white.opacity(0.02)], startPoint: .topLeading, endPoint: .bottomTrailing),
-                                        lineWidth: 1
-                                    )
+                                    .stroke(selectedCategoryID == cat.id ? AppTheme.ink : AppTheme.grey200, lineWidth: 1)
                             )
                         }
                         .buttonStyle(.plain)
@@ -315,9 +276,9 @@ struct FeaturesView: View {
                 .padding(16)
             }
             .frame(maxHeight: 350)
-            
-            Divider().background(Color.white.opacity(0.1))
-            
+
+            Rectangle().fill(AppTheme.grey200).frame(height: 1)
+
             Button {
                 Haptics.light()
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
@@ -325,22 +286,15 @@ struct FeaturesView: View {
                 }
             } label: {
                 Text("Hủy")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundColor(.white.opacity(0.6))
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(AppTheme.ink)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
             }
         }
-        .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(AppTheme.cyberSurface.opacity(0.92))
-                .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(.ultraThinMaterial))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(AppTheme.cyberBorderGradient, lineWidth: 1.5)
-        )
-        .shadow(color: AppTheme.cyberCyan.opacity(0.25), radius: 35, x: 0, y: 15)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .shadow(color: Color.black.opacity(0.18), radius: 35, x: 0, y: 15)
         .padding(.horizontal, 24)
     }
 
@@ -351,41 +305,28 @@ struct FeaturesView: View {
             HStack(spacing: 8) {
                 Image(systemName: "wand.and.stars")
                     .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(AppTheme.cyberCyan)
-                    .shadow(color: AppTheme.cyberCyan.opacity(0.4), radius: 4)
+                    .foregroundStyle(AppTheme.ink)
                 Text("Chức năng")
                     .font(.system(size: 15, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
+                    .foregroundStyle(AppTheme.ink)
                 Spacer()
                 Text("\(filteredPatches.count)")
                     .font(.system(size: 12, weight: .heavy, design: .monospaced))
-                    .foregroundColor(AppTheme.cyberCyan)
-                    .padding(.horizontal, 9)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10)
                     .padding(.vertical, 4)
-                    .background(
-                        Capsule()
-                            .fill(
-                                LinearGradient(
-                                    colors: [AppTheme.cyberCyan.opacity(0.2), AppTheme.cyberPurple.opacity(0.2)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .overlay(
-                                Capsule().stroke(AppTheme.cyberCyan.opacity(0.4), lineWidth: 1)
-                            )
-                    )
+                    .background(AppTheme.ink)
+                    .clipShape(Capsule())
             }
 
             if service.isLoading && service.patches.isEmpty {
                 HStack {
                     Spacer()
                     VStack(spacing: 12) {
-                        ProgressView()
-                            .tint(AppTheme.cyberCyan)
+                        ProgressView().tint(AppTheme.ink)
                         Text("Đang tải chức năng...")
                             .font(.system(size: 12, design: .monospaced))
-                            .foregroundColor(.white.opacity(0.3))
+                            .foregroundStyle(AppTheme.grey500)
                     }
                     .padding(.vertical, 40)
                     Spacer()
@@ -401,29 +342,25 @@ struct FeaturesView: View {
             }
         }
         .padding(16)
-        .background(
+        .background(Color.white)
+        .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(AppTheme.cyberSurface.opacity(0.65))
-                .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(.ultraThinMaterial))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(AppTheme.cyberBorderGradient, lineWidth: 1.2)
-                )
-                .shadow(color: AppTheme.cyberCyan.opacity(0.12), radius: 20, y: 8)
+                .stroke(AppTheme.grey200, lineWidth: 1)
         )
+        .shadow(color: Color.black.opacity(0.05), radius: 14, x: 0, y: 6)
     }
 
     private var emptyState: some View {
         VStack(spacing: 14) {
             Image(systemName: "wand.and.stars")
                 .font(.system(size: 36, weight: .medium))
-                .foregroundColor(AppTheme.cyberCyan.opacity(0.3))
+                .foregroundStyle(AppTheme.grey400)
             Text("Chưa có chức năng nào")
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundColor(.white.opacity(0.5))
+                .foregroundStyle(AppTheme.grey500)
             Text("Đang cập nhật từ máy chủ...")
                 .font(.system(size: 12, design: .monospaced))
-                .foregroundColor(.white.opacity(0.25))
+                .foregroundStyle(AppTheme.grey400)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 40)
@@ -446,7 +383,6 @@ struct PatchCardView: View {
     @State private var isApplied = false
     @State private var isWorking = false
     @Binding var activeToast: ToastInfo?
-    @State private var glowPulse = false
 
     var body: some View {
         HStack(spacing: 14) {
@@ -455,13 +391,13 @@ struct PatchCardView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(patch.name)
                     .font(.system(size: 15, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
+                    .foregroundStyle(AppTheme.ink)
                     .lineLimit(1)
 
                 if !patch.description.isEmpty {
                     Text(patch.description)
                         .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.35))
+                        .foregroundStyle(AppTheme.grey500)
                         .lineLimit(1)
                 }
 
@@ -471,7 +407,7 @@ struct PatchCardView: View {
                     Text(formatSize(patch.fileSize))
                         .font(.system(size: 10, weight: .medium, design: .monospaced))
                 }
-                .foregroundColor(.white.opacity(0.3))
+                .foregroundStyle(AppTheme.grey500)
             }
 
             Spacer()
@@ -480,51 +416,16 @@ struct PatchCardView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 14)
-        .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(isApplied ? AppTheme.cyberSurface.opacity(0.7) : AppTheme.cyberOLED.opacity(0.4))
-
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(
-                        isApplied
-                            ? AppTheme.cyberBorderGradient
-                            : LinearGradient(
-                                colors: [Color.white.opacity(0.08), Color.white.opacity(0.02)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                              ),
-                        lineWidth: isApplied ? 1.5 : 0.5
-                    )
-
-                if isApplied {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [AppTheme.cyberCyan.opacity(glowPulse ? 0.08 : 0.02), AppTheme.cyberPurple.opacity(glowPulse ? 0.06 : 0.01)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .animation(.easeInOut(duration: 2).repeatForever(autoreverses: true), value: glowPulse)
-                }
-            }
-            .shadow(color: isApplied ? AppTheme.cyberCyan.opacity(0.25) : .clear, radius: 16, y: 4)
+        .background(Color.white)
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(isApplied ? AppTheme.ink : AppTheme.grey200, lineWidth: isApplied ? 1.2 : 1)
         )
+        .shadow(color: Color.black.opacity(isApplied ? 0.08 : 0.04), radius: 10, x: 0, y: 4)
         .onAppear {
             isApplied = service.isPatchApplied(patch)
-            if isApplied { startGlow() }
-        }
-        .onChange(of: isApplied) { applied in
-            if applied { startGlow() } else { glowPulse = false }
         }
     }
-
-    private func startGlow() {
-        glowPulse = true
-    }
-
-    // MARK: - Patch Image
 
     @ViewBuilder
     private var patchImage: some View {
@@ -536,85 +437,60 @@ struct PatchCardView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(isApplied ? AppTheme.cyberBorderGradient : LinearGradient(colors: [Color.white.opacity(0.1), Color.clear], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
+                        .stroke(AppTheme.grey200, lineWidth: 1)
                 )
-                .shadow(color: isApplied ? AppTheme.cyberCyan.opacity(0.35) : .clear, radius: 8)
         } else {
             ZStack {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [AppTheme.cyberCyan.opacity(0.15), AppTheme.cyberPurple.opacity(0.1)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                    .fill(AppTheme.ink)
                 Image(systemName: "puzzlepiece.fill")
                     .font(.system(size: 20, weight: .medium))
-                    .foregroundColor(AppTheme.cyberCyan.opacity(0.7))
+                    .foregroundStyle(.white)
             }
             .frame(width: 52, height: 52)
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(AppTheme.cyberCyan.opacity(0.25), lineWidth: 0.5)
-            )
         }
     }
-
-    // MARK: - Toggle
 
     @ViewBuilder
     private var toggleButton: some View {
         if isWorking {
             ZStack {
                 Capsule()
-                    .fill(AppTheme.cyberCyan.opacity(0.15))
+                    .fill(AppTheme.grey100)
                     .frame(width: 56, height: 30)
-                    .overlay(
-                        Capsule()
-                            .stroke(AppTheme.cyberCyan.opacity(0.4), lineWidth: 1)
-                    )
+                    .overlay(Capsule().stroke(AppTheme.grey200, lineWidth: 1))
                 ProgressView()
-                    .tint(AppTheme.cyberCyan)
+                    .tint(AppTheme.ink)
                     .scaleEffect(0.8)
             }
         } else {
             Button(action: { togglePatch() }) {
                 ZStack {
                     Capsule()
-                        .fill(
-                            isApplied
-                                ? LinearGradient(colors: [AppTheme.cyberCyan.opacity(0.25), AppTheme.cyberPurple.opacity(0.25)], startPoint: .leading, endPoint: .trailing)
-                                : LinearGradient(colors: [Color.white.opacity(0.06), Color.white.opacity(0.04)], startPoint: .leading, endPoint: .trailing)
-                        )
+                        .fill(isApplied ? AppTheme.ink : AppTheme.grey100)
                         .frame(width: 56, height: 30)
                         .overlay(
-                            Capsule()
-                                .stroke(
-                                    isApplied ? AppTheme.cyberBorderGradient : LinearGradient(colors: [Color.white.opacity(0.1), Color.white.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing),
-                                    lineWidth: 1
-                                )
+                            Capsule().stroke(isApplied ? AppTheme.ink : AppTheme.grey200, lineWidth: 1)
                         )
 
                     Circle()
-                        .fill(isApplied ? AppTheme.cyberGradient : LinearGradient(colors: [Color.white, Color(white: 0.9)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .fill(.white)
                         .frame(width: 24, height: 24)
                         .offset(x: isApplied ? 13 : -13)
-                        .shadow(color: isApplied ? AppTheme.cyberCyan.opacity(0.6) : .clear, radius: 6)
+                        .shadow(color: Color.black.opacity(0.18), radius: 3)
 
                     if isApplied {
                         Image(systemName: "checkmark")
                             .font(.system(size: 10, weight: .black))
-                            .foregroundColor(.black)
+                            .foregroundStyle(AppTheme.ink)
                             .offset(x: 13)
                     }
                 }
                 .animation(.spring(response: 0.35, dampingFraction: 0.65), value: isApplied)
             }
+            .buttonStyle(.plain)
         }
     }
-
-    // MARK: - Actions
 
     private func togglePatch() {
         Haptics.light()
@@ -642,8 +518,6 @@ struct PatchCardView: View {
             }
         }
     }
-
-    // MARK: - Helpers
 
     private func formatSize(_ bytes: Int) -> String {
         if bytes >= 1_048_576 {
