@@ -6,6 +6,7 @@ import SwiftUI
 /// - Progress bar đơn sắc (đen).
 /// - Status text xoay vòng: "Đang khởi tạo" → ... → "Sẵn sàng".
 struct SplashScreen: View {
+    var namespace: Namespace.ID
     var onComplete: () -> Void
 
     @State private var logoAppeared = false
@@ -18,6 +19,7 @@ struct SplashScreen: View {
     @State private var statusIndex: Int = 0
     @State private var ringDidTrigger = false
     @State private var didComplete = false
+    @State private var morphPhase: Bool = false   // true = logo bắt đầu morph về vị trí login
 
     private let statusSteps = [
         "Đang khởi tạo",
@@ -71,7 +73,9 @@ struct SplashScreen: View {
                     )
                     .shadow(color: Color.black.opacity(0.16), radius: 22, x: 0, y: 12)
                     .overlay(logoSheenOverlay)
+                    .matchedGeometryEffect(id: "appLogo", in: namespace, properties: .frame, isSource: !morphPhase)
             }
+            .opacity(loadingOpacity)
 
             VStack(spacing: 10) {
                 Text("NovaX")
@@ -84,6 +88,7 @@ struct SplashScreen: View {
                     .tracking(2.25)
             }
             .multilineTextAlignment(.center)
+            .opacity(identityOpacity)
         }
     }
 
@@ -193,6 +198,22 @@ struct SplashScreen: View {
             try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
             guard !didComplete else { return }
             didComplete = true
+
+            // Bước 1: fade out identity/loading để chỉ còn logo NovaX
+            withAnimation(.easeOut(duration: 0.25)) {
+                identityOpacity = 0
+                loadingOpacity = 0
+            }
+
+            // Bước 2: kích hoạt morph — matchedGeometryEffect animate logo
+            // từ vị trí hiện tại trong splash → vị trí trong login
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            withAnimation(.spring(response: 0.62, dampingFraction: 0.85)) {
+                morphPhase = true
+            }
+
+            // Bước 3: sau khi morph gần xong, gọi onComplete để ẩn splash
+            try? await Task.sleep(nanoseconds: 480_000_000)
             onComplete()
         }
     }

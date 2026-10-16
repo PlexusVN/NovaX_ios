@@ -11,6 +11,7 @@ struct ThreeOneOSFiveApp: App {
     @StateObject private var updateManager = UpdateManager.shared
     @AppStorage(AppLanguage.storageKey) private var languageCode = AppLanguage.vietnamese.rawValue
     @State private var showSplash = true
+    @Namespace private var morphNamespace
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -49,9 +50,32 @@ struct ThreeOneOSFiveApp: App {
     var body: some Scene {
         WindowGroup {
             ZStack {
+                // LoginView / ContentView — luôn mount, bị splash che khi đang loading.
+                // Đây là chìa khoá để matchedGeometryEffect morph logo từ splash → login mượt mà.
+                Group {
+                    if authManager.authState == .verified {
+                        ContentView()
+                            .environmentObject(appState)
+                            .environmentObject(patchDraftCoordinator)
+                            .environmentObject(fileOperationCoordinator)
+                            .environmentObject(authManager)
+                            .environmentObject(featurePatchService)
+                            .environmentObject(updateManager)
+                            .environmentObject(StorageEngineCoordinator.shared)
+                            .environment(\.appLanguage, language)
+                            .environment(\.locale, language.locale)
+                    } else {
+                        LoginView(auth: authManager, namespace: morphNamespace)
+                            .environmentObject(appState)
+                            .environmentObject(updateManager)
+                    }
+                }
+                .opacity(showSplash ? 0 : 1)
+                .animation(.easeInOut(duration: 0.55), value: showSplash)
+
                 if showSplash {
-                    SplashScreen {
-                        // Sau khi splash hoàn tất, fade splash ra rồi mới fade login vào
+                    SplashScreen(namespace: morphNamespace) {
+                        // Sau khi splash hoàn tất, fade splash ra → logo morph mượt sang login
                         withAnimation(.easeInOut(duration: 0.55)) {
                             showSplash = false
                         }
@@ -74,28 +98,6 @@ struct ThreeOneOSFiveApp: App {
                     }
                     .transition(.opacity)
                     .zIndex(2)
-                } else {
-                    Group {
-                        if authManager.authState == .verified {
-                            ContentView()
-                                .environmentObject(appState)
-                                .environmentObject(patchDraftCoordinator)
-                                .environmentObject(fileOperationCoordinator)
-                                .environmentObject(authManager)
-                                .environmentObject(featurePatchService)
-                                .environmentObject(updateManager)
-                                .environmentObject(StorageEngineCoordinator.shared)
-                                .environment(\.appLanguage, language)
-                                .environment(\.locale, language.locale)
-                                .transition(.opacity)
-                        } else {
-                            LoginView(auth: authManager)
-                                .environmentObject(appState)
-                                .environmentObject(updateManager)
-                                .transition(.opacity)
-                        }
-                    }
-                    .transition(.opacity)
                 }
 
                 if let offer = updateManager.updateOffer {
