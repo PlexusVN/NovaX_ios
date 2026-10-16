@@ -109,6 +109,122 @@ struct PatchListResponse: Codable {
     let data: [PatchItem]
 }
 
+// MARK: - NovaX Native Patch Menu Models
+
+enum GamePatchVariant: String, CaseIterable, Identifiable, Codable {
+    case ffth
+    case ffmax
+
+    var id: String { rawValue }
+    var title: String { self == .ffth ? "Free Fire TH" : "Free Fire MAX" }
+    var shortTitle: String { self == .ffth ? "FFTH" : "FFMAX" }
+}
+
+struct NovaXFeatureOption: Codable, Identifiable, Equatable {
+    let value: Int
+    let title: String
+    var id: Int { value }
+}
+
+struct NovaXFeatureDefinition: Codable, Identifiable, Equatable {
+    let id: String
+    let title: String
+    let section: String
+    let type: String
+    let min: Int
+    let max: Int
+    let `default`: Int
+    let options: [NovaXFeatureOption]
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        title = try container.decodeIfPresent(String.self, forKey: .title) ?? id
+        section = try container.decodeIfPresent(String.self, forKey: .section) ?? "Khác"
+        type = try container.decodeIfPresent(String.self, forKey: .type) ?? "toggle"
+        min = try container.decodeIfPresent(Int.self, forKey: .min) ?? 0
+        max = try container.decodeIfPresent(Int.self, forKey: .max) ?? 1
+        `default` = try container.decodeIfPresent(Int.self, forKey: .default) ?? 0
+        options = try container.decodeIfPresent([NovaXFeatureOption].self, forKey: .options) ?? []
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, section, type, min, max, `default`, options
+    }
+}
+
+struct NovaXFeatureManifest: Codable, Equatable {
+    let schemaVersion: Int
+    let features: [NovaXFeatureDefinition]
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion = "schema_version"
+        case features
+    }
+}
+
+struct NovaXPatchRelease: Codable, Identifiable, Equatable {
+    let id: Int
+    let version: Int
+    let gameBuild: String
+    let packageId: String
+    let fileSHA256: String
+    let fileSize: Int
+    let featureManifest: NovaXFeatureManifest
+    let changelog: String
+    let createdAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, version, changelog
+        case gameBuild = "game_build"
+        case packageId = "package_id"
+        case fileSHA256 = "file_sha256"
+        case fileSize = "file_size"
+        case featureManifest = "feature_manifest"
+        case createdAt = "created_at"
+    }
+}
+
+struct NovaXRemoteFeatureState: Codable, Equatable {
+    let enabled: Bool
+    let value: Int
+    let revision: Int64?
+}
+
+struct NovaXMenuResponse: Codable {
+    let success: Bool
+    let variant: String
+    let release: NovaXPatchRelease?
+    let desiredState: [String: NovaXRemoteFeatureState]
+    let actualState: [String: NovaXRemoteFeatureState]
+    let desiredRevision: Int64
+    let appliedRevision: Int64
+    let assemblyOnline: Bool
+    let assemblyLastSeenAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case success, variant, release
+        case desiredState = "desired_state"
+        case actualState = "actual_state"
+        case desiredRevision = "desired_revision"
+        case appliedRevision = "applied_revision"
+        case assemblyOnline = "assembly_online"
+        case assemblyLastSeenAt = "assembly_last_seen_at"
+    }
+}
+
+struct NovaXCommandResponse: Codable {
+    let success: Bool
+    let code: String
+    let revision: Int64?
+    let assemblyOnline: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case success, code, revision
+        case assemblyOnline = "assembly_online"
+    }
+}
+
 // MARK: - Feature Patch Service
 
 @MainActor
@@ -116,6 +232,15 @@ final class FeaturePatchService: ObservableObject {
     @Published var categories: [PatchCategory] = []
     @Published var patches: [PatchItem] = []
     @Published var isLoading = false
+
+    @Published private(set) var nativeRelease: NovaXPatchRelease?
+    @Published private(set) var nativeFeatures: [NovaXFeatureDefinition] = []
+    @Published private(set) var nativeDesiredState: [String: NovaXRemoteFeatureState] = [:]
+    @Published private(set) var nativeActualState: [String: NovaXRemoteFeatureState] = [:]
+    @Published private(set) var nativeAssemblyOnline = false
+    @Published private(set) var nativeStatusMessage = "Chưa kết nối"
+    @Published private(set) var isNativeLoading = false
+    @Published private(set) var isNativeInjecting = false
 
     private let baseURL = "https://zynox.click"
 
@@ -147,6 +272,10 @@ final class FeaturePatchService: ObservableObject {
 
     private let defaults = UserDefaults.standard
     private let appliedPrefix = "patch_applied_"
+    private var nativeSessionToken = ""
+    private var nativeSessionExpiresAt: Date?
+    private var nativeSessionKey = ""
+    private var loadedNativeVariant: GamePatchVariant?
 
     // MARK: - Category Image Memory & Disk Cache
     @Published private(set) var categoryImageCache: [Int: UIImage] = [:]
@@ -507,12 +636,247 @@ final class FeaturePatchService: ObservableObject {
         return UIImage(contentsOfFile: url.path)
     }
 
+    // MARK: - NovaX Native Patch Menu
+
+    private var novaProductSecret: String {
+        Obf.s([254, 223, 198, 209, 232, 157, 209, 197, 196, 216, 157, 219, 213, 201], 0xB0)
+    }
+
+    private func parseISODate(_ value: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: value) { return date }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: value)
+    }
+
+    private func serverMessage(from data: Data, fallback: String) -> String {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return fallback }
+        if let message = object["message"] as? String, !message.isEmpty { return message }
+        if let code = object["code"] as? String, !code.isEmpty { return code }
+        return fallback
+    }
+
+    private func ensureNativeSession(auth: AuthManager, force: Bool = false) async throws {
+        guard auth.authState == .verified, !auth.licenseKey.isEmpty else {
+            throw NovaXControlError.message("Vui lòng đăng nhập NovaX trước")
+        }
+        if !force,
+           !nativeSessionToken.isEmpty,
+           nativeSessionKey.caseInsensitiveCompare(auth.licenseKey) == .orderedSame,
+           let expires = nativeSessionExpiresAt,
+           expires.timeIntervalSinceNow > 30 {
+            return
+        }
+
+        guard let url = URL(string: "\(baseURL)/api/novax/login") else {
+            throw NovaXControlError.message("URL máy chủ không hợp lệ")
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 15
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "key": auth.licenseKey,
+            "product": novaProductSecret
+        ])
+
+        let (data, response) = try await pinnedSession.data(for: request)
+        guard let http = response as? HTTPURLResponse,
+              let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw NovaXControlError.message("Phản hồi đăng nhập phiên không hợp lệ")
+        }
+        guard (200..<300).contains(http.statusCode), json["success"] as? Bool == true else {
+            throw NovaXControlError.message(serverMessage(from: data, fallback: "Không thể tạo phiên NovaX"))
+        }
+
+        let code = json["code"] as? String ?? ""
+        let responseKey = json["key"] as? String ?? ""
+        let type = json["type"] as? String ?? ""
+        let expiresAt = json["expires_at"] as? String ?? ""
+        let sessionToken = json["app_session_token"] as? String ?? ""
+        let sessionExpires = json["session_expires_at"] as? String ?? ""
+        let serverTime = json["server_time"] as? String ?? ""
+        let receivedHMAC = json["hmac"] as? String ?? ""
+        let message = "true|\(code)|\(responseKey)|\(type)|\(expiresAt)|\(sessionToken)|\(sessionExpires)|\(serverTime)"
+        let expectedHMAC = HMACUtils.compute(key: novaProductSecret, message: message)
+        guard !sessionToken.isEmpty, !receivedHMAC.isEmpty, receivedHMAC == expectedHMAC else {
+            throw NovaXControlError.message("Chữ ký phiên NovaX không hợp lệ")
+        }
+
+        nativeSessionToken = sessionToken
+        nativeSessionExpiresAt = parseISODate(sessionExpires)
+        nativeSessionKey = auth.licenseKey
+    }
+
+    private func nativeRequest(_ url: URL, auth: AuthManager, method: String = "GET") -> URLRequest {
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.timeoutInterval = 20
+        request.setValue("Bearer \(nativeSessionToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(auth.licenseKey, forHTTPHeaderField: "X-Auth-Key")
+        return request
+    }
+
+    func loadNativeMenu(variant: GamePatchVariant, auth: AuthManager, showLoading: Bool = true) async throws {
+        if loadedNativeVariant != variant {
+            loadedNativeVariant = variant
+            nativeRelease = nil
+            nativeFeatures = []
+            nativeDesiredState = [:]
+            nativeActualState = [:]
+            nativeAssemblyOnline = false
+            nativeStatusMessage = "Đang tải (variant.shortTitle)..."
+        }
+        if showLoading { isNativeLoading = true }
+        defer { if showLoading { isNativeLoading = false } }
+        try await ensureNativeSession(auth: auth)
+        guard let url = URL(string: "\(baseURL)/api/novax/menu/\(variant.rawValue)") else {
+            throw NovaXControlError.message("URL menu không hợp lệ")
+        }
+        var request = nativeRequest(url, auth: auth)
+        var (data, response) = try await pinnedSession.data(for: request)
+        if let http = response as? HTTPURLResponse, http.statusCode == 401 {
+            try await ensureNativeSession(auth: auth, force: true)
+            request = nativeRequest(url, auth: auth)
+            (data, response) = try await pinnedSession.data(for: request)
+        }
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw NovaXControlError.message(serverMessage(from: data, fallback: "Không thể tải Patch Menu"))
+        }
+        let menu = try JSONDecoder().decode(NovaXMenuResponse.self, from: data)
+        guard menu.success else { throw NovaXControlError.message("Máy chủ từ chối Patch Menu") }
+        nativeRelease = menu.release
+        nativeFeatures = menu.release?.featureManifest.features ?? []
+        nativeDesiredState = menu.desiredState
+        nativeActualState = menu.actualState
+        nativeAssemblyOnline = menu.assemblyOnline
+        nativeStatusMessage = menu.assemblyOnline ? "Assembly đang online" : "Assembly chưa kết nối"
+    }
+
+    func refreshNativeState(variant: GamePatchVariant, auth: AuthManager) async {
+        guard loadedNativeVariant == variant,
+              let url = URL(string: "\(baseURL)/api/novax/state/\(variant.rawValue)") else { return }
+        do {
+            try await ensureNativeSession(auth: auth)
+            var (data, response) = try await pinnedSession.data(for: nativeRequest(url, auth: auth))
+            if let http = response as? HTTPURLResponse, http.statusCode == 401 {
+                try await ensureNativeSession(auth: auth, force: true)
+                (data, response) = try await pinnedSession.data(for: nativeRequest(url, auth: auth))
+            }
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return }
+            let state = try JSONDecoder().decode(NovaXMenuResponse.self, from: data)
+            nativeDesiredState = state.desiredState
+            nativeActualState = state.actualState
+            nativeAssemblyOnline = state.assemblyOnline
+            nativeStatusMessage = state.assemblyOnline ? "Assembly đang online" : "Assembly chưa kết nối"
+        } catch {
+            nativeStatusMessage = "Mất kết nối trạng thái"
+        }
+    }
+
+    func sendNativeCommand(
+        feature: NovaXFeatureDefinition,
+        enabled: Bool,
+        value: Int,
+        variant: GamePatchVariant,
+        auth: AuthManager
+    ) async throws {
+        try await ensureNativeSession(auth: auth)
+        guard let url = URL(string: "\(baseURL)/api/novax/commands") else {
+            throw NovaXControlError.message("URL gửi lệnh không hợp lệ")
+        }
+        var request = nativeRequest(url, auth: auth, method: "POST")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "variant": variant.rawValue,
+            "feature": feature.id,
+            "enabled": enabled,
+            "value": value,
+            "client_command_id": UUID().uuidString
+        ])
+        let (data, response) = try await pinnedSession.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw NovaXControlError.message(serverMessage(from: data, fallback: "Không thể gửi lệnh"))
+        }
+        let result = try JSONDecoder().decode(NovaXCommandResponse.self, from: data)
+        guard result.success else { throw NovaXControlError.message(result.code) }
+        nativeDesiredState[feature.id] = NovaXRemoteFeatureState(
+            enabled: enabled,
+            value: value,
+            revision: result.revision
+        )
+        nativeAssemblyOnline = result.assemblyOnline ?? false
+        nativeStatusMessage = nativeAssemblyOnline ? "Đã gửi lệnh tới assembly" : "Đã lưu lệnh, assembly đang offline"
+    }
+
+    func injectNativePatch(variant: GamePatchVariant, auth: AuthManager) async throws {
+        guard let release = nativeRelease else {
+            throw NovaXControlError.message("Chưa có patch \(variant.shortTitle) đang phát hành")
+        }
+        try await ensureNativeSession(auth: auth)
+        guard let url = URL(string: "\(baseURL)/api/novax/patches/\(release.id)/download") else {
+            throw NovaXControlError.message("URL tải patch không hợp lệ")
+        }
+        isNativeInjecting = true
+        defer { isNativeInjecting = false }
+
+        let (temporaryURL, response) = try await pinnedSession.download(for: nativeRequest(url, auth: auth))
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            let body = (try? Data(contentsOf: temporaryURL)) ?? Data()
+            throw NovaXControlError.message(serverMessage(from: body, fallback: "Tải patch thất bại"))
+        }
+        let downloadedHash = sha256File(at: temporaryURL)
+        guard downloadedHash.caseInsensitiveCompare(release.fileSHA256) == .orderedSame else {
+            throw FeaturePatchError.hashMismatch(expected: release.fileSHA256, got: downloadedHash)
+        }
+
+        let destination = patchProjectsDir.appendingPathComponent("native-\(variant.rawValue)-v\(release.version).3105")
+        if FileManager.default.fileExists(atPath: destination.path) {
+            try FileManager.default.removeItem(at: destination)
+        }
+        try FileManager.default.moveItem(at: temporaryURL, to: destination)
+        let data = try Data(contentsOf: destination)
+        let summary = try PatchPackageCodec.inspect(data)
+        let decoded: DecodedPatchPackage
+        if let contentKey = try? PatchKeyStore.load(for: summary),
+           let cached = try? PatchPackageCodec.decode(data, contentKey: contentKey) {
+            decoded = cached
+        } else {
+            decoded = try PatchPackageCodec.decode(data, password: nil)
+        }
+
+        if StorageEngineCoordinator.shared.isAirLiftActive {
+            try await StorageEngineCoordinator.shared.applyPatchProject(decoded.project)
+        } else {
+            _ = try DevicePatchService.apply(project: decoded.project)
+        }
+        defaults.set(release.id, forKey: "native_patch_release_\(variant.rawValue)")
+        defaults.set(decoded.project.id.uuidString, forKey: "native_patch_project_\(variant.rawValue)")
+        nativeStatusMessage = "Đã inject \(variant.shortTitle) v\(release.version)"
+    }
+
+    func isNativePatchInjected(variant: GamePatchVariant) -> Bool {
+        guard let release = nativeRelease else { return false }
+        return defaults.integer(forKey: "native_patch_release_\(variant.rawValue)") == release.id
+    }
+
     // MARK: - Hash
 
     private func sha256File(at url: URL) -> String {
         guard let data = try? Data(contentsOf: url) else { return "" }
         let hash = SHA256.hash(data: data)
         return hash.map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+enum NovaXControlError: LocalizedError {
+    case message(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .message(let text): return text
+        }
     }
 }
 
