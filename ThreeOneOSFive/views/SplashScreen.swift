@@ -71,24 +71,30 @@ struct SplashScreen: View {
 
     private var logoSection: some View {
         VStack(spacing: 24) {
+            // Cả "cái ô" logo (ảnh + background + borderRadius + shadow) morph cùng nhau,
+            // giống GSAP trong HTML (clone node, tween left/top/width/height/borderRadius/shadow).
+            // Inner: chỉ hiển thị ảnh + background trắng
+            // Outer: clipShape (bo góc) + offset + scaleEffect (morph cả khung)
             ZStack {
                 AppLogo(size: 112)
                     .background(Color.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 29, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 29, style: .continuous)
-                            .stroke(Color.black.opacity(0.13), lineWidth: 1)
-                    )
-                    .shadow(color: Color.black.opacity(0.16), radius: 22, x: 0, y: 12)
-                    .overlay(logoSheenOverlay)
-                    // Morph: khi isMorphing, logo trượt lên + thu nhỏ + bo góc
-                    .offset(y: isMorphing ? morphYOffset : 0)
-                    .scaleEffect(isMorphing ? morphScale : 1.0)
-                    .clipShape(RoundedRectangle(
-                        cornerRadius: isMorphing ? 24 : 29,
-                        style: .continuous
-                    ))
             }
+            .frame(width: 112, height: 112)
+            .overlay(
+                RoundedRectangle(
+                    cornerRadius: isMorphing ? 24 : 29,
+                    style: .continuous
+                )
+                .stroke(Color.black.opacity(0.13), lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.16), radius: 22, x: 0, y: 12)
+            .clipShape(RoundedRectangle(
+                cornerRadius: isMorphing ? 24 : 29,
+                style: .continuous
+            ))
+            // Morph toàn bộ ô: trượt lên + thu nhỏ
+            .offset(y: isMorphing ? morphYOffset : 0)
+            .scaleEffect(isMorphing ? morphScale : 1.0)
             .opacity(loadingOpacity)
 
             VStack(spacing: 10) {
