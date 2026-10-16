@@ -46,10 +46,9 @@
 		3105F204 /* WallpaperLabService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105F105; };
 		3105F205 /* WallpaperLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105F106; };
 		3105F206 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105F108; };
-		3105F210 /* SplashScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105F110; };
+		31SPL001 /* SplashLoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31SPL002; };
 		3105K200 /* AuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105K100; };
 		3105K202 /* SecurityUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105K102; };
-		3105K204 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105K104; };
 		3105K206 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105K106; };
 		3105K208 /* FeaturePatchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105K108; };
 		3105K210 /* FeaturesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105K110; };
@@ -136,10 +135,9 @@
 		3105F105 /* WallpaperLabService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperLabService.swift; sourceTree = "<group>"; };
 		3105F106 /* WallpaperLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperLabView.swift; sourceTree = "<group>"; };
 		3105F108 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
-		3105F110 /* SplashScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashScreen.swift; sourceTree = "<group>"; };
+		31SPL002 /* SplashLoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashLoginView.swift; sourceTree = "<group>"; };
 		3105K100 /* AuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthManager.swift; sourceTree = "<group>"; };
 		3105K102 /* SecurityUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecurityUtils.swift; sourceTree = "<group>"; };
-		3105K104 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		3105K106 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		3105K108 /* FeaturePatchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeaturePatchService.swift; sourceTree = "<group>"; };
 		3105K110 /* FeaturesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeaturesView.swift; sourceTree = "<group>"; };
@@ -250,10 +248,9 @@
 				3105E101 /* CleanerView.swift */,
 				3105F106 /* WallpaperLabView.swift */,
 				3105F108 /* OnboardingView.swift */,
-				3105F110 /* SplashScreen.swift */,
+				31SPL002 /* SplashLoginView.swift */,
 				3105K100 /* AuthManager.swift */,
 				3105K102 /* SecurityUtils.swift */,
-				3105K104 /* LoginView.swift */,
 				3105K106 /* ProfileView.swift */,
 				3105K110 /* FeaturesView.swift */,
 				3105L100 /* DNSManagerView.swift */,
