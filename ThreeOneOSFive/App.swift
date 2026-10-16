@@ -65,7 +65,7 @@ struct ThreeOneOSFiveApp: App {
                             .environment(\.appLanguage, language)
                             .environment(\.locale, language.locale)
                     } else {
-                        LoginView(auth: authManager, namespace: morphNamespace)
+                        LoginView(auth: authManager)
                             .environmentObject(appState)
                             .environmentObject(updateManager)
                     }

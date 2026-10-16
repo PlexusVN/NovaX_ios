@@ -8,7 +8,6 @@ import SwiftUI
 struct SplashScreen: View {
     var namespace: Namespace.ID
     var onComplete: () -> Void
-
     @State private var logoAppeared = false
     @State private var logoScale: CGFloat = 0.9
     @State private var logoOpacity: Double = 0.0
@@ -19,7 +18,11 @@ struct SplashScreen: View {
     @State private var statusIndex: Int = 0
     @State private var ringDidTrigger = false
     @State private var didComplete = false
-    @State private var morphPhase: Bool = false   // true = logo bắt đầu morph về vị trí login
+
+    /// Phase 1: logo bắt đầu morph từ splash → login (trượt lên + thu nhỏ)
+    @State private var isMorphing: Bool = false
+    /// Phase 2: morph xong, splash sắp biến mất
+    @State private var splashDisappearing: Bool = false
 
     private let statusSteps = [
         "Đang khởi tạo",
@@ -61,6 +64,12 @@ struct SplashScreen: View {
 
     // MARK: - Logo
 
+    /// Morph offset: khoảng cách logo cần trượt từ vị trí splash → vị trí login.
+    /// Splash: logo ở giữa (220pt từ top). Login: logo ở 56pt từ top → trượt lên -164pt.
+    private let morphYOffset: CGFloat = -164
+    /// Scale từ 112 → 92
+    private let morphScale: CGFloat = 92.0 / 112.0
+
     private var logoSection: some View {
         VStack(spacing: 24) {
             ZStack {
@@ -73,7 +82,13 @@ struct SplashScreen: View {
                     )
                     .shadow(color: Color.black.opacity(0.16), radius: 22, x: 0, y: 12)
                     .overlay(logoSheenOverlay)
-                    .matchedGeometryEffect(id: "appLogo", in: namespace, properties: .frame, isSource: !morphPhase)
+                    // Morph: khi isMorphing, logo trượt lên + thu nhỏ + bo góc
+                    .offset(y: isMorphing ? morphYOffset : 0)
+                    .scaleEffect(isMorphing ? morphScale : 1.0)
+                    .clipShape(RoundedRectangle(
+                        cornerRadius: isMorphing ? 24 : 29,
+                        style: .continuous
+                    ))
             }
             .opacity(loadingOpacity)
 
@@ -199,21 +214,20 @@ struct SplashScreen: View {
             guard !didComplete else { return }
             didComplete = true
 
-            // Bước 1: fade out identity/loading để chỉ còn logo NovaX
-            withAnimation(.easeOut(duration: 0.25)) {
+            // Bước 1: fade out identity để chỉ còn logo NovaX
+            withAnimation(.easeOut(duration: 0.22)) {
                 identityOpacity = 0
-                loadingOpacity = 0
             }
 
-            // Bước 2: kích hoạt morph — matchedGeometryEffect animate logo
-            // từ vị trí hiện tại trong splash → vị trí trong login
+            // Bước 2: morph logo — trượt lên + thu nhỏ + bo góc (như HTML)
             try? await Task.sleep(nanoseconds: 120_000_000)
-            withAnimation(.spring(response: 0.62, dampingFraction: 0.85)) {
-                morphPhase = true
+            withAnimation(.easeInOut(duration: 0.72)) {
+                isMorphing = true
             }
 
-            // Bước 3: sau khi morph gần xong, gọi onComplete để ẩn splash
-            try? await Task.sleep(nanoseconds: 480_000_000)
+            // Bước 3: sau khi morph xong (logo đã ở đúng vị trí login),
+            // gọi onComplete → splash biến mất → login hiện ra ngay tại vị trí đó
+            try? await Task.sleep(nanoseconds: 520_000_000)
             onComplete()
         }
     }

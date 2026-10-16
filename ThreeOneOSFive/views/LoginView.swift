@@ -71,7 +71,7 @@ struct LoginView: View {
     // MARK: - Sections
 
     private var logoBlock: some View {
-        let logo = AppLogo(size: 92)
+        AppLogo(size: 92)
             .background(Color.white)
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay(
@@ -81,21 +81,8 @@ struct LoginView: View {
             .shadow(color: Color.black.opacity(0.13), radius: 22, x: 0, y: 12)
             .saturation(0)
             .contrast(1.08)
+            .opacity(logoAppear ? 1 : 0)
             .scaleEffect(logoAppear ? 1 : 0.96)
-
-        // matchedGeometryEffect: khi splash morph xong, logo sẽ "tiếp quản" ở vị trí hiện tại
-        if let ns = namespace {
-            return AnyView(
-                logo
-                    .matchedGeometryEffect(id: "appLogo", in: ns, isSource: true)
-                    .opacity(logoAppear ? 1 : 0)
-            )
-        } else {
-            return AnyView(
-                logo
-                    .opacity(logoAppear ? 1 : 0)
-            )
-        }
     }
 
     private var brandTitle: some View {
