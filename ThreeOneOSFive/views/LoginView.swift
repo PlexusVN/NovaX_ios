@@ -91,8 +91,28 @@ struct LoginView: View {
 
     // MARK: - Sections
 
+    /// Tạo Image logo resizable (giống resizableLogo trong SplashScreen nhưng riêng cho login)
+    @ViewBuilder
+    private func resizableLogo92() -> some View {
+        if let icon = UIImage(named: "NovaXLogo")
+            ?? UIImage(named: "AppIcon60x60")
+            ?? Bundle.main.path(forResource: "AppIcon60x60@2x", ofType: "png").flatMap(UIImage.init(contentsOfFile:))
+            ?? UIImage(named: "AppIcon") {
+            Image(uiImage: icon)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 92, height: 92)
+        } else {
+            Image(systemName: "bolt.fill")
+                .font(.system(size: 46, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 92, height: 92)
+                .background(AppTheme.ink)
+        }
+    }
+
     private var logoBlock: some View {
-        AppLogo(size: 92)
+        resizableLogo92()
             .background(Color.white)
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay(

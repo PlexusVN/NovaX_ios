@@ -69,33 +69,51 @@ struct SplashScreen: View {
     /// Scale từ 112 → 92
     private let morphScale: CGFloat = 92.0 / 112.0
 
+    /// Tạo Image logo có thể resize theo size tùy ý (dùng cho morph).
+    /// AppLogo mặc định có .clipShape cứng bên trong nên không morph được,
+    /// nên ta tự tạo Image thuần để outer scale/offset control hoàn toàn.
+    @ViewBuilder
+    private func resizableLogo(size: CGFloat) -> some View {
+        if let icon = UIImage(named: "NovaXLogo")
+            ?? UIImage(named: "AppIcon60x60")
+            ?? Bundle.main.path(forResource: "AppIcon60x60@2x", ofType: "png").flatMap(UIImage.init(contentsOfFile:))
+            ?? UIImage(named: "AppIcon") {
+            Image(uiImage: icon)
+                .resizable()
+                .scaledToFill()
+                .frame(width: size, height: size)
+        } else {
+            Image(systemName: "bolt.fill")
+                .font(.system(size: size * 0.5, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: size, height: size)
+                .background(AppTheme.ink)
+        }
+    }
+
     private var logoSection: some View {
         VStack(spacing: 24) {
-            // Cả "cái ô" logo (ảnh + background + borderRadius + shadow) morph cùng nhau,
-            // giống GSAP trong HTML (clone node, tween left/top/width/height/borderRadius/shadow).
-            // Inner: chỉ hiển thị ảnh + background trắng
-            // Outer: clipShape (bo góc) + offset + scaleEffect (morph cả khung)
-            ZStack {
-                AppLogo(size: 112)
-                    .background(Color.white)
-            }
-            .frame(width: 112, height: 112)
-            .overlay(
-                RoundedRectangle(
+            // Cả "cái ô" logo (ảnh + background + borderRadius + shadow) morph cùng nhau.
+            // Dùng Image thuần resizable, KHÔNG có clipShape cứng bên trong.
+            // Outer: clipShape + overlay + shadow + offset + scaleEffect control hoàn toàn.
+            resizableLogo(size: 112)
+                .background(Color.white)
+                .overlay(
+                    RoundedRectangle(
+                        cornerRadius: isMorphing ? 24 : 29,
+                        style: .continuous
+                    )
+                    .stroke(Color.black.opacity(0.13), lineWidth: 1)
+                )
+                .shadow(color: Color.black.opacity(0.16), radius: 22, x: 0, y: 12)
+                .clipShape(RoundedRectangle(
                     cornerRadius: isMorphing ? 24 : 29,
                     style: .continuous
-                )
-                .stroke(Color.black.opacity(0.13), lineWidth: 1)
-            )
-            .shadow(color: Color.black.opacity(0.16), radius: 22, x: 0, y: 12)
-            .clipShape(RoundedRectangle(
-                cornerRadius: isMorphing ? 24 : 29,
-                style: .continuous
-            ))
-            // Morph toàn bộ ô: trượt lên + thu nhỏ
-            .offset(y: isMorphing ? morphYOffset : 0)
-            .scaleEffect(isMorphing ? morphScale : 1.0)
-            .opacity(loadingOpacity)
+                ))
+                // Morph toàn bộ ô: trượt lên + thu nhỏ
+                .offset(y: isMorphing ? morphYOffset : 0)
+                .scaleEffect(isMorphing ? morphScale : 1.0)
+                .opacity(loadingOpacity)
 
             VStack(spacing: 10) {
                 Text("NovaX")
