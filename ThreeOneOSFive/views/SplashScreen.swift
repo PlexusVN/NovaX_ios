@@ -3,9 +3,8 @@ import SwiftUI
 /// SplashScreen - Phiên bản 2026 doanh nghiệp:
 /// - Nền trắng, không vòng tròn neon, không spinner mặc định.
 /// - Logo NovaX-Logo-new.png ở giữa; sheen ánh sáng quét ngang.
-/// - Progress bar đơn sắc (đen) với curve professionalLoad.
+/// - Progress bar đơn sắc (đen).
 /// - Status text xoay vòng: "Đang khởi tạo" → ... → "Sẵn sàng".
-/// - Khi xong, logo morph sang vị trí logo đăng nhập (matchedGeometryEffect ở App scope).
 struct SplashScreen: View {
     var onComplete: () -> Void
 
@@ -70,7 +69,6 @@ struct SplashScreen: View {
                             .stroke(Color.black.opacity(0.13), lineWidth: 1)
                     )
                     .shadow(color: Color.black.opacity(0.16), radius: 22, x: 0, y: 12)
-                    .matchedGeometryEffect(id: SplashGeometryNamespace.logo, in: splashNamespace)
                     .overlay(logoSheenOverlay)
             }
 
@@ -142,11 +140,6 @@ struct SplashScreen: View {
 
     // MARK: - Animation
 
-    private var splashNamespace: Namespace.ID { appNamespace }
-
-    /// Namespace sẽ được truyền từ App.swift để morph sang LoginView cùng ID.
-    /// SplashScreen nhận thông qua một hằng số wrapper để chia sẻ giữa 2 view.
-    /// Trong trường hợp chưa được cung cấp, fallback về namespace cục bộ.
     private func startAnimation() {
         // Logo appear
         withAnimation(.spring(response: 0.65, dampingFraction: 0.85)) {
