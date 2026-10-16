@@ -72,6 +72,7 @@ struct LoginView: View {
     private var logoBlock: some View {
         AppLogo(size: 92)
             .background(Color.white)
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .stroke(Color.black.opacity(0.14), lineWidth: 1)
@@ -108,6 +109,7 @@ struct LoginView: View {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .stroke(AppTheme.ink, lineWidth: 1)
                         .background(Color.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .frame(width: 42, height: 42)
                     Image(systemName: "key.fill")
                         .font(.system(size: 18, weight: .medium))
@@ -169,6 +171,7 @@ struct LoginView: View {
             .padding(.horizontal, 15)
             .frame(height: 58)
             .background(Color(red: 0.984, green: 0.984, blue: 0.988))
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .stroke(AppTheme.grey300, lineWidth: 1)
@@ -198,6 +201,7 @@ struct LoginView: View {
                         .foregroundStyle(AppTheme.ink)
                         .frame(width: 36, height: 36)
                         .background(Color.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
                                 .stroke(AppTheme.grey200, lineWidth: 1)
@@ -208,6 +212,7 @@ struct LoginView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 13)
             .background(AppTheme.grey50)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .stroke(AppTheme.grey100, lineWidth: 1)
@@ -216,6 +221,7 @@ struct LoginView: View {
         }
         .padding(20)
         .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(AppTheme.grey200, lineWidth: 1)
@@ -289,6 +295,7 @@ struct LoginView: View {
         }
         .padding(19)
         .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .stroke(AppTheme.grey200, lineWidth: 1)
@@ -318,6 +325,7 @@ struct LoginView: View {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .stroke(AppTheme.ink, lineWidth: 1)
                         .background(Color.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .frame(width: 42, height: 42)
                     Image(systemName: "person.fill")
                         .font(.system(size: 18, weight: .medium))
@@ -404,6 +412,7 @@ struct LoginView: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: 44)
                     .background(Color.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
                             .stroke(AppTheme.ink, lineWidth: 1)
@@ -414,6 +423,7 @@ struct LoginView: View {
         }
         .padding(19)
         .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .stroke(AppTheme.grey200, lineWidth: 1)
