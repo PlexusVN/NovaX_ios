@@ -229,6 +229,7 @@ struct OutlineButtonStyle: ButtonStyle {
         configuration.label
             .frame(maxWidth: .infinity, minHeight: 48)
             .background(Color.white)
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .stroke(AppTheme.ink, lineWidth: 1)
@@ -374,6 +375,7 @@ struct GlassToastModifier: ViewModifier {
                         }
                         .padding(16)
                         .background(Color.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 16, style: .continuous)
                                 .stroke(AppTheme.ink, lineWidth: 1)

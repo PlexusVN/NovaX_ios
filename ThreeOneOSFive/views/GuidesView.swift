@@ -115,6 +115,7 @@ struct GuidesView: View {
         }
         .padding(18)
         .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(AppTheme.grey200, lineWidth: 1)
@@ -263,6 +264,7 @@ private struct GuideCardView: View {
         }
         .padding(18)
         .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .stroke(AppTheme.grey200, lineWidth: 1)

@@ -64,6 +64,7 @@ struct SplashScreen: View {
             ZStack {
                 AppLogo(size: 112)
                     .background(Color.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 29, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 29, style: .continuous)
                             .stroke(Color.black.opacity(0.13), lineWidth: 1)

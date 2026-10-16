@@ -511,6 +511,7 @@ struct LoginView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
             .background(AppTheme.grey50)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .stroke(AppTheme.ink, lineWidth: 1)
@@ -536,6 +537,7 @@ struct LoginView: View {
             .padding(12)
             .frame(maxWidth: .infinity)
             .background(AppTheme.grey50)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .stroke(AppTheme.ink, lineWidth: 1)

@@ -358,6 +358,7 @@ private struct DashboardView: View {
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .stroke(AppTheme.grey200, lineWidth: 1)

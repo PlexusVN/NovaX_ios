@@ -348,6 +348,7 @@ struct UpdateRequiredView: View {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .stroke(AppTheme.ink, lineWidth: 1)
                         .background(Color.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .frame(width: 42, height: 42)
                     Image(systemName: "person.fill")
                         .font(.system(size: 18, weight: .medium))
@@ -418,6 +419,7 @@ struct UpdateRequiredView: View {
         }
         .padding(16)
         .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(AppTheme.grey200, lineWidth: 1)

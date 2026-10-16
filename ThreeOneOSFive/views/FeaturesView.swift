@@ -110,6 +110,7 @@ struct FeaturesView: View {
         }
         .padding(16)
         .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(AppTheme.grey200, lineWidth: 1)
@@ -180,6 +181,7 @@ struct FeaturesView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 14)
             .background(AppTheme.grey50)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .stroke(AppTheme.grey200, lineWidth: 1)
@@ -343,6 +345,7 @@ struct FeaturesView: View {
         }
         .padding(16)
         .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(AppTheme.grey200, lineWidth: 1)
@@ -417,6 +420,7 @@ struct PatchCardView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 14)
         .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(isApplied ? AppTheme.ink : AppTheme.grey200, lineWidth: isApplied ? 1.2 : 1)
