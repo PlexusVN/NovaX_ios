@@ -386,11 +386,10 @@ struct FeaturesView: View {
 
     private func reload(showLoading: Bool) async {
         guard authManager.authState == .verified else { return }
-        do {
-            try await service.loadNativeMenuForBothVariants(auth: authManager, showLoading: showLoading)
-        } catch {
-            activeToast = ToastInfo(title: "Không thể tải danh sách chức năng", message: error.localizedDescription, isSuccess: false)
-        }
+        // Danh sách chức năng đã được đóng gói cố định trong app. Server chỉ còn
+        // cung cấp release và trạng thái đồng bộ, nên lỗi kết nối không được chặn
+        // giao diện hoặc hiện banner "không thể tải danh sách chức năng" nữa.
+        try? await service.loadNativeMenuForBothVariants(auth: authManager, showLoading: showLoading)
     }
 
     private func performCodePatch(variant: GamePatchVariant, inject: Bool) {

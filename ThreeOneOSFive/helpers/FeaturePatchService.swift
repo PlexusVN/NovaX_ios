@@ -173,16 +173,6 @@ struct NovaXFeatureDefinition: Codable, Identifiable, Equatable {
     }
 }
 
-struct NovaXFeatureManifest: Codable, Equatable {
-    let schemaVersion: Int
-    let features: [NovaXFeatureDefinition]
-
-    enum CodingKeys: String, CodingKey {
-        case schemaVersion = "schema_version"
-        case features
-    }
-}
-
 struct NovaXPatchRelease: Codable, Identifiable, Equatable {
     let id: Int
     let version: Int
@@ -190,7 +180,6 @@ struct NovaXPatchRelease: Codable, Identifiable, Equatable {
     let packageId: String
     let fileSHA256: String
     let fileSize: Int
-    let featureManifest: NovaXFeatureManifest
     let changelog: String
     let createdAt: String
 
@@ -200,7 +189,6 @@ struct NovaXPatchRelease: Codable, Identifiable, Equatable {
         case packageId = "package_id"
         case fileSHA256 = "file_sha256"
         case fileSize = "file_size"
-        case featureManifest = "feature_manifest"
         case createdAt = "created_at"
     }
 }
@@ -348,10 +336,6 @@ final class FeaturePatchService: ObservableObject {
 
     /// Per-variant (cả 2 game: ffth và ffmax)
     @Published private(set) var nativeReleaseByVariant: [GamePatchVariant: NovaXPatchRelease] = [:]
-    @Published private(set) var nativeFeaturesByVariant: [GamePatchVariant: [NovaXFeatureDefinition]] = [
-        .ffth: FeaturePatchService.defaultFeatures,
-        .ffmax: FeaturePatchService.defaultFeatures
-    ]
     @Published private(set) var nativeDesiredStateByVariant: [GamePatchVariant: [String: NovaXRemoteFeatureState]] = [:]
     @Published private(set) var nativeActualStateByVariant: [GamePatchVariant: [String: NovaXRemoteFeatureState]] = [:]
     @Published private(set) var nativeAssemblyOnlineByVariant: [GamePatchVariant: Bool] = [:]
@@ -838,7 +822,7 @@ final class FeaturePatchService: ObservableObject {
         if loadedNativeVariant != variant {
             loadedNativeVariant = variant
             nativeRelease = nil
-            nativeFeatures = []
+            nativeFeatures = FeaturePatchService.defaultFeatures
             nativeDesiredState = [:]
             nativeActualState = [:]
             nativeAssemblyOnline = false
@@ -858,12 +842,12 @@ final class FeaturePatchService: ObservableObject {
             (data, response) = try await pinnedSession.data(for: request)
         }
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw NovaXControlError.message(serverMessage(from: data, fallback: "Không thể tải danh sách chức năng"))
+            throw NovaXControlError.message(serverMessage(from: data, fallback: "Không thể đồng bộ trạng thái máy chủ"))
         }
         let menu = try JSONDecoder().decode(NovaXMenuResponse.self, from: data)
         guard menu.success else { throw NovaXControlError.message("Máy chủ từ chối yêu cầu") }
         nativeRelease = menu.release
-        nativeFeatures = menu.release?.featureManifest.features ?? []
+        nativeFeatures = FeaturePatchService.defaultFeatures
         nativeDesiredState = menu.desiredState
         nativeActualState = menu.actualState
         nativeAssemblyOnline = menu.assemblyOnline
@@ -903,11 +887,6 @@ final class FeaturePatchService: ObservableObject {
             do {
                 let menu = try await fetchNativeMenu(variant: v, auth: auth)
                 nativeReleaseByVariant[v] = menu.release
-                if let feats = menu.release?.featureManifest.features, !feats.isEmpty {
-                    nativeFeaturesByVariant[v] = feats
-                } else {
-                    nativeFeaturesByVariant[v] = FeaturePatchService.defaultFeatures
-                }
                 nativeDesiredStateByVariant[v] = menu.desiredState
                 nativeActualStateByVariant[v] = menu.actualState
                 nativeAssemblyOnlineByVariant[v] = menu.assemblyOnline
@@ -915,17 +894,16 @@ final class FeaturePatchService: ObservableObject {
                 if firstError == nil { firstError = error }
             }
         }
-        // Lấy variant đầu tiên có release làm "mặc định" cho các UI cũ
-        if let firstWithRelease = variants.first(where: { nativeReleaseByVariant[$0] != nil }) {
-            nativeRelease = nativeReleaseByVariant[firstWithRelease]
-            if let feats = nativeFeaturesByVariant[firstWithRelease], !feats.isEmpty {
-                nativeFeatures = feats
-            } else {
-                nativeFeatures = FeaturePatchService.defaultFeatures
-            }
-            nativeDesiredState = nativeDesiredStateByVariant[firstWithRelease] ?? [:]
-            nativeActualState = nativeActualStateByVariant[firstWithRelease] ?? [:]
-            nativeAssemblyOnline = nativeAssemblyOnlineByVariant[firstWithRelease] ?? false
+        // Trạng thái server của Assembly đang online là nguồn hiển thị chính.
+        // Nếu chưa có Assembly, dùng release đầu tiên chỉ để hiển thị metadata.
+        let displayedVariant = variants.first(where: { nativeAssemblyOnlineByVariant[$0] == true })
+            ?? variants.first(where: { nativeReleaseByVariant[$0] != nil })
+        if let displayedVariant {
+            nativeRelease = nativeReleaseByVariant[displayedVariant]
+            nativeFeatures = FeaturePatchService.defaultFeatures
+            nativeDesiredState = nativeDesiredStateByVariant[displayedVariant] ?? [:]
+            nativeActualState = nativeActualStateByVariant[displayedVariant] ?? [:]
+            nativeAssemblyOnline = nativeAssemblyOnlineByVariant[displayedVariant] ?? false
             nativeStatusMessage = nativeAssemblyOnline ? "Cheat đang hoạt động trong game" : "Chưa vào game"
         } else {
             nativeFeatures = FeaturePatchService.defaultFeatures
@@ -954,14 +932,8 @@ final class FeaturePatchService: ObservableObject {
         }
         let activeVariant: GamePatchVariant = [GamePatchVariant.ffth, .ffmax].first(where: { nativeAssemblyOnlineByVariant[$0] == true })
             ?? (nativeActualStateByVariant[.ffmax]?.isEmpty == false ? .ffmax : .ffth)
-        if let actual = nativeActualStateByVariant[activeVariant] {
-            self.nativeActualState = actual
-        }
-        if let desired = nativeDesiredStateByVariant[activeVariant], !desired.isEmpty {
-            for (k, v) in desired {
-                self.nativeDesiredState[k] = v
-            }
-        }
+        self.nativeActualState = nativeActualStateByVariant[activeVariant] ?? [:]
+        self.nativeDesiredState = nativeDesiredStateByVariant[activeVariant] ?? [:]
         self.nativeAssemblyOnline = nativeAssemblyOnlineByVariant.values.contains(true)
         self.nativeStatusMessage = self.nativeAssemblyOnline ? "Cheat đang hoạt động trong game" : "Chưa vào game"
     }
@@ -1013,22 +985,30 @@ final class FeaturePatchService: ObservableObject {
         value: Int,
         auth: AuthManager
     ) async throws {
-        let immediateState = NovaXRemoteFeatureState(enabled: enabled, value: value, revision: nil)
-        nativeDesiredState[feature.id] = immediateState
-        for v in [GamePatchVariant.ffth, .ffmax] {
-            var map = nativeDesiredStateByVariant[v] ?? [:]
-            map[feature.id] = immediateState
-            nativeDesiredStateByVariant[v] = map
+        var acceptedCount = 0
+        var lastError: Error?
+        let releasedVariants = [GamePatchVariant.ffth, .ffmax].filter { nativeReleaseByVariant[$0] != nil }
+        let targetVariants = releasedVariants.isEmpty ? [GamePatchVariant.ffth, .ffmax] : releasedVariants
+        for v in targetVariants {
+            do {
+                try await sendNativeCommand(
+                    feature: feature,
+                    enabled: enabled,
+                    value: value,
+                    variant: v,
+                    auth: auth
+                )
+                acceptedCount += 1
+            } catch {
+                lastError = error
+            }
         }
-        for v in [GamePatchVariant.ffth, .ffmax] {
-            _ = try? await sendNativeCommand(
-                feature: feature,
-                enabled: enabled,
-                value: value,
-                variant: v,
-                auth: auth
-            )
+        guard acceptedCount > 0 else {
+            throw lastError ?? NovaXControlError.message("Máy chủ không lưu được trạng thái chức năng")
         }
+        // Re-read the authoritative snapshot. Nothing is persisted locally.
+        await refreshNativeStateForBothVariants(auth: auth)
+        if let lastError { throw lastError }
     }
 
     func sendNativeCommand(
@@ -1057,15 +1037,6 @@ final class FeaturePatchService: ObservableObject {
         }
         let result = try JSONDecoder().decode(NovaXCommandResponse.self, from: data)
         guard result.success else { throw NovaXControlError.message(result.code) }
-        let newState = NovaXRemoteFeatureState(
-            enabled: enabled,
-            value: value,
-            revision: result.revision
-        )
-        nativeDesiredState[feature.id] = newState
-        var variantMap = nativeDesiredStateByVariant[variant] ?? [:]
-        variantMap[feature.id] = newState
-        nativeDesiredStateByVariant[variant] = variantMap
         nativeAssemblyOnline = result.assemblyOnline ?? false
         nativeAssemblyOnlineByVariant[variant] = result.assemblyOnline ?? false
         nativeStatusMessage = nativeAssemblyOnline ? "Đã áp dụng cheat vào game" : "Đã lưu cài đặt (chờ vào game)"
