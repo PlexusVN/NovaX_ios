@@ -106,8 +106,10 @@ struct FeaturesView: View {
     }
 
     private func featureSections() -> [FeatureSectionModel] {
-        let features = service.nativeFeatures.isEmpty ? FeaturePatchService.defaultFeatures : service.nativeFeatures
-        let orderedSections = ["ESP", "Aim", "Khác", "Màu sắc", "Trang phục", "Hệ thống"]
+        let all = service.nativeFeatures.isEmpty ? FeaturePatchService.defaultFeatures : service.nativeFeatures
+        // Loại bỏ hoàn toàn phần Trang phục và các mục skin
+        let features = all.filter { $0.section != "Trang phục" && !$0.id.hasPrefix("mod.") }
+        let orderedSections = ["ESP", "Aim", "Khác", "Màu sắc", "Hệ thống"]
         let groups = Dictionary(grouping: features, by: { $0.section })
 
         var result: [FeatureSectionModel] = []
@@ -469,6 +471,30 @@ private extension GamePatchVariant {
     }
 }
 
+// MARK: - Preset màu sắc 0..10
+
+private struct ColorPresetItem: Identifiable {
+    let value: Int
+    let name: String
+    let color: Color
+
+    var id: Int { value }
+
+    static let all: [ColorPresetItem] = [
+        ColorPresetItem(value: 0, name: "Cầu vồng", color: .purple),
+        ColorPresetItem(value: 1, name: "Mặc định", color: Color(white: 0.85)),
+        ColorPresetItem(value: 2, name: "Đỏ", color: Color(red: 1.0, green: 0.15, blue: 0.15)),
+        ColorPresetItem(value: 3, name: "Xanh lá", color: Color(red: 0.1, green: 1.0, blue: 0.3)),
+        ColorPresetItem(value: 4, name: "Xanh dương", color: Color(red: 0.0, green: 0.55, blue: 1.0)),
+        ColorPresetItem(value: 5, name: "Vàng", color: Color(red: 1.0, green: 0.95, blue: 0.1)),
+        ColorPresetItem(value: 6, name: "Xanh ngọc", color: Color(red: 0.0, green: 1.0, blue: 1.0)),
+        ColorPresetItem(value: 7, name: "Hồng", color: Color(red: 1.0, green: 0.2, blue: 0.75)),
+        ColorPresetItem(value: 8, name: "Cam", color: Color(red: 1.0, green: 0.55, blue: 0.0)),
+        ColorPresetItem(value: 9, name: "Tím", color: Color(red: 0.7, green: 0.25, blue: 1.0)),
+        ColorPresetItem(value: 10, name: "Trắng", color: Color.white)
+    ]
+}
+
 // MARK: - Row điều khiển chức năng
 
 private struct NativeFeatureControlRow: View {
@@ -495,9 +521,36 @@ private struct NativeFeatureControlRow: View {
     private var desiredValue: Int {
         desired?.value ?? feature.default
     }
+    private var isColorFeature: Bool {
+        feature.type == "color" || feature.section == "Màu sắc" || feature.id.contains("Color") || feature.id.hasPrefix("colors.")
+    }
+    private var selectedColorName: String {
+        ColorPresetItem.all.first(where: { $0.value == desiredValue })?.name ?? "Mặc định"
+    }
+
+    @ViewBuilder
+    private func colorCirclePreview(for value: Int, size: CGFloat) -> some View {
+        if value == 0 {
+            Circle()
+                .fill(AngularGradient(
+                    gradient: Gradient(colors: [.red, .yellow, .green, .cyan, .blue, .purple, .red]),
+                    center: .center
+                ))
+                .frame(width: size, height: size)
+                .overlay(Circle().stroke(Color.white.opacity(0.8), lineWidth: 1))
+                .shadow(color: Color.purple.opacity(0.3), radius: 2, x: 0, y: 1)
+        } else {
+            let preset = ColorPresetItem.all.first(where: { $0.value == value }) ?? ColorPresetItem.all[1]
+            Circle()
+                .fill(preset.color)
+                .frame(width: size, height: size)
+                .overlay(Circle().stroke(preset.value == 10 ? AppTheme.grey300 : Color.black.opacity(0.12), lineWidth: 1))
+                .shadow(color: preset.color.opacity(0.35), radius: 2, x: 0, y: 1)
+        }
+    }
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 12) {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(feature.title)
@@ -514,6 +567,36 @@ private struct NativeFeatureControlRow: View {
 
                 if isSending {
                     ProgressView().tint(AppTheme.ink).scaleEffect(0.8)
+                } else if isColorFeature {
+                    Menu {
+                        ForEach(ColorPresetItem.all) { preset in
+                            Button {
+                                send(enabled: true, value: preset.value)
+                            } label: {
+                                HStack {
+                                    Text(preset.name)
+                                    if preset.value == desiredValue {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            colorCirclePreview(for: desiredValue, size: 14)
+                            Text(selectedColorName)
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .foregroundStyle(AppTheme.ink)
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(AppTheme.grey500)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.white)
+                        .clipShape(Capsule())
+                        .overlay(Capsule().stroke(AppTheme.grey200, lineWidth: 1))
+                    }
                 } else if feature.type == "toggle" {
                     Toggle("", isOn: Binding(
                         get: { desiredEnabled },
@@ -547,7 +630,41 @@ private struct NativeFeatureControlRow: View {
                 }
             }
 
-            if feature.type == "range" {
+            if isColorFeature {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 9) {
+                        ForEach(ColorPresetItem.all) { preset in
+                            let isSelected = (preset.value == desiredValue)
+                            Button {
+                                send(enabled: true, value: preset.value)
+                            } label: {
+                                VStack(spacing: 4) {
+                                    ZStack {
+                                        colorCirclePreview(for: preset.value, size: 26)
+                                        if isSelected {
+                                            Circle()
+                                                .stroke(AppTheme.ink, lineWidth: 2)
+                                                .frame(width: 32, height: 32)
+                                            Image(systemName: "checkmark")
+                                                .font(.system(size: 10, weight: .black))
+                                                .foregroundStyle(preset.value == 10 || preset.value == 1 || preset.value == 5 ? Color.black : Color.white)
+                                        }
+                                    }
+                                    .frame(width: 34, height: 34)
+
+                                    Text(preset.name)
+                                        .font(.system(size: 9, weight: isSelected ? .bold : .medium, design: .rounded))
+                                        .foregroundStyle(isSelected ? AppTheme.ink : AppTheme.grey500)
+                                }
+                                .padding(.horizontal, 2)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                    .padding(.horizontal, 2)
+                }
+            } else if feature.type == "range" {
                 HStack(spacing: 10) {
                     Slider(
                         value: $sliderValue,
@@ -574,6 +691,14 @@ private struct NativeFeatureControlRow: View {
     }
 
     private var stateColor: Color {
+        if isColorFeature {
+            if assemblyOnline {
+                let isApplied = actual?.value == desiredValue
+                return isApplied ? .green : .blue
+            }
+            return .orange
+        }
+
         if feature.type == "toggle" {
             if !desiredEnabled {
                 if assemblyOnline && actual?.enabled == true {
@@ -608,6 +733,15 @@ private struct NativeFeatureControlRow: View {
     }
 
     private var stateText: String {
+        if isColorFeature {
+            let name = selectedColorName.uppercased()
+            if assemblyOnline {
+                let isApplied = actual?.value == desiredValue
+                return isApplied ? "ĐÃ CHỌN: \(name)" : "ĐANG ĐỒNG BỘ..."
+            }
+            return "ĐÃ CHỌN: \(name)"
+        }
+
         if feature.type == "toggle" {
             if !desiredEnabled {
                 if assemblyOnline && actual?.enabled == true {

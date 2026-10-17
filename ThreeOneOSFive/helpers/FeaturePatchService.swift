@@ -253,6 +253,20 @@ final class FeaturePatchService: ObservableObject {
     @Published var patches: [PatchItem] = []
     @Published var isLoading = false
 
+    static let colorOptions: [NovaXFeatureOption] = [
+        NovaXFeatureOption(value: 0, title: "Cầu vồng"),
+        NovaXFeatureOption(value: 1, title: "Mặc định"),
+        NovaXFeatureOption(value: 2, title: "Đỏ"),
+        NovaXFeatureOption(value: 3, title: "Xanh lá"),
+        NovaXFeatureOption(value: 4, title: "Xanh dương"),
+        NovaXFeatureOption(value: 5, title: "Vàng"),
+        NovaXFeatureOption(value: 6, title: "Xanh ngọc"),
+        NovaXFeatureOption(value: 7, title: "Hồng"),
+        NovaXFeatureOption(value: 8, title: "Cam"),
+        NovaXFeatureOption(value: 9, title: "Tím"),
+        NovaXFeatureOption(value: 10, title: "Trắng")
+    ]
+
     static let defaultFeatures: [NovaXFeatureDefinition] = [
         // ESP (12)
         NovaXFeatureDefinition(id: "esp.master", title: "ESP tổng", section: "ESP", type: "toggle"),
@@ -311,23 +325,15 @@ final class FeaturePatchService: ObservableObject {
         NovaXFeatureDefinition(id: "misc.damage", title: "Màu sát thương", section: "Khác", type: "toggle"),
 
         // Màu sắc (7)
-        NovaXFeatureDefinition(id: "colors.fov", title: "Màu FOV", section: "Màu sắc", type: "range", min: 0, max: 10, default: 1),
-        NovaXFeatureDefinition(id: "colors.line", title: "Màu đường kẻ", section: "Màu sắc", type: "range", min: 0, max: 10, default: 1),
-        NovaXFeatureDefinition(id: "colors.box", title: "Màu khung", section: "Màu sắc", type: "range", min: 0, max: 10, default: 1),
-        NovaXFeatureDefinition(id: "colors.skeleton", title: "Màu skeleton", section: "Màu sắc", type: "range", min: 0, max: 10, default: 1),
-        NovaXFeatureDefinition(id: "damage.criticalColor", title: "Màu damage chí mạng", section: "Màu sắc", type: "range", min: 0, max: 10, default: 2),
-        NovaXFeatureDefinition(id: "damage.normalColor", title: "Màu damage thường", section: "Màu sắc", type: "range", min: 0, max: 10, default: 10),
-        NovaXFeatureDefinition(id: "damage.iconColor", title: "Màu icon damage", section: "Màu sắc", type: "range", min: 0, max: 10, default: 6),
+        NovaXFeatureDefinition(id: "damage.criticalColor", title: "Màu damage chí mạng", section: "Màu sắc", type: "color", min: 0, max: 10, default: 2, options: colorOptions),
+        NovaXFeatureDefinition(id: "damage.normalColor", title: "Màu damage thường", section: "Màu sắc", type: "color", min: 0, max: 10, default: 10, options: colorOptions),
+        NovaXFeatureDefinition(id: "damage.iconColor", title: "Màu icon damage", section: "Màu sắc", type: "color", min: 0, max: 10, default: 6, options: colorOptions),
+        NovaXFeatureDefinition(id: "colors.fov", title: "Màu FOV", section: "Màu sắc", type: "color", min: 0, max: 10, default: 1, options: colorOptions),
+        NovaXFeatureDefinition(id: "colors.line", title: "Màu đường kẻ", section: "Màu sắc", type: "color", min: 0, max: 10, default: 1, options: colorOptions),
+        NovaXFeatureDefinition(id: "colors.box", title: "Màu khung", section: "Màu sắc", type: "color", min: 0, max: 10, default: 1, options: colorOptions),
+        NovaXFeatureDefinition(id: "colors.skeleton", title: "Màu skeleton", section: "Màu sắc", type: "color", min: 0, max: 10, default: 1, options: colorOptions),
 
-        // Trang phục (5)
-        NovaXFeatureDefinition(id: "mod.hair", title: "Tóc", section: "Trang phục", type: "select", min: 0, max: 2147483647, default: 0),
-        NovaXFeatureDefinition(id: "mod.top", title: "Áo", section: "Trang phục", type: "select", min: 0, max: 2147483647, default: 0),
-        NovaXFeatureDefinition(id: "mod.bottom", title: "Quần", section: "Trang phục", type: "select", min: 0, max: 2147483647, default: 0),
-        NovaXFeatureDefinition(id: "mod.shoes", title: "Giày", section: "Trang phục", type: "select", min: 0, max: 2147483647, default: 0),
-        NovaXFeatureDefinition(id: "mod.face", title: "Mặt", section: "Trang phục", type: "select", min: 0, max: 2147483647, default: 0),
-
-        // Hệ thống (2)
-        NovaXFeatureDefinition(id: "mod.reset", title: "Khôi phục skin", section: "Hệ thống", type: "toggle"),
+        // Hệ thống (1)
         NovaXFeatureDefinition(id: "settings.restore", title: "Khôi phục tất cả", section: "Hệ thống", type: "toggle")
     ]
 
