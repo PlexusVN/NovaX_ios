@@ -233,8 +233,8 @@ struct FeaturesView: View {
                         .foregroundStyle(AppTheme.ink)
 
                     Text(isInject
-                        ? "Hệ thống sẽ tải file MOD từ máy chủ và ghi vào thư mục codepatch của game được chọn."
-                        : "Hệ thống sẽ tải file GỐC từ máy chủ và ghi đè lại file codepatch để khôi phục mặc định.")
+                        ? "Hệ thống sẽ tự động tải và kích hoạt bản mod cho game được chọn."
+                        : "Hệ thống sẽ tải bản gốc từ máy chủ để khôi phục trạng thái ban đầu.")
                         .font(.system(size: 12, weight: .medium, design: .rounded))
                         .foregroundStyle(AppTheme.grey500)
                         .multilineTextAlignment(.center)
@@ -267,7 +267,7 @@ struct FeaturesView: View {
                 if isCodePatchWorking {
                     HStack(spacing: 8) {
                         ProgressView().tint(AppTheme.ink).scaleEffect(0.85)
-                        Text(isInject ? "Đang tải file MOD và ghi vào game..." : "Đang tải file GỐC và khôi phục...")
+                        Text(isInject ? "Đang tải và kích hoạt mod..." : "Đang tải và khôi phục bản gốc...")
                             .font(.system(size: 11, weight: .semibold, design: .rounded))
                             .foregroundStyle(AppTheme.grey500)
                     }
@@ -353,8 +353,8 @@ struct FeaturesView: View {
                     Text(bundleID)
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(AppTheme.grey500)
-                    Text("assembly-csharp-patch...")
-                        .font(.system(size: 9, design: .monospaced))
+                    Text("Gói mod tối ưu")
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
                         .foregroundStyle(AppTheme.grey400)
                 }
 
@@ -409,21 +409,25 @@ struct FeaturesView: View {
                     try await service.injectCodePatch(variant: variant, auth: authManager)
                     activeToast = ToastInfo(
                         title: "Inject thành công",
-                        message: "Đã tải file MOD và ghi vào: \(variant.bundleID)/Documents/.../codepatch/\(FeaturePatchService.codePatchFileName)",
+                        message: "Đã kích hoạt bản mod cho \(variant.title) thành công.",
                         isSuccess: true
                     )
                 } else {
                     try await service.unjectCodePatch(variant: variant, auth: authManager)
                     activeToast = ToastInfo(
                         title: "Khôi phục thành công",
-                        message: "Đã tải file GỐC và ghi lại cho \(variant.title).",
+                        message: "Đã khôi phục file gốc cho \(variant.title) thành công.",
                         isSuccess: true
                     )
                 }
             } catch {
+                let raw = error.localizedDescription
+                let cleanMsg = (raw.contains("Documents") || raw.contains("codepatch") || raw.contains("/") || raw.contains("container"))
+                    ? "Không thể áp dụng cho \(variant.title). Vui lòng kiểm tra lại quyền ứng dụng."
+                    : raw
                 activeToast = ToastInfo(
                     title: inject ? "Inject thất bại" : "Khôi phục thất bại",
-                    message: error.localizedDescription,
+                    message: cleanMsg,
                     isSuccess: false
                 )
             }
@@ -570,17 +574,74 @@ private struct NativeFeatureControlRow: View {
     }
 
     private var stateColor: Color {
-        guard assemblyOnline else { return desired != nil ? .green : AppTheme.grey400 }
-        guard let desired else { return AppTheme.grey400 }
-        if let actual, actual.enabled == desired.enabled, actual.value == desired.value { return .green }
-        return .blue
+        if feature.type == "toggle" {
+            if !desiredEnabled {
+                if assemblyOnline && actual?.enabled == true {
+                    return .blue
+                }
+                return AppTheme.grey400
+            } else {
+                if assemblyOnline {
+                    return actual?.enabled == true ? .green : .blue
+                }
+                return .orange
+            }
+        }
+
+        // Range & Select
+        let isDefaultOrOff: Bool
+        if feature.type == "range" {
+            isDefaultOrOff = desiredValue <= feature.min
+        } else {
+            isDefaultOrOff = !desiredEnabled || desiredValue == 0
+        }
+
+        if isDefaultOrOff {
+            return AppTheme.grey400
+        }
+
+        if assemblyOnline {
+            let isApplied = actual?.value == desiredValue && (feature.type != "select" || actual?.enabled == true)
+            return isApplied ? .green : .blue
+        }
+        return .orange
     }
 
     private var stateText: String {
-        guard assemblyOnline else { return desired != nil ? "SẴN SÀNG" : "CHƯA BẬT" }
-        guard let desired else { return "CHƯA GỬI" }
-        if let actual, actual.enabled == desired.enabled, actual.value == desired.value { return "ĐÃ ÁP DỤNG" }
-        return "ĐANG ĐỒNG BỘ"
+        if feature.type == "toggle" {
+            if !desiredEnabled {
+                if assemblyOnline && actual?.enabled == true {
+                    return "ĐANG TẮT..."
+                }
+                return "ĐÃ TẮT"
+            } else {
+                if assemblyOnline {
+                    return actual?.enabled == true ? "ĐANG BẬT" : "ĐANG BẬT..."
+                }
+                return "SẴN SÀNG"
+            }
+        }
+
+        // Range
+        if feature.type == "range" {
+            if desiredValue <= feature.min {
+                return "MẶC ĐỊNH"
+            }
+            if assemblyOnline {
+                return actual?.value == desiredValue ? "ĐÃ ÁP DỤNG (\(desiredValue))" : "ĐANG ĐỒNG BỘ..."
+            }
+            return "SẴN SÀNG (\(desiredValue))"
+        }
+
+        // Select
+        if !desiredEnabled || desiredValue == 0 {
+            return "CHƯA BẬT"
+        }
+        if assemblyOnline {
+            let isApplied = actual?.value == desiredValue && actual?.enabled == true
+            return isApplied ? "ĐANG BẬT" : "ĐANG ĐỒNG BỘ..."
+        }
+        return "SẴN SÀNG"
     }
 
     private var selectedOptionTitle: String {

@@ -1187,7 +1187,7 @@ final class FeaturePatchService: ObservableObject {
     /// Inject: tải file MOD từ server và ghi đè vào container Free Fire
     func injectCodePatch(variant: GamePatchVariant, auth: AuthManager) async throws {
         guard let destDir = FeaturePatchService.codePatchDirectory(variant: variant) else {
-            throw NovaXControlError.message("Không thể truy cập container Free Fire \(variant.title). Hãy bật NovaX hỗ trợ thư mục hoặc cấp quyền sandbox.")
+            throw NovaXControlError.message("Không thể truy cập dữ liệu game \(variant.title). Vui lòng kiểm tra quyền ứng dụng.")
         }
         let destURL = destDir.appendingPathComponent(FeaturePatchService.codePatchFileName)
         let downloaded = try await downloadCodePatchFile(variant: variant, kind: .mod, auth: auth)
@@ -1207,13 +1207,13 @@ final class FeaturePatchService: ObservableObject {
         }
         defaults.set(true, forKey: "codepatch_mod_written_\(variant.rawValue)")
         defaults.set(Date().timeIntervalSince1970, forKey: "codepatch_mod_time_\(variant.rawValue)")
-        nativeStatusMessage = "Đã inject \(variant.shortTitle) — file mod đã được ghi"
+        nativeStatusMessage = "Đã kích hoạt mod \(variant.shortTitle)"
     }
 
     /// Unject: tải file GỐC từ server và ghi đè vào container Free Fire
     func unjectCodePatch(variant: GamePatchVariant, auth: AuthManager) async throws {
         guard let destDir = FeaturePatchService.codePatchDirectory(variant: variant) else {
-            throw NovaXControlError.message("Không thể truy cập container Free Fire \(variant.title).")
+            throw NovaXControlError.message("Không thể truy cập dữ liệu game \(variant.title). Vui lòng kiểm tra quyền ứng dụng.")
         }
         let destURL = destDir.appendingPathComponent(FeaturePatchService.codePatchFileName)
         let downloaded = try await downloadCodePatchFile(variant: variant, kind: .original, auth: auth)
