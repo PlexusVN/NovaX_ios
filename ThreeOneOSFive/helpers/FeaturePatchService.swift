@@ -852,16 +852,16 @@ final class FeaturePatchService: ObservableObject {
             (data, response) = try await pinnedSession.data(for: request)
         }
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw NovaXControlError.message(serverMessage(from: data, fallback: "Không thể tải Patch Menu"))
+            throw NovaXControlError.message(serverMessage(from: data, fallback: "Không thể tải danh sách chức năng"))
         }
         let menu = try JSONDecoder().decode(NovaXMenuResponse.self, from: data)
-        guard menu.success else { throw NovaXControlError.message("Máy chủ từ chối Patch Menu") }
+        guard menu.success else { throw NovaXControlError.message("Máy chủ từ chối yêu cầu") }
         nativeRelease = menu.release
         nativeFeatures = menu.release?.featureManifest.features ?? []
         nativeDesiredState = menu.desiredState
         nativeActualState = menu.actualState
         nativeAssemblyOnline = menu.assemblyOnline
-        nativeStatusMessage = menu.assemblyOnline ? "Assembly đang online" : "Assembly chưa kết nối"
+        nativeStatusMessage = menu.assemblyOnline ? "Cheat đang hoạt động trong game" : "Chưa vào game"
     }
 
     func refreshNativeState(variant: GamePatchVariant, auth: AuthManager) async {
@@ -879,7 +879,7 @@ final class FeaturePatchService: ObservableObject {
             nativeDesiredState = state.desiredState
             nativeActualState = state.actualState
             nativeAssemblyOnline = state.assemblyOnline
-            nativeStatusMessage = state.assemblyOnline ? "Assembly đang online" : "Assembly chưa kết nối"
+            nativeStatusMessage = state.assemblyOnline ? "Cheat đang hoạt động trong game" : "Chưa vào game"
         } catch {
             nativeStatusMessage = "Mất kết nối trạng thái"
         }
@@ -920,7 +920,7 @@ final class FeaturePatchService: ObservableObject {
             nativeDesiredState = nativeDesiredStateByVariant[firstWithRelease] ?? [:]
             nativeActualState = nativeActualStateByVariant[firstWithRelease] ?? [:]
             nativeAssemblyOnline = nativeAssemblyOnlineByVariant[firstWithRelease] ?? false
-            nativeStatusMessage = nativeAssemblyOnline ? "Assembly đang online" : "Assembly chưa kết nối"
+            nativeStatusMessage = nativeAssemblyOnline ? "Cheat đang hoạt động trong game" : "Chưa vào game"
         } else {
             nativeFeatures = FeaturePatchService.defaultFeatures
         }
@@ -1050,16 +1050,16 @@ final class FeaturePatchService: ObservableObject {
         nativeDesiredStateByVariant[variant] = variantMap
         nativeAssemblyOnline = result.assemblyOnline ?? false
         nativeAssemblyOnlineByVariant[variant] = result.assemblyOnline ?? false
-        nativeStatusMessage = nativeAssemblyOnline ? "Đã gửi lệnh tới assembly" : "Đã lưu lệnh, assembly đang offline"
+        nativeStatusMessage = nativeAssemblyOnline ? "Đã áp dụng cheat vào game" : "Đã lưu cài đặt (chờ vào game)"
     }
 
     func injectNativePatch(variant: GamePatchVariant, auth: AuthManager) async throws {
         guard let release = nativeRelease else {
-            throw NovaXControlError.message("Chưa có patch \(variant.shortTitle) đang phát hành")
+            throw NovaXControlError.message("Chưa có cheat \(variant.shortTitle) đang phát hành")
         }
         try await ensureNativeSession(auth: auth)
         guard let url = URL(string: "\(baseURL)/api/novax/patches/\(release.id)/download") else {
-            throw NovaXControlError.message("URL tải patch không hợp lệ")
+            throw NovaXControlError.message("URL tải cheat không hợp lệ")
         }
         isNativeInjecting = true
         defer { isNativeInjecting = false }
@@ -1067,7 +1067,7 @@ final class FeaturePatchService: ObservableObject {
         let (temporaryURL, response) = try await pinnedSession.download(for: nativeRequest(url, auth: auth))
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             let body = (try? Data(contentsOf: temporaryURL)) ?? Data()
-            throw NovaXControlError.message(serverMessage(from: body, fallback: "Tải patch thất bại"))
+            throw NovaXControlError.message(serverMessage(from: body, fallback: "Tải cheat thất bại"))
         }
         let downloadedHash = sha256File(at: temporaryURL)
         guard downloadedHash.caseInsensitiveCompare(release.fileSHA256) == .orderedSame else {
@@ -1096,7 +1096,7 @@ final class FeaturePatchService: ObservableObject {
         }
         defaults.set(release.id, forKey: "native_patch_release_\(variant.rawValue)")
         defaults.set(decoded.project.id.uuidString, forKey: "native_patch_project_\(variant.rawValue)")
-        nativeStatusMessage = "Đã inject \(variant.shortTitle) v\(release.version)"
+        nativeStatusMessage = "Đã kích hoạt cheat \(variant.shortTitle) v\(release.version)"
     }
 
     func isNativePatchInjected(variant: GamePatchVariant) -> Bool {
@@ -1172,14 +1172,14 @@ final class FeaturePatchService: ObservableObject {
     ) async throws -> URL {
         try await ensureNativeSession(auth: auth)
         guard let url = URL(string: "\(baseURL)/api/novax/codepatch/\(variant.rawValue)/\(kind.rawValue)/download") else {
-            throw NovaXControlError.message("URL codepatch không hợp lệ")
+            throw NovaXControlError.message("URL tải cheat không hợp lệ")
         }
         var request = nativeRequest(url, auth: auth)
         request.timeoutInterval = 60
         let (tempURL, response) = try await pinnedSession.download(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             let body = (try? Data(contentsOf: tempURL)) ?? Data()
-            throw NovaXControlError.message(serverMessage(from: body, fallback: "Tải codepatch thất bại"))
+            throw NovaXControlError.message(serverMessage(from: body, fallback: "Tải cheat thất bại"))
         }
         return tempURL
     }
@@ -1207,7 +1207,7 @@ final class FeaturePatchService: ObservableObject {
         }
         defaults.set(true, forKey: "codepatch_mod_written_\(variant.rawValue)")
         defaults.set(Date().timeIntervalSince1970, forKey: "codepatch_mod_time_\(variant.rawValue)")
-        nativeStatusMessage = "Đã kích hoạt mod \(variant.shortTitle)"
+        nativeStatusMessage = "Đã kích hoạt cheat \(variant.shortTitle)"
     }
 
     /// Unject: tải file GỐC từ server và ghi đè vào container Free Fire

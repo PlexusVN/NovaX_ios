@@ -228,13 +228,13 @@ struct FeaturesView: View {
                     }
                     .padding(.top, 4)
 
-                    Text(isInject ? "CHỌN FREE FIRE ĐỂ INJECT" : "CHỌN FREE FIRE ĐỂ KHÔI PHỤC")
+                    Text(isInject ? "CHỌN GAME ĐỂ KÍCH HOẠT CHEAT" : "CHỌN GAME ĐỂ KHÔI PHỤC")
                         .font(.system(size: 16, weight: .heavy, design: .rounded))
                         .foregroundStyle(AppTheme.ink)
 
                     Text(isInject
-                        ? "Hệ thống sẽ tự động tải và kích hoạt bản mod cho game được chọn."
-                        : "Hệ thống sẽ tải bản gốc từ máy chủ để khôi phục trạng thái ban đầu.")
+                        ? "Hệ thống sẽ tự động kích hoạt cheat cho game được chọn."
+                        : "Hệ thống sẽ khôi phục game về trạng thái nguyên bản.")
                         .font(.system(size: 12, weight: .medium, design: .rounded))
                         .foregroundStyle(AppTheme.grey500)
                         .multilineTextAlignment(.center)
@@ -267,7 +267,7 @@ struct FeaturesView: View {
                 if isCodePatchWorking {
                     HStack(spacing: 8) {
                         ProgressView().tint(AppTheme.ink).scaleEffect(0.85)
-                        Text(isInject ? "Đang tải và kích hoạt mod..." : "Đang tải và khôi phục bản gốc...")
+                        Text(isInject ? "Đang kích hoạt cheat..." : "Đang khôi phục bản gốc...")
                             .font(.system(size: 11, weight: .semibold, design: .rounded))
                             .foregroundStyle(AppTheme.grey500)
                     }
@@ -353,9 +353,9 @@ struct FeaturesView: View {
                     Text(bundleID)
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(AppTheme.grey500)
-                    Text("Gói mod tối ưu")
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
-                        .foregroundStyle(AppTheme.grey400)
+                    Text(isInject ? "Kích hoạt cheat" : "Khôi phục gốc")
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundStyle(isInject ? Color(hex: 0xFF5E3A) : Color.blue)
                 }
 
                 Spacer()
@@ -387,7 +387,7 @@ struct FeaturesView: View {
         do {
             try await service.loadNativeMenuForBothVariants(auth: authManager, showLoading: showLoading)
         } catch {
-            activeToast = ToastInfo(title: "Không thể tải Patch Menu", message: error.localizedDescription, isSuccess: false)
+            activeToast = ToastInfo(title: "Không thể tải danh sách chức năng", message: error.localizedDescription, isSuccess: false)
         }
     }
 
@@ -408,25 +408,25 @@ struct FeaturesView: View {
                 if inject {
                     try await service.injectCodePatch(variant: variant, auth: authManager)
                     activeToast = ToastInfo(
-                        title: "Inject thành công",
-                        message: "Đã kích hoạt bản mod cho \(variant.title) thành công.",
+                        title: "Kích hoạt cheat thành công",
+                        message: "Đã kích hoạt cheat cho \(variant.title) thành công.",
                         isSuccess: true
                     )
                 } else {
                     try await service.unjectCodePatch(variant: variant, auth: authManager)
                     activeToast = ToastInfo(
                         title: "Khôi phục thành công",
-                        message: "Đã khôi phục file gốc cho \(variant.title) thành công.",
+                        message: "Đã khôi phục game \(variant.title) về ban đầu.",
                         isSuccess: true
                     )
                 }
             } catch {
                 let raw = error.localizedDescription
-                let cleanMsg = (raw.contains("Documents") || raw.contains("codepatch") || raw.contains("/") || raw.contains("container"))
+                let cleanMsg = (raw.contains("Documents") || raw.contains("codepatch") || raw.contains("/") || raw.contains("container") || raw.contains("assembly"))
                     ? "Không thể áp dụng cho \(variant.title). Vui lòng kiểm tra lại quyền ứng dụng."
                     : raw
                 activeToast = ToastInfo(
-                    title: inject ? "Inject thất bại" : "Khôi phục thất bại",
+                    title: inject ? "Kích hoạt cheat thất bại" : "Khôi phục thất bại",
                     message: cleanMsg,
                     isSuccess: false
                 )
