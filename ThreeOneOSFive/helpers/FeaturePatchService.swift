@@ -136,6 +136,26 @@ struct NovaXFeatureDefinition: Codable, Identifiable, Equatable {
     let `default`: Int
     let options: [NovaXFeatureOption]
 
+    init(
+        id: String,
+        title: String,
+        section: String,
+        type: String = "toggle",
+        min: Int = 0,
+        max: Int = 1,
+        default: Int = 0,
+        options: [NovaXFeatureOption] = []
+    ) {
+        self.id = id
+        self.title = title
+        self.section = section
+        self.type = type
+        self.min = min
+        self.max = max
+        self.default = `default`
+        self.options = options
+    }
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
@@ -233,8 +253,86 @@ final class FeaturePatchService: ObservableObject {
     @Published var patches: [PatchItem] = []
     @Published var isLoading = false
 
+    static let defaultFeatures: [NovaXFeatureDefinition] = [
+        // ESP (12)
+        NovaXFeatureDefinition(id: "esp.master", title: "ESP tổng", section: "ESP", type: "toggle"),
+        NovaXFeatureDefinition(id: "esp.box", title: "Khung ESP", section: "ESP", type: "toggle"),
+        NovaXFeatureDefinition(id: "esp.tracer", title: "Đường kẻ", section: "ESP", type: "toggle"),
+        NovaXFeatureDefinition(id: "esp.health", title: "Máu", section: "ESP", type: "toggle"),
+        NovaXFeatureDefinition(id: "esp.name", title: "Tên", section: "ESP", type: "toggle"),
+        NovaXFeatureDefinition(id: "esp.distance", title: "Khoảng cách", section: "ESP", type: "toggle"),
+        NovaXFeatureDefinition(id: "esp.fov", title: "Vòng FOV", section: "ESP", type: "toggle"),
+        NovaXFeatureDefinition(id: "esp.skeleton", title: "Skeleton", section: "ESP", type: "toggle"),
+        NovaXFeatureDefinition(id: "esp.enemy", title: "Đếm địch", section: "ESP", type: "toggle"),
+        NovaXFeatureDefinition(id: "esp.arrows", title: "Mũi tên 360°", section: "ESP", type: "toggle"),
+        NovaXFeatureDefinition(id: "esp.fovRadius", title: "Bán kính FOV", section: "ESP", type: "range", min: 0, max: 31, default: 0),
+        NovaXFeatureDefinition(id: "esp.lineOrigin", title: "Gốc đường kẻ", section: "ESP", type: "select", min: 0, max: 2, default: 0, options: [
+            NovaXFeatureOption(value: 0, title: "Trên"),
+            NovaXFeatureOption(value: 1, title: "Giữa"),
+            NovaXFeatureOption(value: 2, title: "Dưới")
+        ]),
+
+        // Aim (7)
+        NovaXFeatureDefinition(id: "aim.silent", title: "Silent Aim", section: "Aim", type: "toggle"),
+        NovaXFeatureDefinition(id: "aim.system", title: "Aim System", section: "Aim", type: "toggle"),
+        NovaXFeatureDefinition(id: "aim.systemHead", title: "Vị trí Aim System", section: "Aim", type: "select", min: 0, max: 1, default: 0, options: [
+            NovaXFeatureOption(value: 0, title: "Ngực"),
+            NovaXFeatureOption(value: 1, title: "Đầu")
+        ]),
+        NovaXFeatureDefinition(id: "aim.target", title: "Mục tiêu", section: "Aim", type: "select", min: 0, max: 2, default: 0, options: [
+            NovaXFeatureOption(value: 0, title: "Gần tâm"),
+            NovaXFeatureOption(value: 1, title: "Gần người"),
+            NovaXFeatureOption(value: 2, title: "Máu thấp")
+        ]),
+        NovaXFeatureDefinition(id: "aim.headRate", title: "Tỉ lệ Head", section: "Aim", type: "select", min: 0, max: 4, default: 0, options: [
+            NovaXFeatureOption(value: 0, title: "0%"),
+            NovaXFeatureOption(value: 1, title: "25%"),
+            NovaXFeatureOption(value: 2, title: "50%"),
+            NovaXFeatureOption(value: 3, title: "75%"),
+            NovaXFeatureOption(value: 4, title: "100%")
+        ]),
+        NovaXFeatureDefinition(id: "aim.legit", title: "Legit Aim", section: "Aim", type: "toggle"),
+        NovaXFeatureDefinition(id: "aim.sniper", title: "Sniper Scope", section: "Aim", type: "toggle"),
+
+        // Khác (14)
+        NovaXFeatureDefinition(id: "misc.backJump", title: "Back Jump", section: "Khác", type: "toggle"),
+        NovaXFeatureDefinition(id: "misc.fastSwitch", title: "Đổi súng nhanh", section: "Khác", type: "toggle"),
+        NovaXFeatureDefinition(id: "misc.speed", title: "Tốc độ", section: "Khác", type: "toggle"),
+        NovaXFeatureDefinition(id: "misc.speedLevel", title: "Mức tốc độ", section: "Khác", type: "range", min: 0, max: 19, default: 5),
+        NovaXFeatureDefinition(id: "misc.vision", title: "Tầm nhìn", section: "Khác", type: "toggle"),
+        NovaXFeatureDefinition(id: "misc.visionLevel", title: "Mức tầm nhìn", section: "Khác", type: "range", min: 1, max: 20, default: 10),
+        NovaXFeatureDefinition(id: "misc.spin", title: "Xoay nhân vật", section: "Khác", type: "toggle"),
+        NovaXFeatureDefinition(id: "misc.spinLevel", title: "Tốc độ xoay", section: "Khác", type: "range", min: 1, max: 15, default: 5),
+        NovaXFeatureDefinition(id: "misc.buff", title: "Buff Damage", section: "Khác", type: "toggle"),
+        NovaXFeatureDefinition(id: "misc.sensitivity", title: "Độ nhạy cao", section: "Khác", type: "toggle"),
+        NovaXFeatureDefinition(id: "misc.fps", title: "Mở khóa FPS", section: "Khác", type: "toggle"),
+        NovaXFeatureDefinition(id: "misc.skill", title: "Không hồi chiêu", section: "Khác", type: "toggle"),
+        NovaXFeatureDefinition(id: "misc.ammo", title: "Tăng đạn", section: "Khác", type: "toggle"),
+        NovaXFeatureDefinition(id: "misc.damage", title: "Màu sát thương", section: "Khác", type: "toggle"),
+
+        // Màu sắc (7)
+        NovaXFeatureDefinition(id: "colors.fov", title: "Màu FOV", section: "Màu sắc", type: "range", min: 0, max: 10, default: 1),
+        NovaXFeatureDefinition(id: "colors.line", title: "Màu đường kẻ", section: "Màu sắc", type: "range", min: 0, max: 10, default: 1),
+        NovaXFeatureDefinition(id: "colors.box", title: "Màu khung", section: "Màu sắc", type: "range", min: 0, max: 10, default: 1),
+        NovaXFeatureDefinition(id: "colors.skeleton", title: "Màu skeleton", section: "Màu sắc", type: "range", min: 0, max: 10, default: 1),
+        NovaXFeatureDefinition(id: "damage.criticalColor", title: "Màu damage chí mạng", section: "Màu sắc", type: "range", min: 0, max: 10, default: 2),
+        NovaXFeatureDefinition(id: "damage.normalColor", title: "Màu damage thường", section: "Màu sắc", type: "range", min: 0, max: 10, default: 10),
+        NovaXFeatureDefinition(id: "damage.iconColor", title: "Màu icon damage", section: "Màu sắc", type: "range", min: 0, max: 10, default: 6),
+
+        // Trang phục (5)
+        NovaXFeatureDefinition(id: "mod.hair", title: "Tóc", section: "Trang phục", type: "select", min: 0, max: 2147483647, default: 0),
+        NovaXFeatureDefinition(id: "mod.top", title: "Áo", section: "Trang phục", type: "select", min: 0, max: 2147483647, default: 0),
+        NovaXFeatureDefinition(id: "mod.bottom", title: "Quần", section: "Trang phục", type: "select", min: 0, max: 2147483647, default: 0),
+        NovaXFeatureDefinition(id: "mod.shoes", title: "Giày", section: "Trang phục", type: "select", min: 0, max: 2147483647, default: 0),
+        NovaXFeatureDefinition(id: "mod.face", title: "Mặt", section: "Trang phục", type: "select", min: 0, max: 2147483647, default: 0),
+
+        // Hệ thống (2)
+        NovaXFeatureDefinition(id: "mod.reset", title: "Khôi phục skin", section: "Hệ thống", type: "toggle"),
+        NovaXFeatureDefinition(id: "settings.restore", title: "Khôi phục tất cả", section: "Hệ thống", type: "toggle")
+    ]
+
     @Published private(set) var nativeRelease: NovaXPatchRelease?
-    @Published private(set) var nativeFeatures: [NovaXFeatureDefinition] = []
+    @Published private(set) var nativeFeatures: [NovaXFeatureDefinition] = FeaturePatchService.defaultFeatures
     @Published private(set) var nativeDesiredState: [String: NovaXRemoteFeatureState] = [:]
     @Published private(set) var nativeActualState: [String: NovaXRemoteFeatureState] = [:]
     @Published private(set) var nativeAssemblyOnline = false
@@ -244,7 +342,10 @@ final class FeaturePatchService: ObservableObject {
 
     /// Per-variant (cả 2 game: ffth và ffmax)
     @Published private(set) var nativeReleaseByVariant: [GamePatchVariant: NovaXPatchRelease] = [:]
-    @Published private(set) var nativeFeaturesByVariant: [GamePatchVariant: [NovaXFeatureDefinition]] = [:]
+    @Published private(set) var nativeFeaturesByVariant: [GamePatchVariant: [NovaXFeatureDefinition]] = [
+        .ffth: FeaturePatchService.defaultFeatures,
+        .ffmax: FeaturePatchService.defaultFeatures
+    ]
     @Published private(set) var nativeDesiredStateByVariant: [GamePatchVariant: [String: NovaXRemoteFeatureState]] = [:]
     @Published private(set) var nativeActualStateByVariant: [GamePatchVariant: [String: NovaXRemoteFeatureState]] = [:]
     @Published private(set) var nativeAssemblyOnlineByVariant: [GamePatchVariant: Bool] = [:]
@@ -796,7 +897,11 @@ final class FeaturePatchService: ObservableObject {
             do {
                 let menu = try await fetchNativeMenu(variant: v, auth: auth)
                 nativeReleaseByVariant[v] = menu.release
-                nativeFeaturesByVariant[v] = menu.release?.featureManifest.features ?? []
+                if let feats = menu.release?.featureManifest.features, !feats.isEmpty {
+                    nativeFeaturesByVariant[v] = feats
+                } else {
+                    nativeFeaturesByVariant[v] = FeaturePatchService.defaultFeatures
+                }
                 nativeDesiredStateByVariant[v] = menu.desiredState
                 nativeActualStateByVariant[v] = menu.actualState
                 nativeAssemblyOnlineByVariant[v] = menu.assemblyOnline
@@ -807,15 +912,21 @@ final class FeaturePatchService: ObservableObject {
         // Lấy variant đầu tiên có release làm "mặc định" cho các UI cũ
         if let firstWithRelease = variants.first(where: { nativeReleaseByVariant[$0] != nil }) {
             nativeRelease = nativeReleaseByVariant[firstWithRelease]
-            nativeFeatures = nativeFeaturesByVariant[firstWithRelease] ?? []
+            if let feats = nativeFeaturesByVariant[firstWithRelease], !feats.isEmpty {
+                nativeFeatures = feats
+            } else {
+                nativeFeatures = FeaturePatchService.defaultFeatures
+            }
             nativeDesiredState = nativeDesiredStateByVariant[firstWithRelease] ?? [:]
             nativeActualState = nativeActualStateByVariant[firstWithRelease] ?? [:]
             nativeAssemblyOnline = nativeAssemblyOnlineByVariant[firstWithRelease] ?? false
             nativeStatusMessage = nativeAssemblyOnline ? "Assembly đang online" : "Assembly chưa kết nối"
+        } else {
+            nativeFeatures = FeaturePatchService.defaultFeatures
         }
         // Check codepatch availability
         await loadCodePatchAvailability(auth: auth)
-        if let firstError = firstError { throw firstError }
+        if let firstError = firstError, nativeReleaseByVariant.isEmpty { throw firstError }
     }
 
     func refreshNativeStateForBothVariants(auth: AuthManager) async {
@@ -882,6 +993,30 @@ final class FeaturePatchService: ObservableObject {
         feature: NovaXFeatureDefinition,
         enabled: Bool,
         value: Int,
+        auth: AuthManager
+    ) async throws {
+        let immediateState = NovaXRemoteFeatureState(enabled: enabled, value: value, revision: nil)
+        nativeDesiredState[feature.id] = immediateState
+        for v in [GamePatchVariant.ffth, .ffmax] {
+            var map = nativeDesiredStateByVariant[v] ?? [:]
+            map[feature.id] = immediateState
+            nativeDesiredStateByVariant[v] = map
+        }
+        for v in [GamePatchVariant.ffth, .ffmax] {
+            _ = try? await sendNativeCommand(
+                feature: feature,
+                enabled: enabled,
+                value: value,
+                variant: v,
+                auth: auth
+            )
+        }
+    }
+
+    func sendNativeCommand(
+        feature: NovaXFeatureDefinition,
+        enabled: Bool,
+        value: Int,
         variant: GamePatchVariant,
         auth: AuthManager
     ) async throws {
@@ -904,12 +1039,17 @@ final class FeaturePatchService: ObservableObject {
         }
         let result = try JSONDecoder().decode(NovaXCommandResponse.self, from: data)
         guard result.success else { throw NovaXControlError.message(result.code) }
-        nativeDesiredState[feature.id] = NovaXRemoteFeatureState(
+        let newState = NovaXRemoteFeatureState(
             enabled: enabled,
             value: value,
             revision: result.revision
         )
+        nativeDesiredState[feature.id] = newState
+        var variantMap = nativeDesiredStateByVariant[variant] ?? [:]
+        variantMap[feature.id] = newState
+        nativeDesiredStateByVariant[variant] = variantMap
         nativeAssemblyOnline = result.assemblyOnline ?? false
+        nativeAssemblyOnlineByVariant[variant] = result.assemblyOnline ?? false
         nativeStatusMessage = nativeAssemblyOnline ? "Đã gửi lệnh tới assembly" : "Đã lưu lệnh, assembly đang offline"
     }
 
@@ -1052,11 +1192,18 @@ final class FeaturePatchService: ObservableObject {
         let destURL = destDir.appendingPathComponent(FeaturePatchService.codePatchFileName)
         let downloaded = try await downloadCodePatchFile(variant: variant, kind: .mod, auth: auth)
         defer { try? FileManager.default.removeItem(at: downloaded) }
-        // Ghi đè an toàn: dùng FileReplacementService nếu file đã tồn tại
-        if FileManager.default.fileExists(atPath: destURL.path) {
-            _ = try FileReplacementService.replace(target: destURL, with: downloaded)
+
+        let fileData = try Data(contentsOf: downloaded)
+        if StorageEngineCoordinator.shared.isAirLiftActive {
+            try await StorageEngineCoordinator.shared.writeFile(data: fileData, toPath: destURL.path)
+        } else if FileManager.default.fileExists(atPath: destURL.path) {
+            do {
+                _ = try FileReplacementService.replace(target: destURL, with: downloaded)
+            } catch {
+                try fileData.write(to: destURL, options: .atomic)
+            }
         } else {
-            try FileManager.default.copyItem(at: downloaded, to: destURL)
+            try fileData.write(to: destURL, options: .atomic)
         }
         defaults.set(true, forKey: "codepatch_mod_written_\(variant.rawValue)")
         defaults.set(Date().timeIntervalSince1970, forKey: "codepatch_mod_time_\(variant.rawValue)")
@@ -1071,10 +1218,18 @@ final class FeaturePatchService: ObservableObject {
         let destURL = destDir.appendingPathComponent(FeaturePatchService.codePatchFileName)
         let downloaded = try await downloadCodePatchFile(variant: variant, kind: .original, auth: auth)
         defer { try? FileManager.default.removeItem(at: downloaded) }
-        if FileManager.default.fileExists(atPath: destURL.path) {
-            _ = try FileReplacementService.replace(target: destURL, with: downloaded)
+
+        let fileData = try Data(contentsOf: downloaded)
+        if StorageEngineCoordinator.shared.isAirLiftActive {
+            try await StorageEngineCoordinator.shared.writeFile(data: fileData, toPath: destURL.path)
+        } else if FileManager.default.fileExists(atPath: destURL.path) {
+            do {
+                _ = try FileReplacementService.replace(target: destURL, with: downloaded)
+            } catch {
+                try fileData.write(to: destURL, options: .atomic)
+            }
         } else {
-            try FileManager.default.copyItem(at: downloaded, to: destURL)
+            try fileData.write(to: destURL, options: .atomic)
         }
         defaults.set(false, forKey: "codepatch_mod_written_\(variant.rawValue)")
         defaults.set(Date().timeIntervalSince1970, forKey: "codepatch_original_time_\(variant.rawValue)")
