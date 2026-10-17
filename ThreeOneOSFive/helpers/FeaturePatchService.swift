@@ -242,6 +242,13 @@ final class FeaturePatchService: ObservableObject {
     @Published private(set) var isNativeLoading = false
     @Published private(set) var isNativeInjecting = false
 
+    /// Per-variant (cả 2 game: ffth và ffmax)
+    @Published private(set) var nativeReleaseByVariant: [GamePatchVariant: NovaXPatchRelease] = [:]
+    @Published private(set) var nativeFeaturesByVariant: [GamePatchVariant: [NovaXFeatureDefinition]] = [:]
+    @Published private(set) var nativeDesiredStateByVariant: [GamePatchVariant: [String: NovaXRemoteFeatureState]] = [:]
+    @Published private(set) var nativeActualStateByVariant: [GamePatchVariant: [String: NovaXRemoteFeatureState]] = [:]
+    @Published private(set) var nativeAssemblyOnlineByVariant: [GamePatchVariant: Bool] = [:]
+
     private let baseURL = "https://zynox.click"
 
     private let pinnedSession: URLSession = {
@@ -775,6 +782,102 @@ final class FeaturePatchService: ObservableObject {
         }
     }
 
+    // MARK: - Cả 2 variant cùng lúc (FeaturesView dùng)
+    func loadNativeMenuForBothVariants(auth: AuthManager, showLoading: Bool = true) async throws {
+        if showLoading { isNativeLoading = true }
+        defer { if showLoading { isNativeLoading = false } }
+        try await ensureNativeSession(auth: auth)
+        // Load song song cả 2 variant
+        let variants: [GamePatchVariant] = [.ffth, .ffmax]
+        var firstError: Error?
+        for v in variants {
+            do {
+                let menu = try await fetchNativeMenu(variant: v, auth: auth)
+                nativeReleaseByVariant[v] = menu.release
+                nativeFeaturesByVariant[v] = menu.release?.featureManifest.features ?? []
+                nativeDesiredStateByVariant[v] = menu.desiredState
+                nativeActualStateByVariant[v] = menu.actualState
+                nativeAssemblyOnlineByVariant[v] = menu.assemblyOnline
+            } catch {
+                if firstError == nil { firstError = error }
+            }
+        }
+        // Lấy variant đầu tiên có release làm "mặc định" cho các UI cũ
+        if let firstWithRelease = variants.first(where: { nativeReleaseByVariant[$0] != nil }) {
+            nativeRelease = nativeReleaseByVariant[firstWithRelease]
+            nativeFeatures = nativeFeaturesByVariant[firstWithRelease] ?? []
+            nativeDesiredState = nativeDesiredStateByVariant[firstWithRelease] ?? [:]
+            nativeActualState = nativeActualStateByVariant[firstWithRelease] ?? [:]
+            nativeAssemblyOnline = nativeAssemblyOnlineByVariant[firstWithRelease] ?? false
+            nativeStatusMessage = nativeAssemblyOnline ? "Assembly đang online" : "Assembly chưa kết nối"
+        }
+        // Check codepatch availability
+        await loadCodePatchAvailability(auth: auth)
+        if let firstError = firstError { throw firstError }
+    }
+
+    func refreshNativeStateForBothVariants(auth: AuthManager) async {
+        try? await ensureNativeSession(auth: auth)
+        for v in [GamePatchVariant.ffth, .ffmax] {
+            guard let url = URL(string: "\(baseURL)/api/novax/state/\(v.rawValue)") else { continue }
+            do {
+                var (data, response) = try await pinnedSession.data(for: nativeRequest(url, auth: auth))
+                if let http = response as? HTTPURLResponse, http.statusCode == 401 {
+                    try await ensureNativeSession(auth: auth, force: true)
+                    (data, response) = try await pinnedSession.data(for: nativeRequest(url, auth: auth))
+                }
+                guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { continue }
+                let state = try JSONDecoder().decode(NovaXMenuResponse.self, from: data)
+                nativeDesiredStateByVariant[v] = state.desiredState
+                nativeActualStateByVariant[v] = state.actualState
+                nativeAssemblyOnlineByVariant[v] = state.assemblyOnline
+            } catch {}
+        }
+    }
+
+    func loadCodePatchAvailability(auth: AuthManager) async {
+        for v in [GamePatchVariant.ffth, .ffmax] {
+            for kind in [CodePatchKind.mod, .original] {
+                let key = "codepatch_avail_\(v.rawValue)_\(kind.rawValue)"
+                do {
+                    try await ensureNativeSession(auth: auth)
+                    guard let url = URL(string: "\(baseURL)/api/novax/codepatch/\(v.rawValue)/\(kind.rawValue)/download") else { continue }
+                    var request = nativeRequest(url, auth: auth)
+                    // Dùng HEAD để check tồn tại (server đã handle HEAD? Nếu không thì dùng GET 1 byte)
+                    request.httpMethod = "HEAD"
+                    request.timeoutInterval = 8
+                    let (_, response) = try await pinnedSession.data(for: request)
+                    if let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) {
+                        defaults.set(true, forKey: key)
+                    } else {
+                        defaults.set(false, forKey: key)
+                    }
+                } catch {
+                    defaults.set(false, forKey: key)
+                }
+            }
+        }
+        codepatchModAvailable[.ffth] = defaults.bool(forKey: "codepatch_avail_ffth_mod")
+        codepatchModAvailable[.ffmax] = defaults.bool(forKey: "codepatch_avail_ffmax_mod")
+        codepatchOriginalAvailable[.ffth] = defaults.bool(forKey: "codepatch_avail_ffth_original")
+        codepatchOriginalAvailable[.ffmax] = defaults.bool(forKey: "codepatch_avail_ffmax_original")
+    }
+
+    private func fetchNativeMenu(variant: GamePatchVariant, auth: AuthManager) async throws -> NovaXMenuResponse {
+        guard let url = URL(string: "\(baseURL)/api/novax/menu/\(variant.rawValue)") else {
+            throw NovaXControlError.message("URL menu không hợp lệ")
+        }
+        var (data, response) = try await pinnedSession.data(for: nativeRequest(url, auth: auth))
+        if let http = response as? HTTPURLResponse, http.statusCode == 401 {
+            try await ensureNativeSession(auth: auth, force: true)
+            (data, response) = try await pinnedSession.data(for: nativeRequest(url, auth: auth))
+        }
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw NovaXControlError.message(serverMessage(from: data, fallback: "Không thể tải Patch Menu \(variant.title)"))
+        }
+        return try JSONDecoder().decode(NovaXMenuResponse.self, from: data)
+    }
+
     func sendNativeCommand(
         feature: NovaXFeatureDefinition,
         enabled: Bool,
@@ -859,6 +962,127 @@ final class FeaturePatchService: ObservableObject {
     func isNativePatchInjected(variant: GamePatchVariant) -> Bool {
         guard let release = nativeRelease else { return false }
         return defaults.integer(forKey: "native_patch_release_\(variant.rawValue)") == release.id
+    }
+
+    // MARK: - CodePatch (assembly-csharp-patch.q3QzMLimIntmNHG7~2BbafinWQ1mU~3D)
+    // Tải file mod/original từ server và ghi đè vào thư mục codepatch
+    // bên trong container Free Fire (com.dts.freefireth / com.dts.freefiremax):
+    //   Documents/contentcache/Compulsory/ios/gameassetbundles/codepatch/
+
+    static let codePatchFileName = "assembly-csharp-patch.q3QzMLimIntmNHG7~2BbafinWQ1mU~3D"
+
+    /// Đường dẫn tuyệt đối tới file codepatch trong container Free Fire
+    static func codePatchURL(variant: GamePatchVariant) -> URL? {
+        let bundleID: String
+        let baseDir: String
+        switch variant {
+        case .ffth:
+            bundleID = "com.dts.freefireth"
+        case .ffmax:
+            bundleID = "com.dts.freefiremax"
+        }
+        // Ưu tiên container path từ ContainerStore (hỗ trợ cả AirLift và direct)
+        if let container = ContainerStore.resolveAppContainerPath(bundleID: bundleID) {
+            baseDir = container
+        } else {
+            // Fallback cho simulator
+            baseDir = NSHomeDirectory()
+        }
+        let dirPath = (baseDir as NSString)
+            .appendingPathComponent("Documents/contentcache/Compulsory/ios/gameassetbundles/codepatch")
+        return URL(fileURLWithPath: (dirPath as NSString).appendingPathComponent(codePatchFileName))
+    }
+
+    /// Trả về thư mục chứa file codepatch (tạo nếu chưa có)
+    static func codePatchDirectory(variant: GamePatchVariant) -> URL? {
+        let bundleID: String
+        switch variant {
+        case .ffth: bundleID = "com.dts.freefireth"
+        case .ffmax: bundleID = "com.dts.freefiremax"
+        }
+        let baseDir: String
+        if let container = ContainerStore.resolveAppContainerPath(bundleID: bundleID) {
+            baseDir = container
+        } else {
+            baseDir = NSHomeDirectory()
+        }
+        let dirPath = (baseDir as NSString)
+            .appendingPathComponent("Documents/contentcache/Compulsory/ios/gameassetbundles/codepatch")
+        let dirURL = URL(fileURLWithPath: dirPath, isDirectory: true)
+        try? FileManager.default.createDirectory(at: dirURL, withIntermediateDirectories: true)
+        return dirURL
+    }
+
+    /// Kiểm tra file codepatch hiện tại trong thiết bị đã được ghi chưa
+    static func isCodePatchWritten(variant: GamePatchVariant) -> Bool {
+        guard let url = codePatchURL(variant: variant) else { return false }
+        return FileManager.default.fileExists(atPath: url.path)
+    }
+
+    enum CodePatchKind: String {
+        case mod
+        case original
+    }
+
+    /// Tải file codepatch (mod hoặc original) từ server về thư mục tạm
+    private func downloadCodePatchFile(
+        variant: GamePatchVariant,
+        kind: CodePatchKind,
+        auth: AuthManager
+    ) async throws -> URL {
+        try await ensureNativeSession(auth: auth)
+        guard let url = URL(string: "\(baseURL)/api/novax/codepatch/\(variant.rawValue)/\(kind.rawValue)/download") else {
+            throw NovaXControlError.message("URL codepatch không hợp lệ")
+        }
+        var request = nativeRequest(url, auth: auth)
+        request.timeoutInterval = 60
+        let (tempURL, response) = try await pinnedSession.download(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            let body = (try? Data(contentsOf: tempURL)) ?? Data()
+            throw NovaXControlError.message(serverMessage(from: body, fallback: "Tải codepatch thất bại"))
+        }
+        return tempURL
+    }
+
+    /// Inject: tải file MOD từ server và ghi đè vào container Free Fire
+    func injectCodePatch(variant: GamePatchVariant, auth: AuthManager) async throws {
+        guard let destDir = FeaturePatchService.codePatchDirectory(variant: variant) else {
+            throw NovaXControlError.message("Không thể truy cập container Free Fire \(variant.title). Hãy bật NovaX hỗ trợ thư mục hoặc cấp quyền sandbox.")
+        }
+        let destURL = destDir.appendingPathComponent(FeaturePatchService.codePatchFileName)
+        let downloaded = try await downloadCodePatchFile(variant: variant, kind: .mod, auth: auth)
+        defer { try? FileManager.default.removeItem(at: downloaded) }
+        // Ghi đè an toàn: dùng FileReplacementService nếu file đã tồn tại
+        if FileManager.default.fileExists(atPath: destURL.path) {
+            _ = try FileReplacementService.replace(target: destURL, with: downloaded)
+        } else {
+            try FileManager.default.copyItem(at: downloaded, to: destURL)
+        }
+        defaults.set(true, forKey: "codepatch_mod_written_\(variant.rawValue)")
+        defaults.set(Date().timeIntervalSince1970, forKey: "codepatch_mod_time_\(variant.rawValue)")
+        nativeStatusMessage = "Đã inject \(variant.shortTitle) — file mod đã được ghi"
+    }
+
+    /// Unject: tải file GỐC từ server và ghi đè vào container Free Fire
+    func unjectCodePatch(variant: GamePatchVariant, auth: AuthManager) async throws {
+        guard let destDir = FeaturePatchService.codePatchDirectory(variant: variant) else {
+            throw NovaXControlError.message("Không thể truy cập container Free Fire \(variant.title).")
+        }
+        let destURL = destDir.appendingPathComponent(FeaturePatchService.codePatchFileName)
+        let downloaded = try await downloadCodePatchFile(variant: variant, kind: .original, auth: auth)
+        defer { try? FileManager.default.removeItem(at: downloaded) }
+        if FileManager.default.fileExists(atPath: destURL.path) {
+            _ = try FileReplacementService.replace(target: destURL, with: downloaded)
+        } else {
+            try FileManager.default.copyItem(at: downloaded, to: destURL)
+        }
+        defaults.set(false, forKey: "codepatch_mod_written_\(variant.rawValue)")
+        defaults.set(Date().timeIntervalSince1970, forKey: "codepatch_original_time_\(variant.rawValue)")
+        nativeStatusMessage = "Đã khôi phục gốc \(variant.shortTitle)"
+    }
+
+    func isCodePatchInjected(variant: GamePatchVariant) -> Bool {
+        return defaults.bool(forKey: "codepatch_mod_written_\(variant.rawValue)")
     }
 
     // MARK: - Hash

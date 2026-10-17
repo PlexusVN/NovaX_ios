@@ -5,8 +5,10 @@ struct FeaturesView: View {
 
     @EnvironmentObject private var service: FeaturePatchService
     @EnvironmentObject private var authManager: AuthManager
-    @State private var selectedVariant: GamePatchVariant = .ffth
     @State private var activeToast: ToastInfo?
+    @State private var showGamePickerForInject = false
+    @State private var showGamePickerForUnject = false
+    @State private var isCodePatchWorking = false
 
     var body: some View {
         NavigationStack {
@@ -15,13 +17,12 @@ struct FeaturesView: View {
 
                 ScrollView {
                     VStack(spacing: 16) {
-                        variantSelector
                         releaseCard
-                        featureList
+                        allFeatureSections
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
-                    .padding(.bottom, 200)
+                    .padding(.bottom, 220)
                 }
                 .refreshable { await reload(showLoading: false) }
 
@@ -48,101 +49,156 @@ struct FeaturesView: View {
                     }
                 }
             }
-            .task(id: selectedVariant) {
+            .task {
                 await reload(showLoading: true)
                 while !Task.isCancelled {
                     try? await Task.sleep(nanoseconds: 2_000_000_000)
                     guard !Task.isCancelled else { break }
-                    await service.refreshNativeState(variant: selectedVariant, auth: authManager)
+                    await service.refreshNativeStateForBothVariants(auth: authManager)
+                }
+            }
+            .sheet(isPresented: $showGamePickerForInject) {
+                GamePickerSheet(
+                    title: "Chọn game để INJECT",
+                    subtitle: "Inject sẽ tải file MOD từ server và ghi đè vào thư mục codepatch trong container Free Fire.",
+                    buttonTitle: "INJECT NGAY",
+                    isWorking: isCodePatchWorking
+                ) { variant in
+                    performCodePatch(variant: variant, inject: true)
+                }
+            }
+            .sheet(isPresented: $showGamePickerForUnject) {
+                GamePickerSheet(
+                    title: "Chọn game để KHÔI PHỤC GỐC",
+                    subtitle: "Khôi phục sẽ tải file GỐC từ server và ghi đè lại file codepatch trong container Free Fire.",
+                    buttonTitle: "KHÔI PHỤC GỐC",
+                    isWorking: isCodePatchWorking
+                ) { variant in
+                    performCodePatch(variant: variant, inject: false)
                 }
             }
         }
         .glassToast(toast: $activeToast)
     }
 
-    private var variantSelector: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label("Phiên bản game", systemImage: "gamecontroller.fill")
-                .font(.system(size: 15, weight: .bold, design: .rounded))
-                .foregroundStyle(AppTheme.ink)
-
-            HStack(spacing: 8) {
-                ForEach(GamePatchVariant.allCases) { variant in
-                    Button {
-                        Haptics.light()
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.78)) {
-                            selectedVariant = variant
+    // Gom tất cả feature sections từ cả 2 variant
+    private var allFeatureSections: some View {
+        let sections = combinedSections()
+        return Group {
+            if sections.isEmpty {
+                VStack(spacing: 10) {
+                    Image(systemName: "switch.2")
+                        .font(.system(size: 30, weight: .medium))
+                        .foregroundStyle(AppTheme.grey400)
+                    Text("Server chưa phát hành patch hoặc chưa có chức năng nào được khai báo")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(AppTheme.grey500)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 30)
+                .cardStyle()
+            } else {
+                ForEach(sections, id: \.id) { section in
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Text(section.title.uppercased())
+                                .font(.system(size: 12, weight: .heavy, design: .monospaced))
+                                .foregroundStyle(AppTheme.ink)
+                            Spacer()
+                            Text("\(section.features.count)")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .foregroundStyle(AppTheme.grey500)
                         }
-                    } label: {
-                        Text(variant.title)
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                            .foregroundStyle(selectedVariant == variant ? Color.white : AppTheme.grey500)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(selectedVariant == variant ? AppTheme.ink : AppTheme.grey50)
-                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        ForEach(section.features) { item in
+                            NativeFeatureControlRow(
+                                feature: item.feature,
+                                variant: item.variant,
+                                service: service,
+                                auth: authManager,
+                                activeToast: $activeToast
+                            )
+                        }
                     }
-                    .buttonStyle(.plain)
+                    .cardStyle()
                 }
             }
         }
-        .cardStyle()
+    }
+
+    private struct CombinedFeatureItem: Identifiable {
+        let variant: GamePatchVariant
+        let feature: NovaXFeatureDefinition
+        var id: String { "\(variant.rawValue)|\(feature.id)" }
+    }
+
+    private struct CombinedSection: Identifiable {
+        let id: String
+        let title: String
+        let features: [CombinedFeatureItem]
+    }
+
+    private func combinedSections() -> [CombinedSection] {
+        // Gom theo (variant, section): mỗi variant có section riêng
+        var map: [String: CombinedSection] = [:]
+        let variants: [GamePatchVariant] = [.ffth, .ffmax]
+        for v in variants {
+            let features = service.nativeFeaturesByVariant[v] ?? []
+            let sectionGroups = Dictionary(grouping: features, by: { $0.section })
+            for (sectionName, list) in sectionGroups {
+                let title = "\(v.shortTitle) · \(sectionName)"
+                let key = "\(v.rawValue)|\(sectionName)"
+                let items = list.map { CombinedFeatureItem(variant: v, feature: $0) }
+                let existing = map[key]
+                if let existing = existing {
+                    var combined = existing.features
+                    combined.append(contentsOf: items)
+                    map[key] = CombinedSection(id: key, title: existing.title, features: combined)
+                } else {
+                    map[key] = CombinedSection(id: key, title: title, features: items)
+                }
+            }
+        }
+        return map.values.sorted { $0.title < $1.title }
     }
 
     private var releaseCard: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Label("Patch \(selectedVariant.shortTitle)", systemImage: "shippingbox.fill")
+                Label("Patch Menu", systemImage: "shippingbox.fill")
                     .font(.system(size: 15, weight: .bold, design: .rounded))
                     .foregroundStyle(AppTheme.ink)
                 Spacer()
                 statusBadge
             }
 
-            if service.isNativeLoading {
-                HStack(spacing: 10) {
-                    ProgressView().tint(AppTheme.ink)
-                    Text("Đang xác thực key và tải Patch Menu...")
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(AppTheme.grey500)
-                }
-                .padding(.vertical, 8)
-            } else if let release = service.nativeRelease {
-                HStack(spacing: 14) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(AppTheme.ink)
-                        Image(systemName: "bolt.horizontal.circle.fill")
-                            .font(.system(size: 25, weight: .bold))
-                            .foregroundStyle(.white)
-                    }
-                    .frame(width: 54, height: 54)
-
+            HStack(spacing: 10) {
+                ForEach(GamePatchVariant.allCases) { variant in
+                    let release = service.nativeReleaseByVariant[variant]
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Version \(release.version)")
-                            .font(.system(size: 15, weight: .bold, design: .rounded))
-                            .foregroundStyle(AppTheme.ink)
-                        Text(release.gameBuild.isEmpty ? "Build game chưa khai báo" : "Game build: \(release.gameBuild)")
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(AppTheme.grey500)
-                        Text(formatSize(release.fileSize))
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(AppTheme.grey500)
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(release != nil ? Color.green : Color.red)
+                                .frame(width: 6, height: 6)
+                            Text(variant.shortTitle)
+                                .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                                .foregroundStyle(AppTheme.ink)
+                        }
+                        if let r = release {
+                            Text("v\(r.version) · \(formatSize(r.fileSize))")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(AppTheme.grey500)
+                        } else {
+                            Text("Chưa phát hành")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(Color.red)
+                        }
                     }
-                    Spacer()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                    .background(AppTheme.grey50)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
-
-                if !release.changelog.isEmpty {
-                    Text(release.changelog)
-                        .font(.system(size: 12, design: .rounded))
-                        .foregroundStyle(AppTheme.grey500)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            } else {
-                Label("Server chưa phát hành patch cho \(selectedVariant.title)", systemImage: "exclamationmark.triangle.fill")
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.red)
-                    .padding(.vertical, 8)
             }
         }
         .cardStyle()
@@ -163,50 +219,6 @@ struct FeaturesView: View {
         .clipShape(Capsule())
     }
 
-    @ViewBuilder
-    private var featureList: some View {
-        if service.nativeRelease != nil {
-            if service.nativeFeatures.isEmpty {
-                VStack(spacing: 10) {
-                    Image(systemName: "switch.2")
-                        .font(.system(size: 30, weight: .medium))
-                        .foregroundStyle(AppTheme.grey400)
-                    Text("Patch chưa khai báo danh sách chức năng")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundStyle(AppTheme.grey500)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 30)
-                .cardStyle()
-            } else {
-                ForEach(featureSections, id: \.self) { section in
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack {
-                            Text(section.uppercased())
-                                .font(.system(size: 12, weight: .heavy, design: .monospaced))
-                                .foregroundStyle(AppTheme.ink)
-                            Spacer()
-                            Text("\(features(in: section).count)")
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                .foregroundStyle(AppTheme.grey500)
-                        }
-
-                        ForEach(features(in: section)) { feature in
-                            NativeFeatureControlRow(
-                                feature: feature,
-                                variant: selectedVariant,
-                                service: service,
-                                auth: authManager,
-                                activeToast: $activeToast
-                            )
-                        }
-                    }
-                    .cardStyle()
-                }
-            }
-        }
-    }
-
     private var injectBar: some View {
         VStack(spacing: 8) {
             Text(service.nativeStatusMessage)
@@ -214,28 +226,54 @@ struct FeaturesView: View {
                 .foregroundStyle(AppTheme.grey500)
                 .lineLimit(1)
 
-            Button {
-                injectSelectedPatch()
-            } label: {
-                HStack(spacing: 10) {
-                    if service.isNativeInjecting {
-                        ProgressView().tint(.white)
-                    } else {
-                        Image(systemName: service.isNativePatchInjected(variant: selectedVariant) ? "checkmark.seal.fill" : "arrow.down.app.fill")
+            HStack(spacing: 10) {
+                Button {
+                    Haptics.medium()
+                    showGamePickerForInject = true
+                } label: {
+                    HStack(spacing: 8) {
+                        if isCodePatchWorking {
+                            ProgressView().tint(.white)
+                        } else {
+                            Image(systemName: "arrow.down.app.fill")
+                        }
+                        Text("INJECT")
+                            .font(.system(size: 13, weight: .heavy, design: .rounded))
                     }
-                    Text(service.isNativePatchInjected(variant: selectedVariant)
-                         ? "INJECT LẠI PATCH \(selectedVariant.shortTitle)"
-                         : "TẢI VÀ INJECT PATCH \(selectedVariant.shortTitle)")
-                        .font(.system(size: 13, weight: .heavy, design: .rounded))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(AppTheme.ink)
+                    .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+                    .shadow(color: AppTheme.ink.opacity(0.35), radius: 14, x: 0, y: 6)
                 }
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(service.nativeRelease == nil ? AppTheme.grey400 : AppTheme.ink)
-                .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-                .shadow(color: AppTheme.ink.opacity(0.35), radius: 14, x: 0, y: 6)
+                .disabled(isCodePatchWorking)
+
+                Button {
+                    Haptics.medium()
+                    showGamePickerForUnject = true
+                } label: {
+                    HStack(spacing: 8) {
+                        if isCodePatchWorking {
+                            ProgressView().tint(AppTheme.ink)
+                        } else {
+                            Image(systemName: "arrow.uturn.backward.circle.fill")
+                        }
+                        Text("KHÔI PHỤC GỐC")
+                            .font(.system(size: 13, weight: .heavy, design: .rounded))
+                    }
+                    .foregroundStyle(AppTheme.ink)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Color.white)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 15, style: .continuous)
+                            .stroke(AppTheme.ink, lineWidth: 1.5)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+                }
+                .disabled(isCodePatchWorking)
             }
-            .disabled(service.nativeRelease == nil || service.isNativeInjecting)
         }
         .padding(.horizontal, 16)
         .padding(.top, 12)
@@ -246,37 +284,44 @@ struct FeaturesView: View {
         )
     }
 
-    private var featureSections: [String] {
-        service.nativeFeatures.reduce(into: [String]()) { result, feature in
-            if !result.contains(feature.section) { result.append(feature.section) }
-        }
-    }
-
-    private func features(in section: String) -> [NovaXFeatureDefinition] {
-        service.nativeFeatures.filter { $0.section == section }
-    }
-
     private func reload(showLoading: Bool) async {
         guard authManager.authState == .verified else { return }
         do {
-            try await service.loadNativeMenu(variant: selectedVariant, auth: authManager, showLoading: showLoading)
+            try await service.loadNativeMenuForBothVariants(auth: authManager, showLoading: showLoading)
         } catch {
             activeToast = ToastInfo(title: "Không thể tải Patch Menu", message: error.localizedDescription, isSuccess: false)
         }
     }
 
-    private func injectSelectedPatch() {
+    private func performCodePatch(variant: GamePatchVariant, inject: Bool) {
+        showGamePickerForInject = false
+        showGamePickerForUnject = false
         Haptics.medium()
+        isCodePatchWorking = true
         Task { @MainActor in
+            defer { isCodePatchWorking = false }
             do {
-                try await service.injectNativePatch(variant: selectedVariant, auth: authManager)
-                activeToast = ToastInfo(
-                    title: "Inject thành công",
-                    message: "Đã tải và áp dụng patch \(selectedVariant.title).",
-                    isSuccess: true
-                )
+                if inject {
+                    try await service.injectCodePatch(variant: variant, auth: authManager)
+                    activeToast = ToastInfo(
+                        title: "Inject thành công",
+                        message: "Đã ghi file MOD cho \(variant.title) vào thư mục codepatch.",
+                        isSuccess: true
+                    )
+                } else {
+                    try await service.unjectCodePatch(variant: variant, auth: authManager)
+                    activeToast = ToastInfo(
+                        title: "Khôi phục thành công",
+                        message: "Đã ghi file GỐC cho \(variant.title) vào thư mục codepatch.",
+                        isSuccess: true
+                    )
+                }
             } catch {
-                activeToast = ToastInfo(title: "Inject thất bại", message: error.localizedDescription, isSuccess: false)
+                activeToast = ToastInfo(
+                    title: inject ? "Inject thất bại" : "Khôi phục thất bại",
+                    message: error.localizedDescription,
+                    isSuccess: false
+                )
             }
         }
     }
@@ -285,6 +330,146 @@ struct FeaturesView: View {
         if bytes >= 1_048_576 { return String(format: "%.1f MB", Double(bytes) / 1_048_576) }
         if bytes >= 1024 { return String(format: "%.0f KB", Double(bytes) / 1024) }
         return "\(bytes) B"
+    }
+}
+
+// MARK: - Game Picker Sheet (chọn FF TH hoặc FF MAX)
+
+private struct GamePickerSheet: View {
+    let title: String
+    let subtitle: String
+    let buttonTitle: String
+    let isWorking: Bool
+    let onPick: (GamePatchVariant) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var gameIcons: [String: UIImage] = [:]
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.45).ignoresSafeArea()
+                .onTapGesture { if !isWorking { dismiss() } }
+
+            VStack(spacing: 0) {
+                VStack(spacing: 8) {
+                    Image(systemName: "gamecontroller.fill")
+                        .font(.system(size: 28))
+                        .foregroundStyle(AppTheme.ink)
+                        .padding(.top, 8)
+                    Text(title)
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(AppTheme.ink)
+                    Text(subtitle)
+                        .font(.system(size: 13))
+                        .foregroundStyle(AppTheme.grey600)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
+                }
+                .padding(.vertical, 20)
+
+                Rectangle().fill(AppTheme.grey200).frame(height: 1)
+
+                VStack(spacing: 12) {
+                    ForEach(GamePatchVariant.allCases) { variant in
+                        gameButton(variant: variant)
+                    }
+                }
+                .padding(16)
+
+                Rectangle().fill(AppTheme.grey200).frame(height: 1)
+
+                Button {
+                    if !isWorking { dismiss() }
+                } label: {
+                    Text("Hủy")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(AppTheme.grey600)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                }
+            }
+            .background(Color.white)
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .shadow(color: Color.black.opacity(0.18), radius: 35, x: 0, y: 15)
+            .padding(.horizontal, 24)
+            .frame(maxHeight: .infinity, alignment: .center)
+        }
+        .onAppear { loadIcons() }
+    }
+
+    private func gameButton(variant: GamePatchVariant) -> some View {
+        Button {
+            Haptics.medium()
+            onPick(variant)
+        } label: {
+            HStack(spacing: 14) {
+                Group {
+                    if let img = gameIcons[variant.bundleID] {
+                        Image(uiImage: img)
+                            .resizable()
+                            .scaledToFill()
+                    } else {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(AppTheme.grey100)
+                            Image(systemName: variant == .ffth ? "flame.fill" : "bolt.fill")
+                                .font(.system(size: 22))
+                                .foregroundStyle(AppTheme.ink)
+                        }
+                    }
+                }
+                .frame(width: 54, height: 54)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(AppTheme.grey200, lineWidth: 1)
+                )
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(variant.title)
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .foregroundStyle(AppTheme.ink)
+                    Text(variant.bundleID)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(AppTheme.grey500)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(AppTheme.grey400)
+            }
+            .padding(12)
+            .background(AppTheme.grey50)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(AppTheme.grey200, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(isWorking)
+    }
+
+    private func loadIcons() {
+        DispatchQueue.global(qos: .userInitiated).async {
+            var map: [String: UIImage] = [:]
+            let apps = ContainerStore.installedAppsFromAPI() + ContainerStore.installedAppsFromMCM(identifiers: nil, bundleMetadata: [:])
+            for app in apps {
+                if let icon = app.icon, map[app.bundleID] == nil {
+                    map[app.bundleID] = icon
+                }
+            }
+            DispatchQueue.main.async { self.gameIcons = map }
+        }
+    }
+}
+
+private extension GamePatchVariant {
+    var bundleID: String {
+        switch self {
+        case .ffth: return "com.dts.freefireth"
+        case .ffmax: return "com.dts.freefiremax"
+        }
     }
 }
 
@@ -298,8 +483,9 @@ private struct NativeFeatureControlRow: View {
     @State private var isSending = false
     @State private var sliderValue: Double = 0
 
-    private var desired: NovaXRemoteFeatureState? { service.nativeDesiredState[feature.id] }
-    private var actual: NovaXRemoteFeatureState? { service.nativeActualState[feature.id] }
+    private var desired: NovaXRemoteFeatureState? { service.nativeDesiredStateByVariant[variant]?[feature.id] }
+    private var actual: NovaXRemoteFeatureState? { service.nativeActualStateByVariant[variant]?[feature.id] }
+    private var assemblyOnline: Bool { service.nativeAssemblyOnlineByVariant[variant] ?? false }
     private var desiredEnabled: Bool { desired?.enabled ?? false }
     private var desiredValue: Int { desired?.value ?? feature.default }
 
@@ -381,14 +567,14 @@ private struct NativeFeatureControlRow: View {
     }
 
     private var stateColor: Color {
-        guard service.nativeAssemblyOnline else { return .red }
+        guard assemblyOnline else { return .red }
         guard let desired else { return AppTheme.grey400 }
         if let actual, actual.enabled == desired.enabled, actual.value == desired.value { return .green }
         return .blue
     }
 
     private var stateText: String {
-        guard service.nativeAssemblyOnline else { return "ASSEMBLY OFFLINE" }
+        guard assemblyOnline else { return "ASSEMBLY OFFLINE" }
         guard let desired else { return "CHƯA GỬI" }
         if let actual, actual.enabled == desired.enabled, actual.value == desired.value { return "ĐÃ ÁP DỤNG" }
         return "ĐANG ĐỒNG BỘ"
