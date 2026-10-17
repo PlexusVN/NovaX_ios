@@ -248,6 +248,8 @@ final class FeaturePatchService: ObservableObject {
     @Published private(set) var nativeDesiredStateByVariant: [GamePatchVariant: [String: NovaXRemoteFeatureState]] = [:]
     @Published private(set) var nativeActualStateByVariant: [GamePatchVariant: [String: NovaXRemoteFeatureState]] = [:]
     @Published private(set) var nativeAssemblyOnlineByVariant: [GamePatchVariant: Bool] = [:]
+    @Published private(set) var codepatchModAvailable: [GamePatchVariant: Bool] = [:]
+    @Published private(set) var codepatchOriginalAvailable: [GamePatchVariant: Bool] = [:]
 
     private let baseURL = "https://zynox.click"
 
