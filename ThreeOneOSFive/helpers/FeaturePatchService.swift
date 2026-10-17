@@ -952,6 +952,18 @@ final class FeaturePatchService: ObservableObject {
                 nativeAssemblyOnlineByVariant[v] = state.assemblyOnline
             } catch {}
         }
+        let activeVariant: GamePatchVariant = [GamePatchVariant.ffth, .ffmax].first(where: { nativeAssemblyOnlineByVariant[$0] == true })
+            ?? (nativeActualStateByVariant[.ffmax]?.isEmpty == false ? .ffmax : .ffth)
+        if let actual = nativeActualStateByVariant[activeVariant] {
+            self.nativeActualState = actual
+        }
+        if let desired = nativeDesiredStateByVariant[activeVariant], !desired.isEmpty {
+            for (k, v) in desired {
+                self.nativeDesiredState[k] = v
+            }
+        }
+        self.nativeAssemblyOnline = nativeAssemblyOnlineByVariant.values.contains(true)
+        self.nativeStatusMessage = self.nativeAssemblyOnline ? "Cheat đang hoạt động trong game" : "Chưa vào game"
     }
 
     func loadCodePatchAvailability(auth: AuthManager) async {
