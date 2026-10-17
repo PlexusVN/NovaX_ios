@@ -17,7 +17,6 @@ struct FeaturesView: View {
 
                 ScrollView {
                     VStack(spacing: 16) {
-                        releaseCard
                         allFeatureSections
                     }
                     .padding(.horizontal, 16)
