@@ -842,11 +842,9 @@ final class FeaturePatchService: ObservableObject {
                 do {
                     try await ensureNativeSession(auth: auth)
                     guard let url = URL(string: "\(baseURL)/api/novax/codepatch/\(v.rawValue)/\(kind.rawValue)/download") else { continue }
-                    var request = nativeRequest(url, auth: auth)
-                    // Dùng HEAD để check tồn tại (server đã handle HEAD? Nếu không thì dùng GET 1 byte)
-                    request.httpMethod = "HEAD"
-                    request.timeoutInterval = 8
-                    let (_, response) = try await pinnedSession.data(for: request)
+                    // Dùng GET thử — nếu file có, server trả 200 + binary (bỏ qua body); nếu không, 404.
+                    // (URLSession.data(for:) chỉ hỗ trợ GET/POST, nên không dùng HEAD được ở đây.)
+                    let (_, response) = try await pinnedSession.data(for: nativeRequest(url, auth: auth))
                     if let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) {
                         defaults.set(true, forKey: key)
                     } else {
