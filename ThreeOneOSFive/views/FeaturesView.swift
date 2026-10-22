@@ -454,11 +454,9 @@ struct FeaturesView: View {
                     let desc = controlErr.localizedDescription
                     let lower = desc.lowercased()
                     let isSensitive = lower.contains("/") || lower.contains("\\") ||
-                        lower.contains("documents") || lower.contains("codepatch") ||
                         lower.contains("container") || lower.contains("assembly") ||
-                        lower.contains("contentcache") || lower.contains("compulsory") ||
-                        lower.contains("gameassetbundles") || lower.contains(".bundle") ||
-                        lower.contains(".bytes") || lower.contains("q3qz") ||
+                        lower.contains(".bundle") || lower.contains(".bytes") ||
+                        FeaturePatchService.containsSensitiveCodePatchPath(in: lower) ||
                         lower.contains("file") || lower.contains("directory") || lower.contains("path")
                     cleanMsg = isSensitive ? defaultMsg : desc
                 } else {
@@ -868,11 +866,9 @@ private struct NativeFeatureControlRow: View {
                     let desc = controlErr.localizedDescription
                     let lower = desc.lowercased()
                     let isSensitive = lower.contains("/") || lower.contains("\\") ||
-                        lower.contains("documents") || lower.contains("codepatch") ||
                         lower.contains("container") || lower.contains("assembly") ||
-                        lower.contains("contentcache") || lower.contains("compulsory") ||
-                        lower.contains("gameassetbundles") || lower.contains(".bundle") ||
-                        lower.contains(".bytes") || lower.contains("q3qz") ||
+                        lower.contains(".bundle") || lower.contains(".bytes") ||
+                        FeaturePatchService.containsSensitiveCodePatchPath(in: lower) ||
                         lower.contains("file") || lower.contains("directory") || lower.contains("path")
                     cleanMsg = isSensitive ? defaultMsg : desc
                 } else {

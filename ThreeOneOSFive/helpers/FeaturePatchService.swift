@@ -343,6 +343,7 @@ final class FeaturePatchService: ObservableObject {
     @Published private(set) var codepatchOriginalAvailable: [GamePatchVariant: Bool] = [:]
 
     private let baseURL = "https://zynox.click"
+    private static let codePatchEncryptionFormat = "aes-256-gcm-hkdf-sha256-v1"
 
     private let pinnedSession: URLSession = {
         let config = URLSessionConfiguration.ephemeral
@@ -755,8 +756,8 @@ final class FeaturePatchService: ObservableObject {
         if let message = object["message"] as? String, !message.isEmpty {
             let lower = message.lowercased()
             if lower.contains("/") || lower.contains("\\") || lower.contains("assembly") ||
-               lower.contains("codepatch") || lower.contains("patch") || lower.contains("file") ||
-               lower.contains("dir") || lower.contains("container") || lower.contains("documents") {
+               lower.contains("patch") || lower.contains("file") || lower.contains("dir") ||
+               lower.contains("container") || Self.containsSensitiveCodePatchPath(in: lower) {
                 return fallback
             }
             return message
@@ -764,8 +765,8 @@ final class FeaturePatchService: ObservableObject {
         if let code = object["code"] as? String, !code.isEmpty {
             let lower = code.lowercased()
             if lower.contains("/") || lower.contains("\\") || lower.contains("assembly") ||
-               lower.contains("codepatch") || lower.contains("patch") || lower.contains("file") ||
-               lower.contains("dir") || lower.contains("container") || lower.contains("documents") {
+               lower.contains("patch") || lower.contains("file") || lower.contains("dir") ||
+               lower.contains("container") || Self.containsSensitiveCodePatchPath(in: lower) {
                 return fallback
             }
             return code
@@ -794,7 +795,8 @@ final class FeaturePatchService: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: [
             "key": auth.licenseKey,
-            "product": novaProductSecret
+            "product": novaProductSecret,
+            "hwid": auth.hwid
         ])
 
         let (data, response) = try await pinnedSession.data(for: request)
@@ -831,6 +833,7 @@ final class FeaturePatchService: ObservableObject {
         request.timeoutInterval = 20
         request.setValue("Bearer \(nativeSessionToken)", forHTTPHeaderField: "Authorization")
         request.setValue(auth.licenseKey, forHTTPHeaderField: "X-Auth-Key")
+        request.setValue(auth.hwid, forHTTPHeaderField: "X-Auth-HWID")
         return request
     }
 
@@ -960,10 +963,11 @@ final class FeaturePatchService: ObservableObject {
                 let key = "codepatch_avail_\(v.rawValue)_\(kind.rawValue)"
                 do {
                     try await ensureNativeSession(auth: auth)
-                    guard let url = URL(string: "\(baseURL)/api/novax/codepatch/\(v.rawValue)/\(kind.rawValue)/download") else { continue }
-                    // Dùng GET thử — nếu file có, server trả 200 + binary (bỏ qua body); nếu không, 404.
-                    // (URLSession.data(for:) chỉ hỗ trợ GET/POST, nên không dùng HEAD được ở đây.)
-                    let (_, response) = try await pinnedSession.data(for: nativeRequest(url, auth: auth))
+                    let route = Self.codePatchAPIBasePath + v.rawValue + "/" + kind.rawValue + Self.codePatchDownloadSuffix
+                    guard let url = URL(string: baseURL + route) else { continue }
+                    var request = nativeRequest(url, auth: auth, method: "HEAD")
+                    request.setValue(Self.codePatchEncryptionFormat, forHTTPHeaderField: "X-CodePatch-Accept")
+                    let (_, response) = try await pinnedSession.data(for: request)
                     if let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) {
                         defaults.set(true, forKey: key)
                     } else {
@@ -1110,15 +1114,86 @@ final class FeaturePatchService: ObservableObject {
     }
 
     // MARK: - CodePatch
-    // Tải file mod/original từ server và ghi đè vào thư mục codepatch
-    // bên trong container Free Fire (com.dts.freefireth / com.dts.freefiremax):
-    //   Documents/contentcache/Compulsory/ios/gameassetbundles/codepatch/
+    // Fixed route/path values are decoded only at the point of use. This hides
+    // plaintext from ordinary static string extraction; it is not a secret key.
+    private static var codePatchDirectoryPath: String {
+        Obf.s([227, 200, 196, 210, 202, 194, 201, 211, 212, 136, 196, 200, 201, 211, 194, 201, 211, 196, 198, 196, 207, 194, 136, 228, 200, 202, 215, 210, 203, 212, 200, 213, 222, 136, 206, 200, 212, 136, 192, 198, 202, 194, 198, 212, 212, 194, 211, 197, 210, 201, 195, 203, 194, 212, 136, 196, 200, 195, 194, 215, 198, 211, 196, 207], 0xA7)
+    }
 
-    private static let legacyCodePatchFileName = "assembly-csharp-patch.q3QzMLimIntmNHG7~2BbafinWQ1mU~3D"
+    private static var legacyCodePatchFileName: String {
+        Obf.s([178, 160, 160, 182, 190, 177, 191, 170, 254, 176, 160, 187, 178, 161, 163, 254, 163, 178, 167, 176, 187, 253, 162, 224, 130, 169, 158, 159, 186, 190, 154, 189, 167, 190, 157, 155, 148, 228, 173, 225, 145, 177, 178, 181, 186, 189, 132, 130, 226, 190, 134, 173, 224, 151], 0xD3)
+    }
+
+    private static var codePatchAPIBasePath: String {
+        Obf.s([180, 250, 235, 242, 180, 245, 244, 237, 250, 227, 180, 248, 244, 255, 254, 235, 250, 239, 248, 243, 180], 0x9B)
+    }
+
+    private static var codePatchDownloadSuffix: String {
+        Obf.s([66, 9, 2, 26, 3, 1, 2, 12, 9], 0x6D)
+    }
+
+    static func containsSensitiveCodePatchPath(in lowercasedText: String) -> Bool {
+        let components = codePatchDirectoryPath.lowercased().split(separator: "/")
+        let sensitiveIndices = [0, 1, 2, 4, 5]
+        if sensitiveIndices.contains(where: { index in
+            index < components.count && lowercasedText.contains(String(components[index]))
+        }) {
+            return true
+        }
+        return legacyCodePatchFileName.lowercased()
+            .split(separator: ".")
+            .contains { $0.count > 3 && lowercasedText.contains(String($0)) }
+    }
 
     private struct DownloadedCodePatch {
         let temporaryURL: URL
         let fileName: String
+    }
+
+    private static func decryptCodePatch(
+        at encryptedURL: URL,
+        response: HTTPURLResponse,
+        sessionToken: String,
+        variant: GamePatchVariant,
+        kind: CodePatchKind
+    ) throws -> URL {
+        guard response.value(forHTTPHeaderField: "X-CodePatch-Encryption") == codePatchEncryptionFormat,
+              let saltText = response.value(forHTTPHeaderField: "X-CodePatch-Salt"),
+              let nonceText = response.value(forHTTPHeaderField: "X-CodePatch-Nonce"),
+              let tagText = response.value(forHTTPHeaderField: "X-CodePatch-Tag"),
+              let expectedHash = response.value(forHTTPHeaderField: "X-CodePatch-SHA256"),
+              let expectedLengthText = response.value(forHTTPHeaderField: "X-CodePatch-Plaintext-Length"),
+              let expectedLength = Int(expectedLengthText), expectedLength > 0,
+              let salt = Data(base64Encoded: saltText), salt.count == 32,
+              let nonceData = Data(base64Encoded: nonceText), nonceData.count == 12,
+              let tag = Data(base64Encoded: tagText), tag.count == 16 else {
+            throw NovaXControlError.message("Dữ liệu mã hóa không hợp lệ")
+        }
+
+        let context = Data("novax-codepatch-v1|\(variant.rawValue)|\(kind.rawValue)|\(expectedHash)".utf8)
+        let inputKey = SymmetricKey(data: Data(sessionToken.utf8))
+        let key = HKDF<SHA256>.deriveKey(
+            inputKeyMaterial: inputKey,
+            salt: salt,
+            info: context,
+            outputByteCount: 32
+        )
+        let encrypted = try Data(contentsOf: encryptedURL, options: .mappedIfSafe)
+        let nonce = try AES.GCM.Nonce(data: nonceData)
+        let sealedBox = try AES.GCM.SealedBox(nonce: nonce, ciphertext: encrypted, tag: tag)
+        let plaintext = try AES.GCM.open(sealedBox, using: key, authenticating: context)
+        guard plaintext.count == expectedLength else {
+            throw NovaXControlError.message("Kích thước dữ liệu không hợp lệ")
+        }
+        let actualHash = SHA256.hash(data: plaintext).map { String(format: "%02x", $0) }.joined()
+        guard actualHash.caseInsensitiveCompare(expectedHash) == .orderedSame else {
+            throw NovaXControlError.message("Dữ liệu tải về không toàn vẹn")
+        }
+
+        let outputURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("novax-codepatch-\(UUID().uuidString)")
+        try plaintext.write(to: outputURL, options: [.atomic, .completeFileProtection])
+        return outputURL
     }
 
     private static func validCodePatchFileName(_ value: String?) -> String? {
@@ -1153,7 +1228,7 @@ final class FeaturePatchService: ObservableObject {
             #endif
         }
         let dirPath = (baseDir as NSString)
-            .appendingPathComponent("Documents/contentcache/Compulsory/ios/gameassetbundles/codepatch")
+            .appendingPathComponent(codePatchDirectoryPath)
         let storedName = UserDefaults.standard.string(forKey: "codepatch_file_name_\(variant.rawValue)")
         let fileName = validCodePatchFileName(storedName) ?? legacyCodePatchFileName
         return URL(fileURLWithPath: (dirPath as NSString).appendingPathComponent(fileName))
@@ -1177,7 +1252,7 @@ final class FeaturePatchService: ObservableObject {
             #endif
         }
         let dirPath = (baseDir as NSString)
-            .appendingPathComponent("Documents/contentcache/Compulsory/ios/gameassetbundles/codepatch")
+            .appendingPathComponent(codePatchDirectoryPath)
         let dirURL = URL(fileURLWithPath: dirPath, isDirectory: true)
         try? FileManager.default.createDirectory(at: dirURL, withIntermediateDirectories: true)
         return dirURL
@@ -1201,11 +1276,13 @@ final class FeaturePatchService: ObservableObject {
         auth: AuthManager
     ) async throws -> DownloadedCodePatch {
         try await ensureNativeSession(auth: auth)
-        guard let url = URL(string: "\(baseURL)/api/novax/codepatch/\(variant.rawValue)/\(kind.rawValue)/download") else {
+        let route = Self.codePatchAPIBasePath + variant.rawValue + "/" + kind.rawValue + Self.codePatchDownloadSuffix
+        guard let url = URL(string: baseURL + route) else {
             throw NovaXControlError.message("Không thể kết nối đến máy chủ")
         }
         var request = nativeRequest(url, auth: auth)
         request.timeoutInterval = 60
+        request.setValue(Self.codePatchEncryptionFormat, forHTTPHeaderField: "X-CodePatch-Accept")
         do {
             let (tempURL, response) = try await pinnedSession.download(for: request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
@@ -1216,7 +1293,15 @@ final class FeaturePatchService: ObservableObject {
             let decodedName = encodedName?.removingPercentEncoding
             let fileName = FeaturePatchService.validCodePatchFileName(decodedName)
                 ?? FeaturePatchService.legacyCodePatchFileName
-            return DownloadedCodePatch(temporaryURL: tempURL, fileName: fileName)
+            defer { try? FileManager.default.removeItem(at: tempURL) }
+            let decryptedURL = try Self.decryptCodePatch(
+                at: tempURL,
+                response: http,
+                sessionToken: nativeSessionToken,
+                variant: variant,
+                kind: kind
+            )
+            return DownloadedCodePatch(temporaryURL: decryptedURL, fileName: fileName)
         } catch let err as NovaXControlError {
             throw err
         } catch {
