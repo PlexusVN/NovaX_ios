@@ -15,7 +15,7 @@ struct ThreeOneOSFiveApp: App {
 
     init() {
         setupLogCapture()
-        log("app: NovaX launching — iOS \(AppInfo.osVersion) (\(AppInfo.osBuild)) \(AppInfo.machineName)")
+        log("app: Astra launching — iOS \(AppInfo.osVersion) (\(AppInfo.osBuild)) \(AppInfo.machineName)")
         let securityResult = AntiTamper.checkAtLaunch()
         if securityResult.isCompromised {
             log("app: security notice — \(securityResult.compromisedReasons.joined(separator: ", "))")
@@ -315,7 +315,7 @@ struct UpdateRequiredView: View {
                     .font(.system(size: 18, weight: .heavy, design: .monospaced))
                     .foregroundColor(AppTheme.statusError)
 
-                Text("Phiên bản \(offer.version) đã sẵn sàng.\nVui lòng cập nhật để tiếp tục sử dụng NovaX.")
+                Text("Phiên bản \(offer.version) đã sẵn sàng.\nVui lòng cập nhật để tiếp tục sử dụng Astra.")
                     .font(.system(size: 14))
                     .multilineTextAlignment(.center)
                     .foregroundColor(AppTheme.grey600)
@@ -374,54 +374,7 @@ struct UpdateRequiredView: View {
 
             Rectangle().fill(AppTheme.grey200).frame(height: 1).padding(.vertical, 16)
 
-            HStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(AppTheme.ink)
-                        .frame(width: 44, height: 44)
-                    Text("MK")
-                        .font(.system(size: 15, weight: .black, design: .monospaced))
-                        .foregroundColor(Color.white)
-                }
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Trần Minh Khải")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(AppTheme.ink)
-                    Text("Nhà phát triển NovaX")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(AppTheme.grey500)
-                    HStack(spacing: 4) {
-                        Image(systemName: "phone.fill")
-                            .font(.system(size: 9))
-                            .foregroundColor(AppTheme.grey500)
-                        Text("0342145707")
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundColor(AppTheme.grey600)
-                    }
-                }
-                Spacer()
-            }
-
-            Button(action: {
-                Haptics.light()
-                if let url = URL(string: "https://zalo.me/0342145707") {
-                    UIApplication.shared.open(url)
-                }
-            }) {
-                HStack {
-                    Image(systemName: "message.fill")
-                    Text("Liên hệ Zalo")
-                }
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(AppTheme.ink)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .padding(.top, 14)
+            DeveloperContactsList()
         }
         .padding(16)
         .background(Color.white)

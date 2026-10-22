@@ -52,10 +52,10 @@ jobs:
           cp -R "$APP_NAME" build/Payload/
 
           cd build
-          zip -r NovaX.ipa Payload
+          zip -r Astra.ipa Payload
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NovaX-Unsigned-IPA
-          path: build/NovaX.ipa
+          name: Astra-Unsigned-IPA
+          path: build/Astra.ipa

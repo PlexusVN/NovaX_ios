@@ -18,7 +18,7 @@ struct DNSManagerView: View {
                         // 1. Thẻ trạng thái & NÚT BẬT/TẮT TRUNG TÂM
                         masterStatusCard
                         
-                        // Hướng dẫn mở Cài đặt nếu iOS chưa chuyển tick sang NovaX DNS
+                        // Hướng dẫn mở Cài đặt nếu iOS chưa chuyển tick sang Astra DNS
                         if dnsManager.needsManualActivation {
                             manualActivationCard
                         }
@@ -41,7 +41,7 @@ struct DNSManagerView: View {
                             HStack(spacing: 6) {
                                 Image(systemName: "trash")
                                     .font(.system(size: 12))
-                                Text("Gỡ bỏ cấu hình NovaX DNS khỏi thiết bị")
+                                Text("Gỡ bỏ cấu hình Astra DNS khỏi thiết bị")
                                     .font(.system(size: 12, weight: .medium))
                             }
                             .foregroundColor(.white.opacity(0.35))
@@ -53,7 +53,7 @@ struct DNSManagerView: View {
                                 dnsManager.uninstallDNSProfile()
                             }
                         } message: {
-                            Text("Thao tác này sẽ xóa hồ sơ NovaX DNS khỏi Cài đặt của iPhone. Bạn sẽ cần cấp quyền lại nếu muốn kích hoạt sau này.")
+                            Text("Thao tác này sẽ xóa hồ sơ Astra DNS khỏi Cài đặt của iPhone. Bạn sẽ cần cấp quyền lại nếu muốn kích hoạt sau này.")
                         }
                     }
                     .padding(.horizontal, 16)
@@ -181,7 +181,7 @@ struct DNSManagerView: View {
                 
                 Text(
                     !dnsManager.isEnabled
-                        ? (dnsManager.needsManualActivation ? "Hồ sơ đã nạp vào máy. Cần tích chọn NovaX DNS trong Cài đặt iPhone" : "DNS của thiết bị đang ở chế độ mặc định")
+                        ? (dnsManager.needsManualActivation ? "Hồ sơ đã nạp vào máy. Cần tích chọn Astra DNS trong Cài đặt iPhone" : "DNS của thiết bị đang ở chế độ mặc định")
                         : (dnsManager.isActivelyProtected
                             ? "Thiết bị đang được mã hóa và bảo vệ an toàn 100% qua NextDNS"
                             : (dnsManager.isVerifying ? "Đang gửi gói tin kiểm tra phân giải thực tế đến máy chủ NextDNS..." : "Cấu hình đã bật nhưng lưu lượng mạng chưa phân giải qua DoH"))
@@ -308,7 +308,7 @@ struct DNSManagerView: View {
                     .foregroundColor(Color(hex: 0xFF9500))
                 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Cần tích chọn NovaX DNS trên iPhone")
+                    Text("Cần tích chọn Astra DNS trên iPhone")
                         .font(.system(size: 15, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
                     Text("Hồ sơ đã được nạp an toàn, chỉ cần 1 thao tác")
@@ -320,14 +320,14 @@ struct DNSManagerView: View {
             }
             
             VStack(alignment: .leading, spacing: 10) {
-                Text("Để kích hoạt bảo vệ, bạn cần chọn NovaX DNS trong Cài đặt iPhone:")
+                Text("Để kích hoạt bảo vệ, bạn cần chọn Astra DNS trong Cài đặt iPhone:")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(.white.opacity(0.85))
                 
                 VStack(alignment: .leading, spacing: 8) {
                     stepItem(num: "1", text: "Bấm nút **Mở Cài Đặt DNS** bên dưới (Cài đặt ➔ Cài đặt chung ➔ VPN & Quản lý thiết bị ➔ DNS).")
-                    stepItem(num: "2", text: "Tích chọn **NovaX DNS**.")
-                    stepItem(num: "3", text: "Quay lại ứng dụng NovaX: Trạng thái sẽ tự động chuyển sang **ĐÃ KẾT NỐI**.")
+                    stepItem(num: "2", text: "Tích chọn **Astra DNS**.")
+                    stepItem(num: "3", text: "Quay lại ứng dụng Astra: Trạng thái sẽ tự động chuyển sang **ĐÃ KẾT NỐI**.")
                 }
                 .padding(10)
                 .background(Color.white.opacity(0.04))

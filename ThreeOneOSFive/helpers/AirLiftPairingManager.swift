@@ -38,7 +38,7 @@ final class AirLiftPairingManager: ObservableObject {
             case .busy:
                 return "Một phiên ghép đôi đang chạy."
             case .localNetworkPermission:
-                return "NovaX chưa được phép dùng Mạng cục bộ. Vào Cài đặt → NovaX → bật Mạng cục bộ rồi thử lại."
+                return "Astra chưa được phép dùng Mạng cục bộ. Vào Cài đặt → Astra → bật Mạng cục bộ rồi thử lại."
             case .emptyRecord:
                 return "Ghép đôi hoàn tất nhưng file thông tin xác thực bị trống."
             case .failed(let message):
@@ -157,7 +157,7 @@ final class AirLiftPairingManager: ObservableObject {
 
         do {
             _ = try await startAndWait()
-            notify(message: "Ghép đôi thành công. NovaX đã lưu thông tin xác thực trên thiết bị.")
+            notify(message: "Ghép đôi thành công. Astra đã lưu thông tin xác thực trên thiết bị.")
         } catch is CancellationError {
             return
         } catch {
@@ -187,7 +187,7 @@ final class AirLiftPairingManager: ObservableObject {
         DispatchQueue.global(qos: .userInitiated).async {
             var result = ALPairResult()
             let returnCode = "0.0.0.0".withCString { bind in
-                "NovaX".withCString { name in
+                "Astra".withCString { name in
                     "Mac17,7".withCString { model in
                         outputPath.withCString { output in
                             altIRK.withCString { irk in
@@ -396,7 +396,7 @@ private final class LocalNetworkAuthorization {
             do {
                 let listener = try NWListener(using: parameters)
                 listener.service = NWListener.Service(
-                    name: "NovaX-LocalNetwork-Probe-\(UUID().uuidString)",
+                    name: "Astra-LocalNetwork-Probe-\(UUID().uuidString)",
                     type: probeType
                 )
                 listener.newConnectionHandler = { connection in connection.cancel() }

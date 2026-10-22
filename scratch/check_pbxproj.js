@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const pbxPath = 'c:\\Users\\Khai\\Desktop\\Nova IOS 27\\NovaX\\ThreeOneOSFive.xcodeproj\\project.pbxproj';
+const pbxPath = path.join(__dirname, '..', 'ThreeOneOSFive.xcodeproj', 'project.pbxproj');
 const content = fs.readFileSync(pbxPath, 'utf8');
 
 console.log("=== CHECKING PBXPROJ SYNTAX & STRUCTURE ===");
@@ -39,6 +39,7 @@ for (const sec of sections) {
     console.log(`Section ${sec}: Begin=${hasBegin}, End=${hasEnd}`);
     if (!hasBegin || !hasEnd) {
         console.error(`ERROR in section ${sec}`);
+        process.exitCode = 1;
     }
 }
 
@@ -48,6 +49,10 @@ if (projectMatch) {
     console.log("PBXProject targets list:\n" + projectMatch[1].trim());
 }
 
-const has3105Target = content.includes('3105 /* 3105 */ = {');
+const has3105Target = /3105A500 \/\* 3105 \*\/ = \{/.test(content);
 console.log(`Target 3105 present: ${has3105Target}`);
 console.log(`TunnelProv fully removed: ${!content.includes('TunnelProv')}`);
+
+if (braceCount !== 0 || parenCount !== 0 || !has3105Target || content.includes('TunnelProv')) {
+    process.exitCode = 1;
+}

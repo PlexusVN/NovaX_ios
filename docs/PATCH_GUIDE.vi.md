@@ -4,12 +4,12 @@ Patch của 3105 nhắm đến ứng dụng bằng bundle identifier ổn địn
 
 ## Áp dụng hoàn toàn trên iPhone bằng AirLift (iOS 27+)
 
-1. Vào cài đặt AirLift trong NovaX, chọn **Pair trên máy** và bắt đầu phát sóng.
-2. Mở **Cài đặt → Quyền riêng tư & Bảo mật → Chế độ nhà phát triển**, chọn **Pair with NovaX**, rồi nhập PIN NovaX hiển thị.
-3. Mở ứng dụng LocalDevVPN riêng, bật tunnel, quay lại NovaX và kiểm tra đến khi dịch vụ RSD/Lockdown báo sẵn sàng.
+1. Vào cài đặt AirLift trong Astra, chọn **Pair trên máy** và bắt đầu phát sóng.
+2. Mở **Cài đặt → Quyền riêng tư & Bảo mật → Chế độ nhà phát triển**, chọn **Pair with Astra**, rồi nhập PIN Astra hiển thị.
+3. Mở ứng dụng LocalDevVPN riêng, bật tunnel, quay lại Astra và kiểm tra đến khi dịch vụ RSD/Lockdown báo sẵn sàng.
 4. Bật **Sử dụng AirLift Engine toàn bộ**, sau đó áp dụng gói `.3105` như bình thường.
 
-Trước mỗi batch ghi, NovaX chạy canary AirTraffic và yêu cầu đọc lại đúng byte. `AirliftFFI` chưa có API đọc file tùy ý, nên patch qua AirLift không có bản sao file gốc và không hỗ trợ khôi phục. Ứng dụng sẽ giữ trạng thái đã áp dụng thay vì báo khôi phục giả. Theo upstream, đường AirTraffic này không hoạt động từ iOS 27.2 beta 3 trở lên.
+Trước mỗi batch ghi, Astra chạy canary AirTraffic và yêu cầu đọc lại đúng byte. `AirliftFFI` chưa có API đọc file tùy ý, nên patch qua AirLift không có bản sao file gốc và không hỗ trợ khôi phục. Ứng dụng sẽ giữ trạng thái đã áp dụng thay vì báo khôi phục giả. Theo upstream, đường AirTraffic này không hoạt động từ iOS 27.2 beta 3 trở lên.
 
 ## Cấu trúc workspace
 

@@ -1,4 +1,4 @@
-$pbxPath = "c:\Users\Khai\Desktop\Nova IOS 27\NovaX\ThreeOneOSFive.xcodeproj\project.pbxproj"
+$pbxPath = Join-Path $PSScriptRoot "..\ThreeOneOSFive.xcodeproj\project.pbxproj"
 $content = Get-Content -Path $pbxPath -Raw
 
 Write-Host "=== CHECKING PBXPROJ SYNTAX & STRUCTURE ==="

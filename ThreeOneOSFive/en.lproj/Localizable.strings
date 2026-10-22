@@ -14,12 +14,12 @@
 "common.finish" = "Finish";
 
 "update.title" = "Update available";
-"update.message" = "NovaX %@ is available on GitHub.";
+"update.message" = "Astra %@ is available on GitHub.";
 "update.agree" = "OK";
 "update.dismiss" = "Don't show again";
 "patch.error.wrong_password" = "Incorrect password.";
 
-"attribution.title" = "About NovaX";
+"attribution.title" = "About Astra";
 "attribution.subtitle" = "Project information";
 "attribution.link_section" = "Project link";
 "attribution.url" = "URL";
@@ -30,18 +30,18 @@
 "onboarding.language_title" = "Choose your language";
 "onboarding.language_subtitle" = "You can change this later in Settings.";
 "onboarding.language_hint" = "Select a language to continue.";
-"onboarding.welcome_title" = "Welcome to NovaX";
+"onboarding.welcome_title" = "Welcome to Astra";
 "onboarding.welcome_message" = "Developed by YangJiii";
-"onboarding.welcome_badge" = "Official NovaX identity";
+"onboarding.welcome_badge" = "Official Astra identity";
 "onboarding.versions_title" = "Supported iOS versions";
-"onboarding.versions_subtitle" = "NovaX is verified on the ranges below. Unsupported builds are blocked.";
+"onboarding.versions_subtitle" = "Astra is verified on the ranges below. Unsupported builds are blocked.";
 "onboarding.versions_footer" = "This device: iOS %@ (%@)";
 "onboarding.beta" = "Beta";
 "onboarding.install_title" = "Certificate requirements";
-"onboarding.install_message" = "NovaX requires a supported signing method to access device features.";
+"onboarding.install_message" = "Astra requires a supported signing method to access device features.";
 "onboarding.install_ok" = "Works with enterprise certificates, including eSign and similar enterprise installs.";
 "onboarding.install_bad" = "Does not work with SideStore, AltStore, 3uTools or LiveContainer.";
-"onboarding.install_jailbreak" = "On iOS 15 through iOS 18.7.x, NovaX will not work if the device is jailbroken.";
+"onboarding.install_jailbreak" = "On iOS 15 through iOS 18.7.x, Astra will not work if the device is jailbroken.";
 "onboarding.install_footer" = "Use a supported certificate on a non-jailbroken device before continuing.";
 
 "dashboard.exploit_access" = "Exploit access";
@@ -70,7 +70,7 @@
 "dashboard.kernel_running" = "Activating…";
 "dashboard.kernel_active" = "Active";
 "dashboard.kernel_inactive" = "Inactive";
-"dashboard.enterprise_signing" = "NovaX only works when signed with an enterprise certificate. SideStore, AltStore, 3uTools and LiveContainer are not supported.";
+"dashboard.enterprise_signing" = "Astra only works when signed with an enterprise certificate. SideStore, AltStore, 3uTools and LiveContainer are not supported.";
 "dashboard.features" = "Features";
 "dashboard.features_footer" = "Turn on Cleaner or Wallpapers to show it in the app navigation.";
 "tab.home" = "System";
@@ -100,7 +100,7 @@
 "cleaner.clean_button" = "Clean %@";
 "cleaner.cleaning" = "Cleaning…";
 "cleaner.confirm_title" = "Delete temporary data?";
-"cleaner.confirm_message" = "NovaX will permanently delete Library/Caches and tmp from %lld selected apps (%@). Close those apps first. They may open more slowly while rebuilding caches. This cannot be undone.";
+"cleaner.confirm_message" = "Astra will permanently delete Library/Caches and tmp from %lld selected apps (%@). Close those apps first. They may open more slowly while rebuilding caches. This cannot be undone.";
 "cleaner.confirm_action" = "Clean Now";
 "cleaner.result_title" = "Cleanup Finished";
 "cleaner.result_message" = "Freed %@ by removing %lld files. %lld items or apps could not be cleaned.";
@@ -142,13 +142,13 @@
 "patch.private_hidden_title" = "Private Patch";
 "patch.private_hidden_message" = "The author has hidden this patch's files and target paths. You can apply or restore it without viewing its contents.";
 "patch.target_bundle" = "Target Bundle";
-"patch.workspace_bundle_footer" = "NovaX creates this bundle folder in the editable patch workspace. Container UUIDs are never stored.";
+"patch.workspace_bundle_footer" = "Astra creates this bundle folder in the editable patch workspace. Container UUIDs are never stored.";
 "patch.captured_content" = "Captured Content";
-"patch.workspace_edit_footer" = "After creation, manage the complete bundle tree from the NovaX workspace in Files.";
+"patch.workspace_edit_footer" = "After creation, manage the complete bundle tree from the Astra workspace in Files.";
 "patch.workspace" = "Workspace";
 "patch.open_workspace" = "Open Patch Files";
 "patch.workspace_detail_footer" = "Edit this bundle tree directly. Apply and Export automatically synchronize it into the encrypted .3105 package.";
-"patch.legacy_footer" = "Legacy v1 patch. It remains fully usable in this version of NovaX.";
+"patch.legacy_footer" = "Legacy v1 patch. It remains fully usable in this version of Astra.";
 "patch.files" = "Files";
 "patch.folders" = "Folders";
 "patch.rules" = "Rules";
@@ -195,8 +195,8 @@
 "patch.restore_confirm_title" = "Restore original files?";
 "patch.restore_confirm_message" = "Close the target apps first. Files will return to their pre-patch state; files introduced by the patch will be removed.";
 "patch.restore_changed_title" = "Some files have changed";
-"patch.restore_changed_message" = "%lld files changed after the patch was applied:\n%@\n\nNovaX will snapshot their current state and roll everything back if restoration fails.";
-"patch.restore_changed_private_message" = "%lld private patch files changed after apply. Their paths remain hidden. NovaX will snapshot the current state before restoring.";
+"patch.restore_changed_message" = "%lld files changed after the patch was applied:\n%@\n\nAstra will snapshot their current state and roll everything back if restoration fails.";
+"patch.restore_changed_private_message" = "%lld private patch files changed after apply. Their paths remain hidden. Astra will snapshot the current state before restoring.";
 "patch.restore_changed_action" = "Restore Anyway";
 "patch.reset_confirm_title" = "Reset files to the package?";
 "patch.reset_confirm_message" = "Close the target apps first. Current runtime changes will be replaced with the exact content originally applied from this .3105 package.";
@@ -209,7 +209,7 @@
 "patch.restored_message" = "The original files were restored.";
 "patch.reset_message" = "All patch files were reset to the applied package state.";
 "patch.error.unsupported_format" = "This is not a valid .3105 patch package.";
-"patch.error.unsupported_version" = "This patch requires a newer version of NovaX. Update the app before importing it.";
+"patch.error.unsupported_version" = "This patch requires a newer version of Astra. Update the app before importing it.";
 "patch.error.password_or_corrupt" = "The password is incorrect or the package was modified.";
 "patch.error.invalid_bundle" = "Enter a valid app bundle identifier, not a container UUID.";
 "patch.error.unsafe_path" = "The target must be a safe path relative to the app data container.";
@@ -238,7 +238,7 @@
 "accessibility.requesting_access" = "Requesting exploit access";
 "accessibility.open_editor_hint" = "Opens the MobileGestalt feature editor";
 "accessibility.run_exploit_hint" = "Requests write access required by the Gestalt editor";
-"accessibility.open_github" = "Open NovaX on GitHub";
+"accessibility.open_github" = "Open Astra on GitHub";
 "accessibility.open_profile" = "Open %@ profile";
 "accessibility.log_entry" = "Log entry %lld: %@";
 
@@ -279,7 +279,7 @@
 "settings.token_footer" = "Available after exploit access succeeds.";
 "settings.credits" = "Credits";
 "settings.social_media" = "Social media";
-"social.github_role" = "NovaX source code";
+"social.github_role" = "Astra source code";
 "social.iosvn_role" = "iOSVN Community";
 "credit.yangjiii" = "Developer & designer";
 "credit.forcequit" = "bad_query exploit";
@@ -356,7 +356,7 @@
 "logs.empty_message" = "Exploit and editor activity will appear here during this session.";
 
 "browser.title" = "App Data Browser";
-"browser.workspace" = "NovaX Workspace";
+"browser.workspace" = "Astra Workspace";
 "browser.workspace_subtitle" = "Patches and files available in On My iPhone";
 "browser.loading" = "Loading…";
 "browser.empty" = "No application bundles could be resolved. Tap Retry to scan again.";
@@ -502,26 +502,26 @@
 "wallpaper.recovery_summary" = "%lld installed descriptors";
 "wallpaper.restore" = "Restore";
 "wallpaper.restored" = "Restored";
-"wallpaper.recovery_footer" = "Restore removes only descriptor folders created by that NovaX installation. Existing wallpapers are never part of the removal list.";
+"wallpaper.recovery_footer" = "Restore removes only descriptor folders created by that Astra installation. Existing wallpapers are never part of the removal list.";
 "wallpaper.safety" = "Safety";
 "wallpaper.additive_only" = "Adds new descriptors without replacing Collections";
 "wallpaper.uuid_dynamic" = "Resolves com.apple.PosterBoard dynamically";
 "wallpaper.archive_validation" = "Checks ZIP paths, sizes, symlinks and CRC before install";
-"wallpaper.ios27_footer" = "PosterBoard is build-sensitive. NovaX discovers the live store layout instead of assuming generation 61, but some plugin-based wallpapers may still be incompatible with iOS 27.";
+"wallpaper.ios27_footer" = "PosterBoard is build-sensitive. Astra discovers the live store layout instead of assuming generation 61, but some plugin-based wallpapers may still be incompatible with iOS 27.";
 "wallpaper.install" = "Apply";
 "wallpaper.install_warning_title" = "Install this wallpaper package?";
 "wallpaper.install_warning_message" = "Apply “%@” with %lld wallpapers on iOS %@ (%@)? Existing wallpapers stay unchanged.";
-"wallpaper.installed_by_3105" = "Wallpapers added by NovaX";
-"wallpaper.reset" = "Reset NovaX Wallpapers";
-"wallpaper.reset_footer" = "Only wallpapers added by NovaX are removed.";
+"wallpaper.installed_by_3105" = "Wallpapers added by Astra";
+"wallpaper.reset" = "Reset Astra Wallpapers";
+"wallpaper.reset_footer" = "Only wallpapers added by Astra are removed.";
 "wallpaper.reset_title" = "Reset added wallpapers?";
-"wallpaper.reset_message" = "Remove %lld wallpapers added by NovaX? Existing wallpapers stay unchanged.";
+"wallpaper.reset_message" = "Remove %lld wallpapers added by Astra? Existing wallpapers stay unchanged.";
 "wallpaper.reset_done_title" = "Reset Complete";
-"wallpaper.reset_done_message" = "Wallpapers added by NovaX were removed and PosterBoard was refreshed.";
+"wallpaper.reset_done_message" = "Wallpapers added by Astra were removed and PosterBoard was refreshed.";
 "wallpaper.restore_title" = "Restore this installation?";
-"wallpaper.restore_message" = "This removes %lld descriptor folders previously added by NovaX. Wallpapers that existed before the installation are preserved.";
+"wallpaper.restore_message" = "This removes %lld descriptor folders previously added by Astra. Wallpapers that existed before the installation are preserved.";
 "wallpaper.delete_title" = "Remove imported package?";
-"wallpaper.delete_message" = "“%@” will be removed from NovaX staging. Installed wallpapers are not affected.";
+"wallpaper.delete_message" = "“%@” will be removed from Astra staging. Installed wallpapers are not affected.";
 "wallpaper.importing" = "Validating .tendies packages…";
 "wallpaper.installing" = "Installing descriptors safely…";
 "wallpaper.restoring" = "Resetting wallpapers…";
@@ -532,7 +532,7 @@
 "wallpaper.install_done_opened" = "PosterBoard was opened to refresh its collections. Close it from the app switcher, then check the Lock Screen wallpaper picker.";
 "wallpaper.install_done_manual" = "Open the Lock Screen wallpaper picker to refresh PosterBoard. If the wallpaper is not visible, close PosterBoard from the app switcher and try again.";
 "wallpaper.restore_done_title" = "Installation Restored";
-"wallpaper.restore_done_message" = "The descriptors added by NovaX were removed. PosterBoard was asked to refresh.";
+"wallpaper.restore_done_message" = "The descriptors added by Astra were removed. PosterBoard was asked to refresh.";
 "wallpaper.operation_failed" = "Wallpaper Operation Failed";
 "wallpaper.error.unsafe_container" = "PosterBoard returned an unsafe or unexpected container path.";
 "wallpaper.error.store_unavailable" = "The PosterBoard extension store is unavailable on this build.";
@@ -540,18 +540,12 @@
 "wallpaper.error.package" = "This is not a supported .tendies package.";
 "wallpaper.error.archive" = "The archive is malformed or contains an unsafe path.";
 "wallpaper.error.symlink" = "Wallpaper packages and target folders cannot contain symbolic links.";
-"wallpaper.error.size" = "The wallpaper package exceeds NovaX's safe size or item limits.";
+"wallpaper.error.size" = "The wallpaper package exceeds Astra's safe size or item limits.";
 "wallpaper.error.no_descriptors" = "No supported wallpaper descriptors were found in this package.";
-"wallpaper.error.access" = "NovaX could not obtain verified read/write access to com.apple.PosterBoard.";
+"wallpaper.error.access" = "Astra could not obtain verified read/write access to com.apple.PosterBoard.";
 "wallpaper.error.backup" = "The recovery journal could not be written, so installation was stopped.";
 "wallpaper.error.install" = "Installation failed and any descriptors added during this attempt were rolled back.";
-"wallpaper.error.restore" = "NovaX could not safely remove every descriptor from this installation.";
+"wallpaper.error.restore" = "Astra could not safely remove every descriptor from this installation.";
 "wallpaper.error.unknown" = "An unexpected error occurred. Review Session Logs for details.";
 
-"patch.error.password_or_corrupt" = "Invalid password or corrupted patch file.";
-"patch.error.unsupported_version" = "Unsupported patch package version.";
-"patch.error.unsupported_format" = "Unsupported patch format.";
-"patch.error.private_password" = "This patch requires a password.";
-"patch.error.apply" = "Failed to apply patch.";
-"patch.error.restore" = "Failed to restore patch.";
 "patch.error.not_authenticated" = "A valid license key is required to activate patches.";

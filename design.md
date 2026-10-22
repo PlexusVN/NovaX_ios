@@ -1,12 +1,12 @@
-# NovaX — Quyết định thiết kế
+# Astra — Quyết định thiết kế
 
-Tài liệu này là nguồn tổng hợp các yêu cầu giao diện đã được chốt và áp dụng vào project NovaX.
+Tài liệu này là nguồn tổng hợp các yêu cầu giao diện đã được chốt và áp dụng vào project Astra.
 
 ## 1. Phạm vi hỗ trợ
 
 - Deployment target của ứng dụng: iOS 16 trở lên.
 - Giao diện phải hoạt động ổn định trên iOS 16–27.
-- Không thay đổi logic chuyển tab hiện tại của NovaX khi thay đổi phần trình bày.
+- Không thay đổi logic chuyển tab hiện tại của Astra khi thay đổi phần trình bày.
 - Chỉ sử dụng API công khai của Apple; không dùng private API để giả lập thành phần hệ thống.
 
 ## 2. Phong cách tổng thể
@@ -22,7 +22,7 @@ Tài liệu này là nguồn tổng hợp các yêu cầu giao diện đã đư�
 
 - Loại bỏ tab DNS — **đã áp dụng** (`ContentView.swift`, `AppTabNavigationState.swift`).
 - Thanh điều khiển dưới cùng có dạng **viên thuốc nổi** — **đã áp dụng** (`ContentView.swift`).
-- Giữ nguyên logic chọn và chuyển tab của NovaX.
+- Giữ nguyên logic chọn và chuyển tab của Astra.
 - Trên iOS 26–27 dùng `glassEffect(.regular.interactive(), in: Capsule())` — helper `AppTheme.liquidGlassCapsule` đã chuẩn bị, sẽ kích hoạt qua `if #available(iOS 26.0, *)` khi build bằng Xcode 26 SDK.
 - Trên iOS 16–25 dùng `Capsule` với `.ultraThinMaterial` + viền đen nhẹ.
 - Project build bằng Xcode 26 SDK trở lên, deployment target iOS 16.
@@ -36,7 +36,7 @@ Tài liệu này là nguồn tổng hợp các yêu cầu giao diện đã đư�
 
 ### Chuyển cảnh loading sang đăng nhập
 
-- Màn hình loading dùng nền trắng với logo `NovaX-Logo-new.png` ở chính giữa — **đã áp dụng** (`SplashScreen.swift`).
+- Màn hình loading dùng nền trắng với logo `Astra-Logo-new.png` ở chính giữa — **đã áp dụng** (`SplashScreen.swift`).
 - Không sử dụng vòng tròn phát sáng, hiệu ứng neon hay loading spinner mặc định.
 - Logo có sheen ánh sáng đơn sắc quét ngang 1 lần, progress bar màu đen, status text xoay vòng.
 - Tổng thời gian loading ~1.3 giây, có `Reduce Motion` fallback (cross-fade ngắn).
@@ -45,18 +45,18 @@ Tài liệu này là nguồn tổng hợp các yêu cầu giao diện đã đư�
 ## 5. Màn hình hồ sơ
 
 - Hồ sơ được viết lại theo phong cách doanh nghiệp 2026, dễ đọc — **đã áp dụng** (`ProfileView.swift`).
-- Phần đầu hồ sơ hiển thị logo + tên NovaX + phiên bản + `PREMIUM` + status "Hoạt động".
+- Phần đầu hồ sơ hiển thị logo + tên Astra + phiên bản + `PREMIUM` + status "Hoạt động".
 - License key trong thẻ riêng nền đen, copy dễ.
 - HWID, ngày kích hoạt, ngày hết hạn, loại key, thời gian còn lại trình bày bằng lưới 2 cột; tự về 1 cột <380pt.
 - Trạng thái key tách hàng riêng, dễ nhận biết.
 - Phiên bản hiển thị số lớn + Build phụ + trạng thái cập nhật.
 - Mục **Phiên đăng nhập** với nút **Đăng xuất key** — **đã áp dụng**.
-- Trước khi đăng xuất có hộp xác nhận: giải thích rõ NovaX chỉ xóa phiên license hiện tại, đưa người dùng về nhập key.
+- Trước khi đăng xuất có hộp xác nhận: giải thích rõ Astra chỉ xóa phiên license hiện tại, đưa người dùng về nhập key.
 - Đăng xuất key không tự khôi phục hoặc thay đổi những tệp đã áp dụng.
 
 ## 6. Logo và biểu tượng ứng dụng
 
-- Dùng `NovaX-Logo-new.png` làm hình đại diện bên trong ứng dụng — **đã áp dụng**.
+- Dùng `Astra-Logo-new.png` làm hình đại diện bên trong ứng dụng — **đã áp dụng**.
 - Dùng cùng logo làm biểu tượng ứng dụng bên ngoài màn hình chính — **đã áp dụng**.
 - Không đặt thêm nhiều vòng tròn trang trí quanh logo trong giao diện.
 
@@ -72,7 +72,7 @@ Tài liệu này là nguồn tổng hợp các yêu cầu giao diện đã đư�
 - Chuyển cảnh loading sang login: đã áp dụng vào bản Swift.
 - Bố cục Hồ sơ dễ đọc: đã áp dụng vào bản Swift.
 - Đăng xuất key và hộp xác nhận: đã áp dụng vào bản Swift.
-- Giao diện trắng đen, bỏ tab DNS, login doanh nghiệp 2026, splash→login morph, Hồ sơ mới và thanh điều khiển viên thuốc nổi + Liquid Glass/fallback: **đã áp dụng vào project chính `NovaX/`**.
+- Giao diện trắng đen, bỏ tab DNS, login doanh nghiệp 2026, splash→login morph, Hồ sơ mới và thanh điều khiển viên thuốc nổi + Liquid Glass/fallback: **đã áp dụng vào project chính `Astra/`**.
 
 ## 9. Build notes
 

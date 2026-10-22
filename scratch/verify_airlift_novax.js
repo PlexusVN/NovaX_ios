@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 console.log('================================================================');
-console.log('>>> BẮT ĐẦU KIỂM TRA & XÁC MINH TOÀN DIỆN NOVAX + AIRLIFT 2026 <<<');
+console.log('>>> BẮT ĐẦU KIỂM TRA & XÁC MINH TOÀN DIỆN ASTRA + AIRLIFT 2026 <<<');
 console.log('================================================================\n');
 
 let allPassed = true;
@@ -79,8 +79,8 @@ check('Nhúng AirLiftSettingsSection vào SettingsView', settingsView.includes('
 
 console.log('\n================================================================');
 if (allPassed) {
-    console.log('>>> KẾT QUẢ: 100% TIÊU CHÍ XÁC MINH ĐẠT CHUẨN [PASSED] <<<');
-    console.log('>>> SẴN SÀNG HOẠT ĐỘNG TRÊN MỌI THIẾT BỊ TỪ iOS 15 ĐẾN iOS 27! <<<');
+    console.log('>>> KẾT QUẢ: KIỂM TRA TĨNH AIRLIFT ĐẠT [PASSED] <<<');
+    console.log('>>> VẪN CẦN BUILD TRÊN macOS VÀ KIỂM TRA TRÊN THIẾT BỊ THẬT. <<<');
 } else {
     console.error('>>> KẾT QUẢ: CÓ LỖI CẦN ĐIỀU CHỈNH [FAILED] <<<');
     process.exit(1);

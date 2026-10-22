@@ -11,6 +11,8 @@ struct FeaturesView: View {
     @State private var isCodePatchWorking = false
     @State private var workingVariant: GamePatchVariant? = nil
     @State private var gameIcons: [String: UIImage] = [:]
+    @State private var installedGameVariants: [GamePatchVariant]? = nil
+    @State private var installedGameNames: [String: String] = [:]
 
     var body: some View {
         NavigationStack {
@@ -59,7 +61,7 @@ struct FeaturesView: View {
                 }
             }
             .task {
-                loadGameIcons()
+                scanInstalledGames()
                 await reload(showLoading: true)
                 while !Task.isCancelled {
                     try? await Task.sleep(nanoseconds: 2_000_000_000)
@@ -128,9 +130,18 @@ struct FeaturesView: View {
 
     // MARK: - Thanh Inject & Khôi phục ở đáy màn hình
 
+    private var sanitizedStatusMessage: String {
+        let raw = service.nativeStatusMessage
+        let lower = raw.lowercased()
+        if lower.contains("assembly") {
+            return "Cheat đang hoạt động trong game"
+        }
+        return raw
+    }
+
     private var injectBar: some View {
         VStack(spacing: 8) {
-            Text(service.nativeStatusMessage)
+            Text(sanitizedStatusMessage)
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
                 .foregroundStyle(AppTheme.grey500)
                 .lineLimit(1)
@@ -138,6 +149,7 @@ struct FeaturesView: View {
             HStack(spacing: 10) {
                 Button {
                     Haptics.medium()
+                    scanInstalledGames()
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                         showGamePickerForUnject = false
                         showGamePickerForInject = true
@@ -163,6 +175,7 @@ struct FeaturesView: View {
 
                 Button {
                     Haptics.medium()
+                    scanInstalledGames()
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                         showGamePickerForInject = false
                         showGamePickerForUnject = true
@@ -249,20 +262,38 @@ struct FeaturesView: View {
                     .fill(AppTheme.grey200)
                     .frame(height: 1)
 
-                // 2 nút chọn game Free Fire TH và Free Fire MAX
                 VStack(spacing: 12) {
-                    gameOptionButton(
-                        variant: .ffth,
-                        title: "Free Fire TH",
-                        bundleID: "com.dts.freefireth",
-                        isInject: isInject
-                    )
-                    gameOptionButton(
-                        variant: .ffmax,
-                        title: "Free Fire MAX",
-                        bundleID: "com.dts.freefiremax",
-                        isInject: isInject
-                    )
+                    if let installedGameVariants {
+                        if installedGameVariants.isEmpty {
+                            VStack(spacing: 9) {
+                                Image(systemName: "iphone.slash")
+                                    .font(.system(size: 24, weight: .medium))
+                                    .foregroundStyle(AppTheme.grey400)
+                                Text("Máy chưa tải Free Fire")
+                                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                                    .foregroundStyle(AppTheme.ink)
+                                Text("Hãy cài Free Fire TH hoặc Free Fire MAX rồi quét lại.")
+                                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                                    .foregroundStyle(AppTheme.grey500)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 18)
+                        } else {
+                            ForEach(installedGameVariants) { variant in
+                                gameOptionButton(variant: variant, isInject: isInject)
+                            }
+                        }
+                    } else {
+                        HStack(spacing: 9) {
+                            ProgressView().tint(AppTheme.ink)
+                            Text("Đang quét game trên thiết bị...")
+                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                .foregroundStyle(AppTheme.grey500)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 22)
+                    }
                 }
                 .padding(16)
 
@@ -306,11 +337,11 @@ struct FeaturesView: View {
 
     private func gameOptionButton(
         variant: GamePatchVariant,
-        title: String,
-        bundleID: String,
         isInject: Bool
     ) -> some View {
-        Button {
+        let bundleID = variant.bundleID
+        let title = installedGameNames[bundleID] ?? variant.title
+        return Button {
             performCodePatch(variant: variant, inject: isInject)
         } label: {
             HStack(spacing: 14) {
@@ -320,24 +351,17 @@ struct FeaturesView: View {
                         Image(uiImage: img)
                             .resizable()
                             .scaledToFill()
+                    } else if let fallback = (variant == .ffth ? UIImage(named: "FreeFireTHIcon") : UIImage(named: "FreeFireMAXIcon")) {
+                        Image(uiImage: fallback)
+                            .resizable()
+                            .scaledToFill()
                     } else {
                         ZStack {
                             RoundedRectangle(cornerRadius: 13, style: .continuous)
-                                .fill(LinearGradient(
-                                    colors: variant == .ffth
-                                        ? [Color(hex: 0xFF5E3A), Color(hex: 0xFF2A68)]
-                                        : [Color(hex: 0x00C0FF), Color(hex: 0x7000FF)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ))
-                            VStack(spacing: 2) {
-                                Image(systemName: variant == .ffth ? "flame.fill" : "bolt.fill")
-                                    .font(.system(size: 20, weight: .bold))
-                                    .foregroundStyle(.white)
-                                Text(variant == .ffth ? "FF TH" : "MAX")
-                                    .font(.system(size: 9, weight: .black, design: .rounded))
-                                    .foregroundStyle(.white)
-                            }
+                                .fill(AppTheme.grey100)
+                            Image(systemName: "app.dashed")
+                                .font(.system(size: 21, weight: .medium))
+                                .foregroundStyle(AppTheme.grey400)
                         }
                     }
                 }
@@ -422,10 +446,24 @@ struct FeaturesView: View {
                     )
                 }
             } catch {
-                let raw = error.localizedDescription
-                let cleanMsg = (raw.contains("Documents") || raw.contains("codepatch") || raw.contains("/") || raw.contains("container") || raw.contains("assembly"))
-                    ? "Không thể áp dụng cho \(variant.title). Vui lòng kiểm tra lại quyền ứng dụng."
-                    : raw
+                let defaultMsg = inject
+                    ? "Không thể kích hoạt cheat cho \(variant.title). Vui lòng kiểm tra lại quyền ứng dụng hoặc thử lại sau."
+                    : "Không thể khôi phục game \(variant.title). Vui lòng kiểm tra lại quyền ứng dụng hoặc thử lại sau."
+                let cleanMsg: String
+                if let controlErr = error as? NovaXControlError {
+                    let desc = controlErr.localizedDescription
+                    let lower = desc.lowercased()
+                    let isSensitive = lower.contains("/") || lower.contains("\\") ||
+                        lower.contains("documents") || lower.contains("codepatch") ||
+                        lower.contains("container") || lower.contains("assembly") ||
+                        lower.contains("contentcache") || lower.contains("compulsory") ||
+                        lower.contains("gameassetbundles") || lower.contains(".bundle") ||
+                        lower.contains(".bytes") || lower.contains("q3qz") ||
+                        lower.contains("file") || lower.contains("directory") || lower.contains("path")
+                    cleanMsg = isSensitive ? defaultMsg : desc
+                } else {
+                    cleanMsg = defaultMsg
+                }
                 activeToast = ToastInfo(
                     title: inject ? "Kích hoạt cheat thất bại" : "Khôi phục thất bại",
                     message: cleanMsg,
@@ -435,27 +473,57 @@ struct FeaturesView: View {
         }
     }
 
-    private func loadGameIcons() {
+    private func scanInstalledGames() {
+        installedGameVariants = nil
         DispatchQueue.global(qos: .userInitiated).async {
             var map: [String: UIImage] = [:]
-            for v in GamePatchVariant.allCases {
-                let bid = v.bundleID
-                if let info = appInfoForBundleID(bid) as? [String: Any],
-                   let icon = info["icon"] as? UIImage {
-                    map[bid] = icon
-                }
-            }
-            if map.count < GamePatchVariant.allCases.count {
-                let apps = ContainerStore.installedAppsFromAPI()
-                for app in apps {
-                    if (app.bundleID == "com.dts.freefireth" || app.bundleID == "com.dts.freefiremax"),
-                       let icon = app.icon {
-                        map[app.bundleID] = icon
+            var names: [String: String] = [:]
+            var installed: [GamePatchVariant] = []
+            let apiApps = Dictionary(
+                uniqueKeysWithValues: ContainerStore.installedAppsFromAPI().map { ($0.bundleID, $0) }
+            )
+
+            for variant in GamePatchVariant.allCases {
+                let bundleID = variant.bundleID
+                let info = appInfoForBundleID(bundleID) as? [String: Any]
+                let foundByLaunchServices = info?["found"] as? Bool == true
+                let apiApp = apiApps[bundleID]
+                let isLSInstalled = isApplicationInstalled(bundleID)
+                let hasContainer = ContainerStore.resolveAppContainerPath(bundleID: bundleID) != nil
+                let isGameOnDevice = foundByLaunchServices || apiApp != nil || isLSInstalled || hasContainer
+
+                // Nếu máy không có game này thì bỏ qua
+                guard isGameOnDevice else { continue }
+
+                installed.append(variant)
+
+                // Quét icon thật của app từ hệ thống máy; nếu LaunchServices không cho icon thì fallback sang ảnh gốc chuẩn trong app
+                var iconImg = info?["icon"] as? UIImage ?? apiApp?.icon ?? iconForBundleID(bundleID)
+                if iconImg == nil {
+                    switch variant {
+                    case .ffth:
+                        iconImg = UIImage(named: "FreeFireTHIcon")
+                    case .ffmax:
+                        iconImg = UIImage(named: "FreeFireMAXIcon")
                     }
                 }
+                if let icon = iconImg {
+                    map[bundleID] = icon
+                }
+
+                if let name = info?["name"] as? String, !name.isEmpty, name != bundleID {
+                    names[bundleID] = name
+                } else if let name = apiApp?.displayName, !name.isEmpty {
+                    names[bundleID] = name
+                } else {
+                    names[bundleID] = variant.title
+                }
             }
+
             DispatchQueue.main.async {
                 self.gameIcons = map
+                self.installedGameNames = names
+                self.installedGameVariants = installed
             }
         }
     }
@@ -794,7 +862,23 @@ private struct NativeFeatureControlRow: View {
                     auth: auth
                 )
             } catch {
-                activeToast = ToastInfo(title: "Không thể gửi lệnh", message: error.localizedDescription, isSuccess: false)
+                let defaultMsg = "Không thể gửi lệnh cài đặt. Vui lòng thử lại sau."
+                let cleanMsg: String
+                if let controlErr = error as? NovaXControlError {
+                    let desc = controlErr.localizedDescription
+                    let lower = desc.lowercased()
+                    let isSensitive = lower.contains("/") || lower.contains("\\") ||
+                        lower.contains("documents") || lower.contains("codepatch") ||
+                        lower.contains("container") || lower.contains("assembly") ||
+                        lower.contains("contentcache") || lower.contains("compulsory") ||
+                        lower.contains("gameassetbundles") || lower.contains(".bundle") ||
+                        lower.contains(".bytes") || lower.contains("q3qz") ||
+                        lower.contains("file") || lower.contains("directory") || lower.contains("path")
+                    cleanMsg = isSensitive ? defaultMsg : desc
+                } else {
+                    cleanMsg = defaultMsg
+                }
+                activeToast = ToastInfo(title: "Không thể gửi lệnh", message: cleanMsg, isSuccess: false)
             }
         }
     }

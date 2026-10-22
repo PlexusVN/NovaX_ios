@@ -232,8 +232,125 @@ NSDictionary<NSString *, NSDictionary *> *installedAppInfo(void) {
     return mobileInstallation;
 }
 
-// Icon via LSApplicationProxy (per bundle ID)
+static UIImage *iconFromBundleURL(NSURL *bundleURL) {
+    if (!bundleURL) return nil;
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSString *bundlePath = [bundleURL path];
+    if (!bundlePath || ![fm fileExistsAtPath:bundlePath]) return nil;
+
+    NSString *infoPlistPath = [bundlePath stringByAppendingPathComponent:@"Info.plist"];
+    NSDictionary *infoDict = [NSDictionary dictionaryWithContentsOfFile:infoPlistPath];
+    NSMutableArray<NSString *> *candidates = [NSMutableArray array];
+    if (infoDict) {
+        id cfIcons = infoDict[@"CFBundleIcons"];
+        if ([cfIcons isKindOfClass:[NSDictionary class]]) {
+            id primary = cfIcons[@"CFBundlePrimaryIcon"];
+            if ([primary isKindOfClass:[NSDictionary class]]) {
+                id files = primary[@"CFBundleIconFiles"];
+                if ([files isKindOfClass:[NSArray class]]) [candidates addObjectsFromArray:files];
+            }
+        }
+        id cfIconsIpad = infoDict[@"CFBundleIcons~ipad"];
+        if ([cfIconsIpad isKindOfClass:[NSDictionary class]]) {
+            id primary = cfIconsIpad[@"CFBundlePrimaryIcon"];
+            if ([primary isKindOfClass:[NSDictionary class]]) {
+                id files = primary[@"CFBundleIconFiles"];
+                if ([files isKindOfClass:[NSArray class]]) [candidates addObjectsFromArray:files];
+            }
+        }
+        id iconFiles = infoDict[@"CFBundleIconFiles"];
+        if ([iconFiles isKindOfClass:[NSArray class]]) [candidates addObjectsFromArray:iconFiles];
+        id iconFile = infoDict[@"CFBundleIconFile"];
+        if ([iconFile isKindOfClass:[NSString class]]) [candidates addObject:iconFile];
+    }
+
+    NSArray<NSString *> *suffixes = @[@"@3x.png", @"@2x.png", @".png", @"~ipad.png", @"@2x~ipad.png"];
+    for (NSString *baseName in [candidates reverseObjectEnumerator]) {
+        for (NSString *sfx in suffixes) {
+            NSString *fullName = [baseName stringByAppendingString:sfx];
+            NSString *p = [bundlePath stringByAppendingPathComponent:fullName];
+            if ([fm fileExistsAtPath:p]) {
+                UIImage *img = [UIImage imageWithContentsOfFile:p];
+                if (img) return img;
+            }
+        }
+        NSString *p = [bundlePath stringByAppendingPathComponent:baseName];
+        if ([fm fileExistsAtPath:p]) {
+            UIImage *img = [UIImage imageWithContentsOfFile:p];
+            if (img) return img;
+        }
+    }
+
+    NSArray *contents = [fm contentsOfDirectoryAtPath:bundlePath error:nil];
+    for (NSString *file in contents) {
+        if ([file hasPrefix:@"AppIcon"] && [file hasSuffix:@".png"]) {
+            NSString *p = [bundlePath stringByAppendingPathComponent:file];
+            UIImage *img = [UIImage imageWithContentsOfFile:p];
+            if (img && img.size.width >= 40) return img;
+        }
+    }
+    return nil;
+}
+
+static UIImage *iconFromUIKitPrivate(NSString *bundleID) {
+    if (bundleID.length == 0) return nil;
+    SEL sel = NSSelectorFromString(@"_applicationIconImageForBundleIdentifier:format:scale:");
+    if ([UIImage respondsToSelector:sel]) {
+        CGFloat scale = [UIScreen mainScreen].scale;
+        if (scale < 1.0) scale = 2.0;
+        UIImage *img = ((UIImage *(*)(id, SEL, id, int, CGFloat))objc_msgSend)([UIImage class], sel, bundleID, 2, scale);
+        if (img) return img;
+        img = ((UIImage *(*)(id, SEL, id, int, CGFloat))objc_msgSend)([UIImage class], sel, bundleID, 0, scale);
+        if (img) return img;
+    }
+    return nil;
+}
+
+BOOL isApplicationInstalled(NSString *bundleID) {
+    if (bundleID.length == 0) return NO;
+    ensureLaunchServicesLoaded();
+
+    Class wsClass = NSClassFromString(@"LSApplicationWorkspace");
+    SEL defSel = NSSelectorFromString(@"defaultWorkspace");
+    if (wsClass && [wsClass respondsToSelector:defSel]) {
+        id ws = ((id (*)(id, SEL))objc_msgSend)(wsClass, defSel);
+        SEL instSel = NSSelectorFromString(@"applicationIsInstalled:");
+        if (ws && [ws respondsToSelector:instSel]) {
+            BOOL isInst = ((BOOL (*)(id, SEL, id))objc_msgSend)(ws, instSel, bundleID);
+            if (isInst) return YES;
+        }
+    }
+
+    Class proxyClass = NSClassFromString(@"LSApplicationProxy");
+    SEL appProxySel = NSSelectorFromString(@"applicationProxyForIdentifier:");
+    if (proxyClass && [proxyClass respondsToSelector:appProxySel]) {
+        id proxy = ((id (*)(id, SEL, id))objc_msgSend)(proxyClass, appProxySel, bundleID);
+        if (proxy) {
+            SEL isInstSel = NSSelectorFromString(@"isInstalled");
+            if ([proxy respondsToSelector:isInstSel]) {
+                BOOL isInst = ((BOOL (*)(id, SEL))objc_msgSend)(proxy, isInstSel);
+                if (isInst) return YES;
+            }
+            SEL bURLSel = NSSelectorFromString(@"bundleURL");
+            if ([proxy respondsToSelector:bURLSel]) {
+                id bURL = ((id (*)(id, SEL))objc_msgSend)(proxy, bURLSel);
+                if (bURL != nil) return YES;
+            }
+            SEL cURLSel = NSSelectorFromString(@"dataContainerURL");
+            if (![proxy respondsToSelector:cURLSel]) cURLSel = NSSelectorFromString(@"containerURL");
+            if ([proxy respondsToSelector:cURLSel]) {
+                id cURL = ((id (*)(id, SEL))objc_msgSend)(proxy, cURLSel);
+                if (cURL != nil) return YES;
+            }
+        }
+    }
+
+    return NO;
+}
+
+// Icon via LSApplicationProxy / UIKit private / bundle URL / assets fallback
 UIImage *iconForBundleID(NSString *bundleID) {
+    if (bundleID.length == 0) return nil;
     static NSCache<NSString *, UIImage *> *cache;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
@@ -243,13 +360,42 @@ UIImage *iconForBundleID(NSString *bundleID) {
     UIImage *cached = [cache objectForKey:bundleID];
     if (cached) return cached;
 
+    // 1. Try UIKit private API (fastest and cleanest across all iOS versions)
+    UIImage *icon = iconFromUIKitPrivate(bundleID);
+
+    // 2. Try LaunchServices proxy
     Class proxyClass = NSClassFromString(@"LSApplicationProxy");
-    if (!proxyClass) return nil;
-    SEL appProxySel = NSSelectorFromString(@"applicationProxyForIdentifier:");
-    if (![proxyClass respondsToSelector:appProxySel]) return nil;
-    id proxy = ((id (*)(id, SEL, id))objc_msgSend)(proxyClass, appProxySel, bundleID);
-    if (!proxy) return nil;
-    UIImage *icon = iconFromData(iconDataFromProxy(proxy), 60.0);
+    id proxy = nil;
+    if (proxyClass) {
+        SEL appProxySel = NSSelectorFromString(@"applicationProxyForIdentifier:");
+        if ([proxyClass respondsToSelector:appProxySel]) {
+            proxy = ((id (*)(id, SEL, id))objc_msgSend)(proxyClass, appProxySel, bundleID);
+        }
+    }
+
+    if (!icon && proxy) {
+        icon = iconFromData(iconDataFromProxy(proxy), 60.0);
+    }
+
+    if (!icon && proxy) {
+        SEL bundleURLSel = NSSelectorFromString(@"bundleURL");
+        if ([proxy respondsToSelector:bundleURLSel]) {
+            id bURL = ((id (*)(id, SEL))objc_msgSend)(proxy, bundleURLSel);
+            if ([bURL isKindOfClass:[NSURL class]]) {
+                icon = iconFromBundleURL(bURL);
+            }
+        }
+    }
+
+    // 3. Fallback to bundled official game icons if system private extraction is blocked
+    if (!icon) {
+        if ([bundleID isEqualToString:@"com.dts.freefireth"]) {
+            icon = [UIImage imageNamed:@"FreeFireTHIcon"];
+        } else if ([bundleID isEqualToString:@"com.dts.freefiremax"]) {
+            icon = [UIImage imageNamed:@"FreeFireMAXIcon"];
+        }
+    }
+
     if (icon) [cache setObject:icon forKey:bundleID];
     return icon;
 }
@@ -259,29 +405,58 @@ NSDictionary *appInfoForBundleID(NSString *bundleID) {
     NSMutableDictionary *result = [NSMutableDictionary dictionary];
     result[@"name"] = bundleID;
 
-    Class proxyClass = NSClassFromString(@"LSApplicationProxy");
-    if (!proxyClass) return result;
-    SEL appProxySel = NSSelectorFromString(@"applicationProxyForIdentifier:");
-    if (![proxyClass respondsToSelector:appProxySel]) return result;
-    id proxy = ((id (*)(id, SEL, id))objc_msgSend)(proxyClass, appProxySel, bundleID);
-    if (!proxy) return result;
+    ensureLaunchServicesLoaded();
 
-    BOOL matchesRequestedIdentifier = NO;
-    for (NSString *selectorName in @[@"applicationIdentifier", @"bundleIdentifier"]) {
-        SEL identifierSel = NSSelectorFromString(selectorName);
-        if (![proxy respondsToSelector:identifierSel]) continue;
-        id value = ((id (*)(id, SEL))objc_msgSend)(proxy, identifierSel);
-        if ([value isKindOfClass:[NSString class]] && [value isEqualToString:bundleID])
-            matchesRequestedIdentifier = YES;
+    Class proxyClass = NSClassFromString(@"LSApplicationProxy");
+    id proxy = nil;
+    if (proxyClass) {
+        SEL appProxySel = NSSelectorFromString(@"applicationProxyForIdentifier:");
+        if ([proxyClass respondsToSelector:appProxySel]) {
+            proxy = ((id (*)(id, SEL, id))objc_msgSend)(proxyClass, appProxySel, bundleID);
+        }
     }
-    if (!matchesRequestedIdentifier) return result;
+
+    BOOL found = NO;
+    if (proxy) {
+        for (NSString *selectorName in @[@"applicationIdentifier", @"bundleIdentifier"]) {
+            SEL identifierSel = NSSelectorFromString(selectorName);
+            if (![proxy respondsToSelector:identifierSel]) continue;
+            id value = ((id (*)(id, SEL))objc_msgSend)(proxy, identifierSel);
+            if ([value isKindOfClass:[NSString class]]) {
+                if ([value isEqualToString:bundleID] || [value hasSuffix:[@"." stringByAppendingString:bundleID]]) {
+                    found = YES;
+                    break;
+                }
+            }
+        }
+        if (!found) {
+            SEL isInstSel = NSSelectorFromString(@"isInstalled");
+            if ([proxy respondsToSelector:isInstSel] && ((BOOL (*)(id, SEL))objc_msgSend)(proxy, isInstSel)) {
+                found = YES;
+            }
+        }
+        if (!found) {
+            SEL bURLSel = NSSelectorFromString(@"bundleURL");
+            if ([proxy respondsToSelector:bURLSel] && ((id (*)(id, SEL))objc_msgSend)(proxy, bURLSel) != nil) {
+                found = YES;
+            }
+        }
+    }
+
+    if (!found) {
+        found = isApplicationInstalled(bundleID);
+    }
+
+    if (!found) return result;
     result[@"found"] = @YES;
 
     NSURL *bundleURL = nil;
-    SEL bundleURLSel = NSSelectorFromString(@"bundleURL");
-    if ([proxy respondsToSelector:bundleURLSel]) {
-        id value = ((id (*)(id, SEL))objc_msgSend)(proxy, bundleURLSel);
-        if ([value isKindOfClass:[NSURL class]]) bundleURL = value;
+    if (proxy) {
+        SEL bundleURLSel = NSSelectorFromString(@"bundleURL");
+        if ([proxy respondsToSelector:bundleURLSel]) {
+            id value = ((id (*)(id, SEL))objc_msgSend)(proxy, bundleURLSel);
+            if ([value isKindOfClass:[NSURL class]]) bundleURL = value;
+        }
     }
 
     NSBundle *applicationBundle = bundleURL ? [NSBundle bundleWithURL:bundleURL] : nil;
@@ -297,7 +472,7 @@ NSDictionary *appInfoForBundleID(NSString *bundleID) {
     }
     if (bundleName.length > 0) result[@"name"] = bundleName;
 
-    if ([result[@"name"] isEqualToString:bundleID]) {
+    if ([result[@"name"] isEqualToString:bundleID] && proxy) {
         for (NSString *selectorName in @[@"localizedName", @"localizedShortName"]) {
             SEL nameSel = NSSelectorFromString(selectorName);
             if (![proxy respondsToSelector:nameSel]) continue;
@@ -313,7 +488,7 @@ NSDictionary *appInfoForBundleID(NSString *bundleID) {
         @"CFBundleShortVersionString"
     ]);
     if (bundleVersion.length > 0) result[@"version"] = bundleVersion;
-    if (!result[@"version"]) {
+    if (!result[@"version"] && proxy) {
         SEL versionSel = NSSelectorFromString(@"shortVersionString");
         if ([proxy respondsToSelector:versionSel]) {
             NSString *version = ((id (*)(id, SEL))objc_msgSend)(proxy, versionSel);
@@ -323,16 +498,21 @@ NSDictionary *appInfoForBundleID(NSString *bundleID) {
         }
     }
 
-    for (NSString *selectorName in @[@"dataContainerURL", @"containerURL"]) {
-        SEL containerSel = NSSelectorFromString(selectorName);
-        if (![proxy respondsToSelector:containerSel]) continue;
-        id value = ((id (*)(id, SEL))objc_msgSend)(proxy, containerSel);
-        NSString *path = [value isKindOfClass:[NSURL class]] ? [value path] : value;
-        if ([path isKindOfClass:[NSString class]] && path.length > 0) {
-            result[@"container"] = path;
-            break;
+    if (proxy) {
+        for (NSString *selectorName in @[@"dataContainerURL", @"containerURL"]) {
+            SEL containerSel = NSSelectorFromString(selectorName);
+            if (![proxy respondsToSelector:containerSel]) continue;
+            id value = ((id (*)(id, SEL))objc_msgSend)(proxy, containerSel);
+            NSString *path = [value isKindOfClass:[NSURL class]] ? [value path] : value;
+            if ([path isKindOfClass:[NSString class]] && path.length > 0) {
+                result[@"container"] = path;
+                break;
+            }
         }
     }
+
+    UIImage *icon = iconForBundleID(bundleID);
+    if (icon) result[@"icon"] = icon;
 
     return result;
 }
@@ -389,4 +569,3 @@ BOOL openSensitiveSettingsURL(NSString *urlString) {
 
     return NO;
 }
-

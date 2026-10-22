@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 /// ProfileView - 2026 enterprise Hồ sơ dễ đọc:
-/// - Hero: logo + NovaX + Phiên bản + PREMIUM + status "Hoạt động".
+/// - Hero: logo + Astra + Phiên bản + PREMIUM + status "Hoạt động".
 /// - License card (key) - nền đen, copy dễ.
 /// - Lưới 2 cột HWID/Ngày/Ngày hết hạn/Loại key/Còn lại (responsive về 1 cột trên màn nhỏ).
 /// - Hàng trạng thái key riêng.
@@ -103,7 +103,7 @@ struct ProfileView: View {
                 .shadow(color: Color.black.opacity(0.10), radius: 8, x: 0, y: 4)
 
             VStack(alignment: .leading, spacing: 5) {
-                Text("NovaX")
+                Text("Astra")
                     .font(.system(size: 26, weight: .bold, design: .rounded))
                     .foregroundStyle(AppTheme.ink)
                     .kerning(-0.6)
@@ -490,7 +490,7 @@ struct ProfileView: View {
                     Text("NHÀ PHÁT TRIỂN")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(AppTheme.ink)
-                    Text("NovaX Developer")
+                    Text("Astra Developer")
                         .font(.system(size: 12))
                         .foregroundStyle(AppTheme.grey500)
                 }
@@ -502,42 +502,7 @@ struct ProfileView: View {
                 .frame(height: 1)
                 .padding(.vertical, 16)
 
-            HStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(AppTheme.ink)
-                        .frame(width: 48, height: 48)
-                    Text("MK")
-                        .font(.system(size: 16, weight: .black, design: .monospaced))
-                        .foregroundStyle(Color.white)
-                }
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Trần Minh Khải")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(AppTheme.ink)
-                    Text("☎ 0342145707")
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(AppTheme.grey500)
-                }
-                Spacer()
-            }
-
-            Button {
-                Haptics.light()
-                if let url = URL(string: "https://zalo.me/0342145707") {
-                    UIApplication.shared.open(url)
-                }
-            } label: {
-                Text("Liên hệ Zalo")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity, minHeight: 46)
-                    .background(AppTheme.ink)
-                    .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .padding(.top, 16)
+            DeveloperContactsList()
         }
         .padding(20)
         .background(Color.white)
@@ -578,7 +543,7 @@ struct ProfileView: View {
                         .foregroundStyle(AppTheme.ink)
                         .kerning(-0.45)
 
-                    Text("Phiên license hiện tại sẽ được xóa khỏi NovaX và bạn sẽ trở về màn hình nhập key.")
+                    Text("Phiên license hiện tại sẽ được xóa khỏi Astra và bạn sẽ trở về màn hình nhập key.")
                         .font(.system(size: 14))
                         .foregroundStyle(AppTheme.grey500)
                         .multilineTextAlignment(.center)

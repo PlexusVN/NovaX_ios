@@ -175,7 +175,7 @@ struct ContentView: View {
                     )
                 }
             }
-            .navigationTitle("NovaX")
+            .navigationTitle("Astra")
             .navigationSplitViewColumnWidth(min: 210, ideal: 240, max: 300)
         } detail: {
             sectionContent(selectedVisibleSection)
@@ -346,7 +346,7 @@ private struct DashboardView: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("NovaX")
+                Text("Astra")
                     .font(.system(size: 22, weight: .bold, design: .rounded))
                     .foregroundStyle(AppTheme.ink)
                 Text("Hệ thống & Thiết bị")
@@ -465,7 +465,7 @@ private struct DashboardView: View {
             divider
             infoRow(label: "Build Number", value: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1", icon: "number")
             divider
-            infoRow(label: "Developer", value: "Trần Minh Khải", icon: "person.fill")
+            infoRow(label: "Developer", value: "Minh Khải & Sơn Dev", icon: "person.fill")
         }
         .padding(16)
         .background(cardBackground)

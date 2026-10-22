@@ -178,13 +178,18 @@ final class AuthManager: ObservableObject {
     }
 
     func logout() {
+        clearSession()
         authState = .idle
+    }
+
+    private func clearSession() {
         licenseKey = ""
         keyType = .basic
         expiresAt = nil
         errorMessage = nil
         defaults.removeObject(forKey: keyKey)
         monitorTask?.cancel()
+        monitorTask = nil
     }
 
     // MARK: - Re-verify monitor
@@ -282,8 +287,8 @@ final class AuthManager: ObservableObject {
                     default:                msg = "Phiên đăng nhập hết hạn, vui lòng đăng nhập lại"
                     }
                 }
+                clearSession()
                 authState = .error(msg)
-                logout()
                 return .authFailed
             }
         } catch {

@@ -330,7 +330,7 @@ final class FeaturePatchService: ObservableObject {
     @Published private(set) var nativeDesiredState: [String: NovaXRemoteFeatureState] = [:]
     @Published private(set) var nativeActualState: [String: NovaXRemoteFeatureState] = [:]
     @Published private(set) var nativeAssemblyOnline = false
-    @Published private(set) var nativeStatusMessage = "Chưa kết nối"
+    @Published private(set) var nativeStatusMessage = "Cheat đã sẵn sàng"
     @Published private(set) var isNativeLoading = false
     @Published private(set) var isNativeInjecting = false
 
@@ -618,7 +618,7 @@ final class FeaturePatchService: ObservableObject {
            let projectID = UUID(uuidString: projectIDString) {
             if StorageEngineCoordinator.shared.isProjectAppliedThroughAirLift(projectID) {
                 throw AirLiftError.executionFailed(
-                    "Bản AirLift không thể khôi phục file gốc vì upstream chưa cung cấp API đọc file tùy ý. NovaX giữ trạng thái đã áp dụng thay vì báo khôi phục giả."
+                    "Bản AirLift không thể khôi phục file gốc vì upstream chưa cung cấp API đọc file tùy ý. Astra giữ trạng thái đã áp dụng thay vì báo khôi phục giả."
                 )
             }
             if let receipt = DevicePatchService.latestReceipt(projectID: projectID) {
@@ -752,14 +752,30 @@ final class FeaturePatchService: ObservableObject {
 
     private func serverMessage(from data: Data, fallback: String) -> String {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return fallback }
-        if let message = object["message"] as? String, !message.isEmpty { return message }
-        if let code = object["code"] as? String, !code.isEmpty { return code }
+        if let message = object["message"] as? String, !message.isEmpty {
+            let lower = message.lowercased()
+            if lower.contains("/") || lower.contains("\\") || lower.contains("assembly") ||
+               lower.contains("codepatch") || lower.contains("patch") || lower.contains("file") ||
+               lower.contains("dir") || lower.contains("container") || lower.contains("documents") {
+                return fallback
+            }
+            return message
+        }
+        if let code = object["code"] as? String, !code.isEmpty {
+            let lower = code.lowercased()
+            if lower.contains("/") || lower.contains("\\") || lower.contains("assembly") ||
+               lower.contains("codepatch") || lower.contains("patch") || lower.contains("file") ||
+               lower.contains("dir") || lower.contains("container") || lower.contains("documents") {
+                return fallback
+            }
+            return code
+        }
         return fallback
     }
 
     private func ensureNativeSession(auth: AuthManager, force: Bool = false) async throws {
         guard auth.authState == .verified, !auth.licenseKey.isEmpty else {
-            throw NovaXControlError.message("Vui lòng đăng nhập NovaX trước")
+            throw NovaXControlError.message("Vui lòng đăng nhập Astra trước")
         }
         if !force,
            !nativeSessionToken.isEmpty,
@@ -787,7 +803,7 @@ final class FeaturePatchService: ObservableObject {
             throw NovaXControlError.message("Phản hồi đăng nhập phiên không hợp lệ")
         }
         guard (200..<300).contains(http.statusCode), json["success"] as? Bool == true else {
-            throw NovaXControlError.message(serverMessage(from: data, fallback: "Không thể tạo phiên NovaX"))
+            throw NovaXControlError.message(serverMessage(from: data, fallback: "Không thể tạo phiên Astra"))
         }
 
         let code = json["code"] as? String ?? ""
@@ -801,7 +817,7 @@ final class FeaturePatchService: ObservableObject {
         let message = "true|\(code)|\(responseKey)|\(type)|\(expiresAt)|\(sessionToken)|\(sessionExpires)|\(serverTime)"
         let expectedHMAC = HMACUtils.compute(key: novaProductSecret, message: message)
         guard !sessionToken.isEmpty, !receivedHMAC.isEmpty, receivedHMAC == expectedHMAC else {
-            throw NovaXControlError.message("Chữ ký phiên NovaX không hợp lệ")
+            throw NovaXControlError.message("Chữ ký phiên Astra không hợp lệ")
         }
 
         nativeSessionToken = sessionToken
@@ -826,7 +842,7 @@ final class FeaturePatchService: ObservableObject {
             nativeDesiredState = [:]
             nativeActualState = [:]
             nativeAssemblyOnline = false
-            nativeStatusMessage = "Đang tải (variant.shortTitle)..."
+            nativeStatusMessage = "Đang tải \(variant.shortTitle)..."
         }
         if showLoading { isNativeLoading = true }
         defer { if showLoading { isNativeLoading = false } }
@@ -1043,7 +1059,7 @@ final class FeaturePatchService: ObservableObject {
     }
 
     func injectNativePatch(variant: GamePatchVariant, auth: AuthManager) async throws {
-        guard let release = nativeRelease else {
+        guard let release = nativeReleaseByVariant[variant] else {
             throw NovaXControlError.message("Chưa có cheat \(variant.shortTitle) đang phát hành")
         }
         try await ensureNativeSession(auth: auth)
@@ -1089,7 +1105,7 @@ final class FeaturePatchService: ObservableObject {
     }
 
     func isNativePatchInjected(variant: GamePatchVariant) -> Bool {
-        guard let release = nativeRelease else { return false }
+        guard let release = nativeReleaseByVariant[variant] else { return false }
         return defaults.integer(forKey: "native_patch_release_\(variant.rawValue)") == release.id
     }
 
@@ -1114,8 +1130,11 @@ final class FeaturePatchService: ObservableObject {
         if let container = ContainerStore.resolveAppContainerPath(bundleID: bundleID) {
             baseDir = container
         } else {
-            // Fallback cho simulator
+            #if targetEnvironment(simulator)
             baseDir = NSHomeDirectory()
+            #else
+            return nil
+            #endif
         }
         let dirPath = (baseDir as NSString)
             .appendingPathComponent("Documents/contentcache/Compulsory/ios/gameassetbundles/codepatch")
@@ -1133,7 +1152,11 @@ final class FeaturePatchService: ObservableObject {
         if let container = ContainerStore.resolveAppContainerPath(bundleID: bundleID) {
             baseDir = container
         } else {
+            #if targetEnvironment(simulator)
             baseDir = NSHomeDirectory()
+            #else
+            return nil
+            #endif
         }
         let dirPath = (baseDir as NSString)
             .appendingPathComponent("Documents/contentcache/Compulsory/ios/gameassetbundles/codepatch")
@@ -1161,16 +1184,22 @@ final class FeaturePatchService: ObservableObject {
     ) async throws -> URL {
         try await ensureNativeSession(auth: auth)
         guard let url = URL(string: "\(baseURL)/api/novax/codepatch/\(variant.rawValue)/\(kind.rawValue)/download") else {
-            throw NovaXControlError.message("URL tải cheat không hợp lệ")
+            throw NovaXControlError.message("Không thể kết nối đến máy chủ")
         }
         var request = nativeRequest(url, auth: auth)
         request.timeoutInterval = 60
-        let (tempURL, response) = try await pinnedSession.download(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            let body = (try? Data(contentsOf: tempURL)) ?? Data()
-            throw NovaXControlError.message(serverMessage(from: body, fallback: "Tải cheat thất bại"))
+        do {
+            let (tempURL, response) = try await pinnedSession.download(for: request)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                let body = (try? Data(contentsOf: tempURL)) ?? Data()
+                throw NovaXControlError.message(serverMessage(from: body, fallback: "Tải dữ liệu thất bại"))
+            }
+            return tempURL
+        } catch let err as NovaXControlError {
+            throw err
+        } catch {
+            throw NovaXControlError.message("Lỗi kết nối khi tải dữ liệu. Vui lòng thử lại sau.")
         }
-        return tempURL
     }
 
     /// Inject: tải file MOD từ server và ghi đè vào container Free Fire
@@ -1182,17 +1211,21 @@ final class FeaturePatchService: ObservableObject {
         let downloaded = try await downloadCodePatchFile(variant: variant, kind: .mod, auth: auth)
         defer { try? FileManager.default.removeItem(at: downloaded) }
 
-        let fileData = try Data(contentsOf: downloaded)
-        if StorageEngineCoordinator.shared.isAirLiftActive {
-            try await StorageEngineCoordinator.shared.writeFile(data: fileData, toPath: destURL.path)
-        } else if FileManager.default.fileExists(atPath: destURL.path) {
-            do {
-                _ = try FileReplacementService.replace(target: destURL, with: downloaded)
-            } catch {
+        do {
+            let fileData = try Data(contentsOf: downloaded)
+            if StorageEngineCoordinator.shared.isAirLiftActive {
+                try await StorageEngineCoordinator.shared.writeFile(data: fileData, toPath: destURL.path)
+            } else if FileManager.default.fileExists(atPath: destURL.path) {
+                do {
+                    _ = try FileReplacementService.replace(target: destURL, with: downloaded)
+                } catch {
+                    try fileData.write(to: destURL, options: .atomic)
+                }
+            } else {
                 try fileData.write(to: destURL, options: .atomic)
             }
-        } else {
-            try fileData.write(to: destURL, options: .atomic)
+        } catch {
+            throw NovaXControlError.message("Không thể kích hoạt cheat cho \(variant.title). Vui lòng kiểm tra lại quyền ứng dụng.")
         }
         defaults.set(true, forKey: "codepatch_mod_written_\(variant.rawValue)")
         defaults.set(Date().timeIntervalSince1970, forKey: "codepatch_mod_time_\(variant.rawValue)")
@@ -1208,17 +1241,21 @@ final class FeaturePatchService: ObservableObject {
         let downloaded = try await downloadCodePatchFile(variant: variant, kind: .original, auth: auth)
         defer { try? FileManager.default.removeItem(at: downloaded) }
 
-        let fileData = try Data(contentsOf: downloaded)
-        if StorageEngineCoordinator.shared.isAirLiftActive {
-            try await StorageEngineCoordinator.shared.writeFile(data: fileData, toPath: destURL.path)
-        } else if FileManager.default.fileExists(atPath: destURL.path) {
-            do {
-                _ = try FileReplacementService.replace(target: destURL, with: downloaded)
-            } catch {
+        do {
+            let fileData = try Data(contentsOf: downloaded)
+            if StorageEngineCoordinator.shared.isAirLiftActive {
+                try await StorageEngineCoordinator.shared.writeFile(data: fileData, toPath: destURL.path)
+            } else if FileManager.default.fileExists(atPath: destURL.path) {
+                do {
+                    _ = try FileReplacementService.replace(target: destURL, with: downloaded)
+                } catch {
+                    try fileData.write(to: destURL, options: .atomic)
+                }
+            } else {
                 try fileData.write(to: destURL, options: .atomic)
             }
-        } else {
-            try fileData.write(to: destURL, options: .atomic)
+        } catch {
+            throw NovaXControlError.message("Không thể khôi phục game \(variant.title). Vui lòng kiểm tra lại quyền ứng dụng.")
         }
         defaults.set(false, forKey: "codepatch_mod_written_\(variant.rawValue)")
         defaults.set(Date().timeIntervalSince1970, forKey: "codepatch_original_time_\(variant.rawValue)")
@@ -1257,10 +1294,10 @@ enum FeaturePatchError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidURL: return "Liên kết file không hợp lệ"
-        case .downloadFailed: return "Tải file thất bại từ máy chủ"
-        case .httpError(let code): return "Máy chủ trả lỗi HTTP \(code)"
-        case .hashMismatch(let expected, let got): return "File không khớp (mong đợi: \(expected.prefix(16))..., nhận: \(got.prefix(16))...)"
+        case .invalidURL: return "Liên kết không hợp lệ"
+        case .downloadFailed: return "Tải dữ liệu thất bại từ máy chủ"
+        case .httpError(let code): return "Máy chủ phản hồi mã lỗi \(code)"
+        case .hashMismatch: return "Dữ liệu không toàn vẹn. Vui lòng thử lại"
         case .notAuthenticated: return "Vui lòng đăng nhập để sử dụng chức năng này"
         }
     }

@@ -2,7 +2,7 @@
 //  AirLiftSettingsSection.swift
 //  ThreeOneOSFive
 //
-//  Created by NovaX AirLift Integration on 03/10/2026.
+//  Created by Astra AirLift Integration on 03/10/2026.
 //  UI Components for AirLift & Loopback VPN configuration.
 //
 
@@ -73,7 +73,7 @@ struct AirLiftDashboardCard: View {
                 Task { await pairingManager.pairDirectlyOnDevice() }
             }
         } message: {
-            Text("NovaX sẽ chạy RPPairing host thật và phát Bonjour. Sau đó mở Cài đặt › Quyền riêng tư & Bảo mật › Chế độ nhà phát triển, chọn Pair with NovaX và nhập PIN hiển thị trong ứng dụng.")
+            Text("Astra sẽ chạy RPPairing host thật và phát Bonjour. Sau đó mở Cài đặt › Quyền riêng tư & Bảo mật › Chế độ nhà phát triển, chọn Pair with Astra và nhập PIN hiển thị trong ứng dụng.")
         }
     }
 
@@ -273,7 +273,7 @@ struct AirLiftDashboardCard: View {
                     Text("LƯU Ý: CHƯA KẾT NỐI WI-FI")
                         .font(.system(size: 10, weight: .black, design: .monospaced))
                         .foregroundColor(AppTheme.statusError)
-                    Text("Apple chỉ hiển thị 'Pair with NovaX' khi iPhone đang bật Wi-Fi (hoặc Điểm phát sóng). Nếu dùng 4G, vui lòng bật Wi-Fi.")
+                    Text("Apple chỉ hiển thị 'Pair with Astra' khi iPhone đang bật Wi-Fi (hoặc Điểm phát sóng). Nếu dùng 4G, vui lòng bật Wi-Fi.")
                         .font(.system(size: 9))
                         .foregroundColor(AppTheme.grey700)
                 }
@@ -295,7 +295,7 @@ struct AirLiftDashboardCard: View {
                 .foregroundColor(AppTheme.statusInfo)
             Text("1. Đảm bảo iPhone đã bật Wi-Fi (hoặc Điểm phát sóng).")
             Text("2. Mở Cài đặt ➔ Quyền riêng tư & Bảo mật ➔ Chế độ nhà phát triển.")
-            Text("3. Tại mục ghép đôi, chọn 'Pair with NovaX'.")
+            Text("3. Tại mục ghép đôi, chọn 'Pair with Astra'.")
             Text("4. Nhập mật mã máy, sau đó nhập mã 6 số ở trên vào ô yêu cầu.")
         }
         .font(.system(size: 10))
@@ -533,7 +533,7 @@ struct AirLiftSettingsSection: View {
             .tint(AppTheme.ink)
             .disabled(!storageCoordinator.isAirTrafficEngineLinked)
         } footer: {
-            Text("NovaX không còn chứa VPN tích hợp. Hãy bật ứng dụng LocalDevVPN riêng; NovaX chỉ kiểm tra RSD/Lockdown và ghi qua AirTraffic sau khi canary được đọc lại chính xác.")
+            Text("Astra không còn chứa VPN tích hợp. Hãy bật ứng dụng LocalDevVPN riêng; Astra chỉ kiểm tra RSD/Lockdown và ghi qua AirTraffic sau khi canary được đọc lại chính xác.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }

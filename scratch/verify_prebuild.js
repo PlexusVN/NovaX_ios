@@ -1,5 +1,11 @@
 const fs = require('fs');
 
+let failed = false;
+function check(label, condition, detail = '') {
+    console.log(`   - ${label}:`, detail, condition ? '[PASS]' : '[FAIL]');
+    if (!condition) failed = true;
+}
+
 console.log('=== BẮT ĐẦU KIỂM TRA & XÁC MINH TOÀN DIỆN TRƯỚC KHI BUILD ===\n');
 
 // 1. Info.plist
@@ -9,13 +15,11 @@ const bundleVer = plist.match(/<key>CFBundleVersion<\/key>\s*<string>([^<]+)<\/s
 const displayVer = plist.match(/<key>AppReleaseDisplayVersion<\/key>\s*<string>([^<]+)<\/string>/)[1];
 
 console.log('1. Info.plist:');
-console.log('   - CFBundleShortVersionString:', shortVer, shortVer === '1.2.5' ? '[PASS]' : '[FAIL]');
-console.log('   - CFBundleVersion (Build):', bundleVer, bundleVer === '11' ? '[PASS]' : '[FAIL]');
-console.log('   - AppReleaseDisplayVersion:', displayVer, displayVer === '1.2.5' ? '[PASS]' : '[FAIL]');
-
-if (shortVer !== '1.2.5' || displayVer !== '1.2.5' || bundleVer !== '11') {
-    throw new Error('Info.plist version mismatch!');
-}
+check('CFBundleShortVersionString', shortVer === '1.2.6', shortVer);
+check('CFBundleVersion (Build)', bundleVer === '12', bundleVer);
+check('AppReleaseDisplayVersion', displayVer === '1.2.6', displayVer);
+check('CFBundleDisplayName Astra', /<key>CFBundleDisplayName<\/key>\s*<string>Astra<\/string>/.test(plist));
+check('CFBundleName Astra', /<key>CFBundleName<\/key>\s*<string>Astra<\/string>/.test(plist));
 
 // 2. project.pbxproj
 const pbx = fs.readFileSync('ThreeOneOSFive.xcodeproj/project.pbxproj', 'utf8');
@@ -24,28 +28,29 @@ const projVers = [...pbx.matchAll(/CURRENT_PROJECT_VERSION\s*=\s*([^;]+);/g)].ma
 const entitlements = [...pbx.matchAll(/CODE_SIGN_ENTITLEMENTS\s*=\s*([^;]+);/g)].map(m => m[1].trim());
 
 console.log('\n2. project.pbxproj Build Settings:');
-console.log('   - MARKETING_VERSION in configurations:', mktVers.join(', '), mktVers.every(v => v === '1.2.5') ? '[PASS]' : '[FAIL]');
-console.log('   - CURRENT_PROJECT_VERSION in configurations:', projVers.join(', '), projVers.every(v => v === '11') ? '[PASS]' : '[FAIL]');
-console.log('   - CODE_SIGN_ENTITLEMENTS:', entitlements.join(', '), entitlements.every(e => e.includes('ThreeOneOSFive.entitlements')) ? '[PASS]' : '[FAIL]');
+check('MARKETING_VERSION in configurations', mktVers.length > 0 && mktVers.every(v => v === '1.2.6'), mktVers.join(', '));
+check('CURRENT_PROJECT_VERSION in configurations', projVers.length > 0 && projVers.every(v => v === '12'), projVers.join(', '));
+check('CODE_SIGN_ENTITLEMENTS', entitlements.length > 0 && entitlements.every(e => e.includes('ThreeOneOSFive.entitlements')), entitlements.join(', '));
+check('PRODUCT_NAME Astra', [...pbx.matchAll(/PRODUCT_NAME\s*=\s*([^;]+);/g)].every(match => match[1].trim() === 'Astra'));
 
 // Check braces in pbxproj
 const openPBX = (pbx.match(/\{/g) || []).length;
 const closePBX = (pbx.match(/\}/g) || []).length;
-console.log('   - PBX syntax balance:', openPBX === closePBX ? `BALANCED (${openPBX}/${closePBX}) [PASS]` : '[FAIL]');
+check('PBX syntax balance', openPBX === closePBX, `${openPBX}/${closePBX}`);
 
 // 3. ThreeOneOSFive.entitlements
 const ent = fs.readFileSync('ThreeOneOSFive/ThreeOneOSFive.entitlements', 'utf8');
 const hasNE = ent.includes('com.apple.developer.networking.networkextension');
 const hasDNS = ent.includes('dns-settings');
 console.log('\n3. ThreeOneOSFive.entitlements:');
-console.log('   - com.apple.developer.networking.networkextension:', hasNE ? '[PASS]' : '[FAIL]');
-console.log('   - dns-settings array value:', hasDNS ? '[PASS]' : '[FAIL]');
+check('com.apple.developer.networking.networkextension', hasNE);
+check('dns-settings array value', hasDNS);
 
 // 4. Utils.swift
 const utils = fs.readFileSync('ThreeOneOSFive/helpers/Utils.swift', 'utf8');
-const hasUtils125 = utils.includes('1.2.5');
+const hasUtils126 = utils.includes('1.2.6');
 console.log('\n4. Utils.swift:');
-console.log('   - Fallback version constant:', hasUtils125 ? '1.2.5 [PASS]' : '[FAIL]');
+check('Fallback version constant', hasUtils126, hasUtils126 ? '1.2.6' : 'missing');
 
 // 5. NextDNSManager.swift & DNSManagerView.swift syntax
 console.log('\n5. Swift Code Syntax Balance:');
@@ -53,10 +58,41 @@ console.log('\n5. Swift Code Syntax Balance:');
     const c = fs.readFileSync(f, 'utf8');
     const ob = (c.match(/\{/g) || []).length;
     const cb = (c.match(/\}/g) || []).length;
-    console.log(`   - ${f}: ${ob === cb ? `BALANCED (${ob}/${cb}) [PASS]` : '[FAIL]'}`);
-    if (ob !== cb) throw new Error(`${f} syntax mismatch!`);
+    check(f, ob === cb, `${ob}/${cb}`);
 });
 
+// 6. Astra branding, contacts, game scanner and IPA artifact
+console.log('\n6. Astra Branding & Game Scanner:');
+const designSystem = fs.readFileSync('ThreeOneOSFive/views/DesignSystem.swift', 'utf8');
+const loginView = fs.readFileSync('ThreeOneOSFive/views/SplashLoginView.swift', 'utf8');
+const featuresView = fs.readFileSync('ThreeOneOSFive/views/FeaturesView.swift', 'utf8');
+const appIconHelper = fs.readFileSync('ThreeOneOSFive/helpers/AppIconHelper.m', 'utf8');
+const appIconHeader = fs.readFileSync('ThreeOneOSFive/helpers/AppIconHelper.h', 'utf8');
+const featureService = fs.readFileSync('ThreeOneOSFive/helpers/FeaturePatchService.swift', 'utf8');
+const workflow = fs.readFileSync('.github/workflows/build.yml', 'utf8');
+const localizationFiles = [
+    'ThreeOneOSFive/en.lproj/Localizable.strings',
+    'ThreeOneOSFive/vi.lproj/Localizable.strings',
+    'ThreeOneOSFive/zh-Hans.lproj/Localizable.strings'
+];
+
+check('Developer cards have no Zalo', !designSystem.includes('Zalo') && !designSystem.includes('openZalo'));
+check('Community Telegram links', loginView.includes('keyvnstorehax') && loginView.includes('Sondevx'));
+check('No Zalo community links', !loginView.includes('zalo.me'));
+check('Installed-game filtering', featuresView.includes('installedGameVariants') && featuresView.includes('Máy chưa tải Free Fire'));
+check('FF bundle scan', featuresView.includes('isApplicationInstalled(bundleID)') && featuresView.includes('appInfoForBundleID(bundleID)'));
+check('System icon extraction', appIconHelper.includes('iconForBundleID') && appIconHelper.includes('_applicationIconImageForBundleIdentifier'));
+check('Nullable icon bridge contract', appIconHeader.includes('UIImage * _Nullable iconForBundleID'));
+check('Free Fire TH fallback asset', fs.existsSync('ThreeOneOSFive/Assets.xcassets/FreeFireTHIcon.imageset/free-fire-th.jpg'));
+check('Free Fire MAX fallback asset', fs.existsSync('ThreeOneOSFive/Assets.xcassets/FreeFireMAXIcon.imageset/free-fire-max.jpg'));
+check('No device fallback to Astra sandbox', /#else\s*return nil\s*#endif/.test(featureService));
+check('Astra.ipa workflow', workflow.includes('zip -r Astra.ipa Payload') && workflow.includes('build/Astra.ipa'));
+check('Localized branding is Astra', localizationFiles.every(file => !fs.readFileSync(file, 'utf8').includes('NovaX')));
+
+if (failed) {
+    throw new Error('Prebuild verification failed.');
+}
+
 console.log('\n======================================================');
-console.log('>>> KẾT QUẢ: 100% CHECKLIST HOÀN TẤT & SẴN SÀNG BUILD! <<<');
+console.log('>>> KẾT QUẢ: STATIC CHECKLIST HOÀN TẤT & SẴN SÀNG BUILD TRÊN macOS! <<<');
 console.log('======================================================');

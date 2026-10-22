@@ -3,7 +3,7 @@
 //  ThreeOneOSFive
 //
 //  Detects an external LocalDevVPN tunnel and verifies that it can actually
-//  reach the device service. NovaX does not own or configure a VPN profile.
+//  reach the device service. Astra does not own or configure a VPN profile.
 //
 
 import Foundation
@@ -57,7 +57,7 @@ final class AirLiftTunnelManager: ObservableObject {
         Task { await verifyLoopbackService() }
     }
 
-    /// Kept as a compatibility entry point for existing callers. NovaX no
+    /// Kept as a compatibility entry point for existing callers. Astra no
     /// longer reads or creates VPN preferences; it only probes the external app.
     func refreshTunnelManager() async {
         await verifyLoopbackService()
@@ -143,7 +143,7 @@ final class AirLiftTunnelManager: ObservableObject {
         }
 
         do {
-            let request: [String: Any] = ["Request": "QueryType", "Label": "NovaX-AirLift-Probe"]
+            let request: [String: Any] = ["Request": "QueryType", "Label": "Astra-AirLift-Probe"]
             let body = try PropertyListSerialization.data(fromPropertyList: request, format: .xml, options: 0)
             var length = UInt32(body.count).bigEndian
             var packet = Data(bytes: &length, count: 4)

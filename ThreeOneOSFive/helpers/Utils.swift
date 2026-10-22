@@ -141,7 +141,7 @@ enum AppUpdateChecker {
     static var currentVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "AppReleaseDisplayVersion") as? String
             ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-            ?? "1.2.5"
+            ?? "1.2.6"
     }
 
     static func check() async -> Offer? {
@@ -247,4 +247,3 @@ final class UpdateManager: ObservableObject {
         }
     }
 }
-

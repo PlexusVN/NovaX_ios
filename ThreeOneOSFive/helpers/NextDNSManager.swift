@@ -3,7 +3,7 @@ import NetworkExtension
 import Network
 import UIKit
 
-/// Trình quản lý DNS tiêu chuẩn doanh nghiệp (Enterprise Grade) cho NovaX
+/// Trình quản lý DNS tiêu chuẩn doanh nghiệp (Enterprise Grade) cho Astra
 /// Đảm bảo tương thích toàn diện từ iOS 16.0 đến iOS 27+
 /// Hỗ trợ chuẩn phương pháp của Apple, phòng ngừa triệt để lỗi permission denied và lỗi lệch trạng thái khi đổi tab
 class NextDNSManager: ObservableObject {
@@ -264,7 +264,7 @@ class NextDNSManager: ObservableObject {
             dohSettings.serverURL = URL(string: "https://dns.nextdns.io/\(activeID)")
             dohSettings.matchDomains = [""] // Bắt buộc để iOS định tuyến toàn bộ lưu lượng qua NextDNS
             
-            self.manager.localizedDescription = "NovaX DNS"
+            self.manager.localizedDescription = "Astra DNS"
             self.manager.dnsSettings = dohSettings
             
             let rule = NEOnDemandRuleConnect()
@@ -293,7 +293,7 @@ class NextDNSManager: ObservableObject {
                         guard let self = self else { return }
                         let active = self.manager.isEnabled
                         self.needsManualActivation = !active
-                        print("[NextDNS] Đã đăng ký cấu hình NovaX DNS vào hệ điều hành.")
+                        print("[NextDNS] Đã đăng ký cấu hình Astra DNS vào hệ điều hành.")
                         completion?(true)
                     }
                 }
@@ -335,7 +335,7 @@ class NextDNSManager: ObservableObject {
             dohSettings.serverURL = URL(string: baseURL)
             dohSettings.matchDomains = [""] // Bắt buộc để iOS định tuyến toàn bộ lưu lượng
             
-            self.manager.localizedDescription = "NovaX DNS"
+            self.manager.localizedDescription = "Astra DNS"
             self.manager.dnsSettings = dohSettings
             
             let rule = NEOnDemandRuleConnect()
@@ -524,9 +524,9 @@ class NextDNSManager: ObservableObject {
         <plist version="1.0">
         <dict>
             <key>PayloadDisplayName</key>
-            <string>NovaX NextDNS (\(activeID))</string>
+            <string>Astra NextDNS (\(activeID))</string>
             <key>PayloadDescription</key>
-            <string>Cấu hình bảo vệ NextDNS mã hóa DoH chuẩn Apple cho NovaX</string>
+            <string>Cấu hình bảo vệ NextDNS mã hóa DoH chuẩn Apple cho Astra</string>
             <key>PayloadIdentifier</key>
             <string>io.nextdns.\(activeID).profile</string>
             <key>PayloadScope</key>
@@ -589,9 +589,9 @@ class NextDNSManager: ObservableObject {
                     <key>PayloadUUID</key>
                     <string>\(managedUUID)</string>
                     <key>PayloadDisplayName</key>
-                    <string>NovaX NextDNS (\(activeID))</string>
+                    <string>Astra NextDNS (\(activeID))</string>
                     <key>PayloadOrganization</key>
-                    <string>NovaX NextDNS Enterprise</string>
+                    <string>Astra NextDNS Enterprise</string>
                     <key>PayloadVersion</key>
                     <integer>1</integer>
                 </dict>
@@ -601,7 +601,7 @@ class NextDNSManager: ObservableObject {
         """
         
         let tempDir = FileManager.default.temporaryDirectory
-        let fileURL = tempDir.appendingPathComponent("NovaX-NextDNS-\(activeID).mobileconfig")
+        let fileURL = tempDir.appendingPathComponent("Astra-NextDNS-\(activeID).mobileconfig")
         do {
             try profileXML.write(to: fileURL, atomically: true, encoding: .utf8)
             return fileURL

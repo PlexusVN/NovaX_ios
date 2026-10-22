@@ -37,7 +37,7 @@ enum AirLiftError: Error, LocalizedError {
         case .verificationFailed(let message):
             return "Không thể xác minh quyền ghi AirTraffic: \(message)"
         case .remoteReadUnsupported:
-            return "AirliftFFI hiện không cung cấp API đọc file tùy ý; NovaX chỉ xác minh canary và kết quả phiên ghi."
+            return "AirliftFFI hiện không cung cấp API đọc file tùy ý; Astra chỉ xác minh canary và kết quả phiên ghi."
         case .executionFailed(let message):
             return "AirLift thất bại: \(message)"
         }
@@ -154,7 +154,7 @@ final class AirTrafficProtocolClient: ObservableObject {
         let pairingPath = try activePairingPath()
         try await configureTargetHost()
 
-        let result: FFIStringResult = await runBlocking(name: "NovaX.AirLift.FindContainer") {
+        let result: FFIStringResult = await runBlocking(name: "Astra.AirLift.FindContainer") {
             var output: UnsafeMutablePointer<CChar>?
             var error: UnsafeMutablePointer<CChar>?
             let code = pairingPath.withCString { pairing in
@@ -204,7 +204,7 @@ final class AirTrafficProtocolClient: ObservableObject {
 
     private func verifyCanary(pairingPath: String, targetDirectory: String) async throws {
         verificationLevel = .none
-        let result: FFIStringResult = await runBlocking(name: "NovaX.AirLift.Canary") {
+        let result: FFIStringResult = await runBlocking(name: "Astra.AirLift.Canary") {
             var json: UnsafeMutablePointer<CChar>?
             var error: UnsafeMutablePointer<CChar>?
             let code = pairingPath.withCString { pairing in
@@ -235,7 +235,7 @@ final class AirTrafficProtocolClient: ObservableObject {
         sourceDirectory: String,
         targetDirectory: String
     ) async throws {
-        let result: FFIVoidResult = await runBlocking(name: "NovaX.AirLift.Write") {
+        let result: FFIVoidResult = await runBlocking(name: "Astra.AirLift.Write") {
             var error: UnsafeMutablePointer<CChar>?
             let code = pairingPath.withCString { pairing in
                 sourceDirectory.withCString { source in

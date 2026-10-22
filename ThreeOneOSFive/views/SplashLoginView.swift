@@ -122,7 +122,7 @@ struct SplashLoginView: View {
                 }
 
                 VStack(spacing: 10) {
-                    Text("NovaX")
+                    Text("Astra")
                         .font(.system(size: 34, weight: .bold, design: .rounded))
                         .foregroundStyle(AppTheme.ink)
                         .kerning(-1.35)
@@ -261,7 +261,7 @@ struct SplashLoginView: View {
 
     private var brandTitle: some View {
         VStack(spacing: 9) {
-            Text("NovaX")
+            Text("Astra")
                 .font(.system(size: 40, weight: .bold, design: .rounded))
                 .foregroundStyle(AppTheme.ink)
                 .kerning(-1.5)
@@ -486,7 +486,7 @@ struct SplashLoginView: View {
                     .font(.system(size: 11, weight: .bold))
                     .tracking(0.45)
                     .foregroundStyle(AppTheme.statusSuccess)
-                Text("Đang mở giao diện chính của NovaX…")
+                Text("Đang mở giao diện chính của Astra…")
                     .font(.system(size: 12.5, weight: .medium))
                     .foregroundStyle(AppTheme.grey700)
             }
@@ -501,7 +501,7 @@ struct SplashLoginView: View {
                 .stroke(AppTheme.statusSuccess.opacity(0.24), lineWidth: 1)
         )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Đăng nhập thành công. Đang mở NovaX.")
+        .accessibilityLabel("Đăng nhập thành công. Đang mở Astra.")
     }
 
     private var statusPill: some View {
@@ -624,76 +624,25 @@ struct SplashLoginView: View {
                 .frame(height: 1)
                 .padding(.vertical, 16)
 
-            HStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(AppTheme.ink)
-                        .frame(width: 44, height: 44)
-                    Text("MK")
-                        .font(.system(size: 15, weight: .black, design: .monospaced))
-                        .foregroundStyle(Color.white)
-                }
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Trần Minh Khải")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(AppTheme.ink)
-                    Text("Nhà phát triển NovaX")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(AppTheme.grey500)
-                    HStack(spacing: 4) {
-                        Image(systemName: "phone.fill")
-                            .font(.system(size: 9))
-                            .foregroundStyle(AppTheme.grey500)
-                        Text("0342145707")
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(AppTheme.grey600)
-                    }
-                }
-                Spacer()
-            }
+            DeveloperContactsList()
 
-            HStack(spacing: 10) {
-                Button {
-                    Haptics.light()
-                    if let url = URL(string: "https://zalo.me/0342145707") {
-                        UIApplication.shared.open(url)
-                    }
-                } label: {
-                    HStack(spacing: 7) {
-                        Image(systemName: "message.fill")
-                            .font(.system(size: 13, weight: .semibold))
-                        Text("Liên hệ Zalo")
-                            .font(.system(size: 13, weight: .semibold))
-                    }
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 44)
-                    .background(AppTheme.ink)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            Button {
+                Haptics.light()
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    showCommunityAlert = true
                 }
-
-                Button {
-                    Haptics.light()
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                        showCommunityAlert = true
-                    }
-                } label: {
-                    HStack(spacing: 7) {
-                        Image(systemName: "person.3.fill")
-                            .font(.system(size: 13, weight: .semibold))
-                        Text("Cộng đồng")
-                            .font(.system(size: 13, weight: .semibold))
-                    }
+            } label: {
+                Label("Cộng đồng", systemImage: "person.3.fill")
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(AppTheme.ink)
                     .frame(maxWidth: .infinity)
                     .frame(height: 44)
-                    .background(Color.white)
+                    .background(AppTheme.grey50)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(AppTheme.ink, lineWidth: 1)
+                            .stroke(AppTheme.grey200, lineWidth: 1)
                     )
-                }
             }
             .padding(.top, 16)
         }
@@ -728,7 +677,7 @@ struct SplashLoginView: View {
                     Text("Tham gia cộng đồng")
                         .font(.system(size: 18, weight: .bold))
                         .foregroundStyle(AppTheme.ink)
-                    Text("Vui lòng chọn nhóm Zalo bạn muốn tham gia để nhận key và hỗ trợ.")
+                    Text("Vui lòng chọn kênh Telegram để nhận key và hỗ trợ.")
                         .font(.system(size: 13))
                         .foregroundStyle(AppTheme.grey600)
                         .multilineTextAlignment(.center)
@@ -739,10 +688,8 @@ struct SplashLoginView: View {
                 Rectangle().fill(AppTheme.grey200).frame(height: 1)
 
                 VStack(spacing: 12) {
-                    communityButton(title: "BOX 1 - NovaX",
-                                    url: "https://zalo.me/g/i1bffsvvb6wijb3l0gc8")
-                    communityButton(title: "BOX 2 - NovaX",
-                                    url: "https://zalo.me/g/wbsfu5a3mcp4uodtebft")
+                    communityButton(title: "KEY VN STORE HAX", username: "keyvnstorehax")
+                    communityButton(title: "SƠN DEV", username: "Sondevx")
                 }
                 .padding(16)
 
@@ -768,16 +715,16 @@ struct SplashLoginView: View {
         }
     }
 
-    private func communityButton(title: String, url: String) -> some View {
+    private func communityButton(title: String, username: String) -> some View {
         Button {
             Haptics.light()
-            if let url = URL(string: url) { UIApplication.shared.open(url) }
+            AstraDeveloperDirectory.openTelegram(username)
             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                 showCommunityAlert = false
             }
         } label: {
             HStack {
-                Image(systemName: "bubble.left.and.bubble.right.fill")
+                Image(systemName: "paperplane.fill")
                 Text(title)
             }
             .font(.system(size: 15, weight: .bold))

@@ -494,6 +494,94 @@ struct SplashBackdrop: View {
     }
 }
 
+struct AstraDeveloperContact: Identifiable {
+    let id: String
+    let name: String
+    let initials: String
+    let telegram: String
+}
+
+enum AstraDeveloperDirectory {
+    static let contacts: [AstraDeveloperContact] = [
+        AstraDeveloperContact(
+            id: "minh-khai",
+            name: "Minh Khải",
+            initials: "MK",
+            telegram: "@trnmnhkh"
+        ),
+        AstraDeveloperContact(
+            id: "son-dev",
+            name: "Sơn Dev",
+            initials: "SD",
+            telegram: "@Sondevv"
+        )
+    ]
+
+    static func openTelegram(_ username: String) {
+        let normalizedUsername = username.trimmingCharacters(in: CharacterSet(charactersIn: "@"))
+        guard let appURL = URL(string: "tg://resolve?domain=\(normalizedUsername)"),
+              let webURL = URL(string: "https://t.me/\(normalizedUsername)") else { return }
+
+        UIApplication.shared.open(appURL, options: [:]) { opened in
+            guard !opened else { return }
+            DispatchQueue.main.async {
+                UIApplication.shared.open(webURL)
+            }
+        }
+    }
+
+}
+
+struct DeveloperContactsList: View {
+    var body: some View {
+        VStack(spacing: 15) {
+            ForEach(Array(AstraDeveloperDirectory.contacts.enumerated()), id: \.element.id) { index, developer in
+                VStack(spacing: 12) {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(AppTheme.ink)
+                                .frame(width: 46, height: 46)
+                            Text(developer.initials)
+                                .font(.system(size: 14, weight: .black, design: .monospaced))
+                                .foregroundStyle(Color.white)
+                        }
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(developer.name)
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(AppTheme.ink)
+                            Text("Telegram: \(developer.telegram)")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(AppTheme.grey500)
+                        }
+                        Spacer()
+                    }
+
+                    Button {
+                        Haptics.light()
+                        AstraDeveloperDirectory.openTelegram(developer.telegram)
+                    } label: {
+                        Label("Mở Telegram", systemImage: "paperplane.fill")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity, minHeight: 42)
+                            .background(AppTheme.ink)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                if index < AstraDeveloperDirectory.contacts.count - 1 {
+                    Rectangle()
+                        .fill(AppTheme.grey200)
+                        .frame(height: 1)
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Geometry match helpers
 
 /// Helper dùng chung cho logo morph: shared namespace constant
