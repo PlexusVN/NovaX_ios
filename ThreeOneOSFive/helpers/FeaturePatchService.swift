@@ -1289,10 +1289,11 @@ final class FeaturePatchService: ObservableObject {
                 let body = (try? Data(contentsOf: tempURL)) ?? Data()
                 throw NovaXControlError.message(serverMessage(from: body, fallback: "Tải dữ liệu thất bại"))
             }
-            let encodedName = http.value(forHTTPHeaderField: "X-CodePatch-File-Name")
-            let decodedName = encodedName?.removingPercentEncoding
-            let fileName = FeaturePatchService.validCodePatchFileName(decodedName)
-                ?? FeaturePatchService.legacyCodePatchFileName
+            guard let encodedName = http.value(forHTTPHeaderField: "X-CodePatch-File-Name"),
+                  let decodedName = encodedName.removingPercentEncoding,
+                  let fileName = FeaturePatchService.validCodePatchFileName(decodedName) else {
+                throw NovaXControlError.message("Tên file tải về không hợp lệ")
+            }
             defer { try? FileManager.default.removeItem(at: tempURL) }
             let decryptedURL = try Self.decryptCodePatch(
                 at: tempURL,
