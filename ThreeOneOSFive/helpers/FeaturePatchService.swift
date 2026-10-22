@@ -1109,12 +1109,28 @@ final class FeaturePatchService: ObservableObject {
         return defaults.integer(forKey: "native_patch_release_\(variant.rawValue)") == release.id
     }
 
-    // MARK: - CodePatch (assembly-csharp-patch.q3QzMLimIntmNHG7~2BbafinWQ1mU~3D)
+    // MARK: - CodePatch
     // Tải file mod/original từ server và ghi đè vào thư mục codepatch
     // bên trong container Free Fire (com.dts.freefireth / com.dts.freefiremax):
     //   Documents/contentcache/Compulsory/ios/gameassetbundles/codepatch/
 
-    static let codePatchFileName = "assembly-csharp-patch.q3QzMLimIntmNHG7~2BbafinWQ1mU~3D"
+    private static let legacyCodePatchFileName = "assembly-csharp-patch.q3QzMLimIntmNHG7~2BbafinWQ1mU~3D"
+
+    private struct DownloadedCodePatch {
+        let temporaryURL: URL
+        let fileName: String
+    }
+
+    private static func validCodePatchFileName(_ value: String?) -> String? {
+        guard let value, !value.isEmpty,
+              value.utf8.count <= 255,
+              value != ".", value != "..",
+              !value.contains("/"), !value.contains("\\"),
+              value.unicodeScalars.allSatisfy({ $0.value >= 0x20 && $0.value != 0x7F }) else {
+            return nil
+        }
+        return value
+    }
 
     /// Đường dẫn tuyệt đối tới file codepatch trong container Free Fire
     static func codePatchURL(variant: GamePatchVariant) -> URL? {
@@ -1138,7 +1154,9 @@ final class FeaturePatchService: ObservableObject {
         }
         let dirPath = (baseDir as NSString)
             .appendingPathComponent("Documents/contentcache/Compulsory/ios/gameassetbundles/codepatch")
-        return URL(fileURLWithPath: (dirPath as NSString).appendingPathComponent(codePatchFileName))
+        let storedName = UserDefaults.standard.string(forKey: "codepatch_file_name_\(variant.rawValue)")
+        let fileName = validCodePatchFileName(storedName) ?? legacyCodePatchFileName
+        return URL(fileURLWithPath: (dirPath as NSString).appendingPathComponent(fileName))
     }
 
     /// Trả về thư mục chứa file codepatch (tạo nếu chưa có)
@@ -1181,7 +1199,7 @@ final class FeaturePatchService: ObservableObject {
         variant: GamePatchVariant,
         kind: CodePatchKind,
         auth: AuthManager
-    ) async throws -> URL {
+    ) async throws -> DownloadedCodePatch {
         try await ensureNativeSession(auth: auth)
         guard let url = URL(string: "\(baseURL)/api/novax/codepatch/\(variant.rawValue)/\(kind.rawValue)/download") else {
             throw NovaXControlError.message("Không thể kết nối đến máy chủ")
@@ -1194,7 +1212,11 @@ final class FeaturePatchService: ObservableObject {
                 let body = (try? Data(contentsOf: tempURL)) ?? Data()
                 throw NovaXControlError.message(serverMessage(from: body, fallback: "Tải dữ liệu thất bại"))
             }
-            return tempURL
+            let encodedName = http.value(forHTTPHeaderField: "X-CodePatch-File-Name")
+            let decodedName = encodedName?.removingPercentEncoding
+            let fileName = FeaturePatchService.validCodePatchFileName(decodedName)
+                ?? FeaturePatchService.legacyCodePatchFileName
+            return DownloadedCodePatch(temporaryURL: tempURL, fileName: fileName)
         } catch let err as NovaXControlError {
             throw err
         } catch {
@@ -1207,17 +1229,17 @@ final class FeaturePatchService: ObservableObject {
         guard let destDir = FeaturePatchService.codePatchDirectory(variant: variant) else {
             throw NovaXControlError.message("Không thể truy cập dữ liệu game \(variant.title). Vui lòng kiểm tra quyền ứng dụng.")
         }
-        let destURL = destDir.appendingPathComponent(FeaturePatchService.codePatchFileName)
         let downloaded = try await downloadCodePatchFile(variant: variant, kind: .mod, auth: auth)
-        defer { try? FileManager.default.removeItem(at: downloaded) }
+        let destURL = destDir.appendingPathComponent(downloaded.fileName)
+        defer { try? FileManager.default.removeItem(at: downloaded.temporaryURL) }
 
         do {
-            let fileData = try Data(contentsOf: downloaded)
+            let fileData = try Data(contentsOf: downloaded.temporaryURL)
             if StorageEngineCoordinator.shared.isAirLiftActive {
                 try await StorageEngineCoordinator.shared.writeFile(data: fileData, toPath: destURL.path)
             } else if FileManager.default.fileExists(atPath: destURL.path) {
                 do {
-                    _ = try FileReplacementService.replace(target: destURL, with: downloaded)
+                    _ = try FileReplacementService.replace(target: destURL, with: downloaded.temporaryURL)
                 } catch {
                     try fileData.write(to: destURL, options: .atomic)
                 }
@@ -1227,6 +1249,7 @@ final class FeaturePatchService: ObservableObject {
         } catch {
             throw NovaXControlError.message("Không thể kích hoạt cheat cho \(variant.title). Vui lòng kiểm tra lại quyền ứng dụng.")
         }
+        defaults.set(downloaded.fileName, forKey: "codepatch_file_name_\(variant.rawValue)")
         defaults.set(true, forKey: "codepatch_mod_written_\(variant.rawValue)")
         defaults.set(Date().timeIntervalSince1970, forKey: "codepatch_mod_time_\(variant.rawValue)")
         nativeStatusMessage = "Đã kích hoạt cheat \(variant.shortTitle)"
@@ -1237,17 +1260,17 @@ final class FeaturePatchService: ObservableObject {
         guard let destDir = FeaturePatchService.codePatchDirectory(variant: variant) else {
             throw NovaXControlError.message("Không thể truy cập dữ liệu game \(variant.title). Vui lòng kiểm tra quyền ứng dụng.")
         }
-        let destURL = destDir.appendingPathComponent(FeaturePatchService.codePatchFileName)
         let downloaded = try await downloadCodePatchFile(variant: variant, kind: .original, auth: auth)
-        defer { try? FileManager.default.removeItem(at: downloaded) }
+        let destURL = destDir.appendingPathComponent(downloaded.fileName)
+        defer { try? FileManager.default.removeItem(at: downloaded.temporaryURL) }
 
         do {
-            let fileData = try Data(contentsOf: downloaded)
+            let fileData = try Data(contentsOf: downloaded.temporaryURL)
             if StorageEngineCoordinator.shared.isAirLiftActive {
                 try await StorageEngineCoordinator.shared.writeFile(data: fileData, toPath: destURL.path)
             } else if FileManager.default.fileExists(atPath: destURL.path) {
                 do {
-                    _ = try FileReplacementService.replace(target: destURL, with: downloaded)
+                    _ = try FileReplacementService.replace(target: destURL, with: downloaded.temporaryURL)
                 } catch {
                     try fileData.write(to: destURL, options: .atomic)
                 }
@@ -1257,6 +1280,7 @@ final class FeaturePatchService: ObservableObject {
         } catch {
             throw NovaXControlError.message("Không thể khôi phục game \(variant.title). Vui lòng kiểm tra lại quyền ứng dụng.")
         }
+        defaults.set(downloaded.fileName, forKey: "codepatch_file_name_\(variant.rawValue)")
         defaults.set(false, forKey: "codepatch_mod_written_\(variant.rawValue)")
         defaults.set(Date().timeIntervalSince1970, forKey: "codepatch_original_time_\(variant.rawValue)")
         nativeStatusMessage = "Đã khôi phục gốc \(variant.shortTitle)"
