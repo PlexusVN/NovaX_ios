@@ -30,6 +30,28 @@ static NSData *iconDataFromProxy(id proxy) {
     return nil;
 }
 
+static BOOL proxyMatchesBundleIdentifier(id proxy, NSString *bundleID) {
+    if (!proxy || bundleID.length == 0) return NO;
+    NSString *teamPrefixedSuffix = [@"." stringByAppendingString:bundleID];
+    for (NSString *selectorName in @[@"bundleIdentifier", @"applicationIdentifier"]) {
+        SEL selector = NSSelectorFromString(selectorName);
+        if (![proxy respondsToSelector:selector]) continue;
+        id value = ((id (*)(id, SEL))objc_msgSend)(proxy, selector);
+        if (![value isKindOfClass:[NSString class]]) continue;
+        NSString *proxyBundleID = value;
+        if ([proxyBundleID isEqualToString:bundleID] ||
+            [proxyBundleID hasSuffix:teamPrefixedSuffix]) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
+static BOOL isFreeFireBundleIdentifier(NSString *bundleID) {
+    return [bundleID isEqualToString:@"com.dts.freefireth"] ||
+           [bundleID isEqualToString:@"com.dts.freefiremax"];
+}
+
 static NSString *stringForFirstKey(NSDictionary *info, NSArray<NSString *> *keys) {
     for (NSString *key in keys) {
         id value = info[key];
@@ -348,22 +370,30 @@ BOOL isApplicationInstalled(NSString *bundleID) {
     return NO;
 }
 
-// Icon via LSApplicationProxy / UIKit private / bundle URL / assets fallback
+// Icon via LSApplicationProxy / bundle URL / UIKit private / assets fallback.
+//
+// LSApplicationProxy is authoritative because the returned icon data belongs to
+// the exact installed application proxy. The UIKit private helper is deliberately
+// not used for Free Fire: on some sideloaded iOS builds it ignores the requested
+// identifier and returns another application's icon, which previously caused TH
+// and MAX to display the same image.
 UIImage *iconForBundleID(NSString *bundleID) {
     if (bundleID.length == 0) return nil;
+    BOOL isFreeFire = isFreeFireBundleIdentifier(bundleID);
     static NSCache<NSString *, UIImage *> *cache;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         cache = [[NSCache alloc] init];
         cache.countLimit = 256;
     });
-    UIImage *cached = [cache objectForKey:bundleID];
-    if (cached) return cached;
+    // Always re-query the two games so a rescan can observe an updated or
+    // alternate installed icon instead of retaining an earlier result.
+    if (!isFreeFire) {
+        UIImage *cached = [cache objectForKey:bundleID];
+        if (cached) return cached;
+    }
 
-    // 1. Try UIKit private API (fastest and cleanest across all iOS versions)
-    UIImage *icon = iconFromUIKitPrivate(bundleID);
-
-    // 2. Try LaunchServices proxy
+    // 1. Resolve and verify the exact LaunchServices proxy.
     Class proxyClass = NSClassFromString(@"LSApplicationProxy");
     id proxy = nil;
     if (proxyClass) {
@@ -372,31 +402,60 @@ UIImage *iconForBundleID(NSString *bundleID) {
             proxy = ((id (*)(id, SEL, id))objc_msgSend)(proxyClass, appProxySel, bundleID);
         }
     }
-
-    if (!icon && proxy) {
-        icon = iconFromData(iconDataFromProxy(proxy), 60.0);
+    if (!proxyMatchesBundleIdentifier(proxy, bundleID)) {
+        proxy = nil;
     }
 
+    // 2. Ask that verified proxy for its current installed icon.
+    UIImage *icon = nil;
+    BOOL shouldCacheIcon = NO;
+    if (proxy) {
+        icon = iconFromData(iconDataFromProxy(proxy), 60.0);
+        if (icon) {
+            shouldCacheIcon = YES;
+            NSLog(@"[3105] icon: proxy data %@", bundleID);
+        }
+    }
+
+    // 3. Try loose icon files in the exact installed app bundle. This is mainly
+    // useful for older apps; modern apps commonly keep their icons in Assets.car.
     if (!icon && proxy) {
         SEL bundleURLSel = NSSelectorFromString(@"bundleURL");
         if ([proxy respondsToSelector:bundleURLSel]) {
             id bURL = ((id (*)(id, SEL))objc_msgSend)(proxy, bundleURLSel);
             if ([bURL isKindOfClass:[NSURL class]]) {
                 icon = iconFromBundleURL(bURL);
+                if (icon) {
+                    shouldCacheIcon = YES;
+                    NSLog(@"[3105] icon: bundle files %@", bundleID);
+                }
             }
         }
     }
 
-    // 3. Fallback to bundled official game icons if system private extraction is blocked
+    // 4. Keep the legacy UIKit lookup for the generic app browser only. Its
+    // result cannot be trusted for the two game choices in the patch dialog.
+    if (!icon && !isFreeFire) {
+        icon = iconFromUIKitPrivate(bundleID);
+        if (icon) {
+            shouldCacheIcon = YES;
+            NSLog(@"[3105] icon: UIKit fallback %@", bundleID);
+        }
+    }
+
+    // 5. If iOS blocks icon extraction, use the correct per-game bundled image.
     if (!icon) {
         if ([bundleID isEqualToString:@"com.dts.freefireth"]) {
             icon = [UIImage imageNamed:@"FreeFireTHIcon"];
         } else if ([bundleID isEqualToString:@"com.dts.freefiremax"]) {
             icon = [UIImage imageNamed:@"FreeFireMAXIcon"];
         }
+        if (icon) NSLog(@"[3105] icon: bundled fallback %@", bundleID);
     }
 
-    if (icon) [cache setObject:icon forKey:bundleID];
+    if (icon && shouldCacheIcon && !isFreeFire) {
+        [cache setObject:icon forKey:bundleID];
+    }
     return icon;
 }
 
