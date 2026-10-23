@@ -70,3 +70,77 @@ index a759c80..3193c15 100644
              }
          }
      }
+@@ -507,6 +546,9 @@ async fn connect_tunnel(pairing_bytes: &[u8], logger: &Logger) -> Result<AppDevi
+ // ---------------------------------------------------------------------------
+ // Public FFI entry point
+-
++
++const DEVICE_QUERY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
++const AIRTRAFFIC_OPERATION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(180);
++
+ /// # Safety
+ /// All pointer args must be null or valid for their documented types.
+ pub unsafe fn run(
+@@ -527,7 +569,17 @@ pub unsafe fn run(
+-
++
+     let res = crate::ffi_util::run_with_large_stack("al_exploit_run", move || {
+         let logger = Logger { cb: log_cb, ctx: ctx_usize as *mut c_void };
+-        idevice_ffi::run_sync_local(exploit_run(pairing_path, target, &logger))
++        idevice_ffi::run_sync_local(async {
++            match tokio::time::timeout(
++                AIRTRAFFIC_OPERATION_TIMEOUT,
++                exploit_run(pairing_path, target, &logger),
++            )
++            .await
++            {
++                Ok(result) => result,
++                Err(_) => Err("AirTraffic canary timed out after 180s; operation cancelled".to_string()),
++            }
++        })
+     });
+-
++
+     match res {
+@@ -578,7 +630,17 @@ pub unsafe fn write_dir(
+-
++
+     let res = crate::ffi_util::run_with_large_stack("al_exploit_write_dir", move || {
+         let logger = Logger { cb: log_cb, ctx: ctx_usize as *mut c_void };
+-        idevice_ffi::run_sync_local(exploit_write_dir(pairing_path, source_dir, target_dir, &logger))
++        idevice_ffi::run_sync_local(async {
++            match tokio::time::timeout(
++                AIRTRAFFIC_OPERATION_TIMEOUT,
++                exploit_write_dir(pairing_path, source_dir, target_dir, &logger),
++            )
++            .await
++            {
++                Ok(result) => result,
++                Err(_) => Err("AirTraffic write timed out after 180s; operation cancelled".to_string()),
++            }
++        })
+     });
+-
++
+     match res {
+@@ -667,7 +729,17 @@ pub unsafe fn find_container(
+-
++
+     let res = crate::ffi_util::run_with_large_stack("al_find_app_container", move || {
+         let logger = Logger { cb: log_cb, ctx: ctx_usize as *mut c_void };
+-        idevice_ffi::run_sync_local(exploit_find_container(pairing_path, bundle_id, &logger))
++        idevice_ffi::run_sync_local(async {
++            match tokio::time::timeout(
++                DEVICE_QUERY_TIMEOUT,
++                exploit_find_container(pairing_path, bundle_id, &logger),
++            )
++            .await
++            {
++                Ok(result) => result,
++                Err(_) => Err("InstallationProxy query timed out after 120s; operation cancelled".to_string()),
++            }
++        })
+     });
+-
++
+     match res {

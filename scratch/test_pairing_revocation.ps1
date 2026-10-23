@@ -27,7 +27,7 @@ Assert-Test "isPaired tra ve true cho .ready hoac .verified" ($pairingMgr -match
 Write-Host "`n2. Kiem tra giam sat lien tuc (Continuous Monitoring & Lifecycle):" -ForegroundColor Yellow
 Assert-Test "Lang nghe UIApplication.didBecomeActiveNotification" ($pairingMgr -match 'UIApplication\.didBecomeActiveNotification')
 Assert-Test "Tu dong kiem tra khi quay lai tu Settings" ($pairingMgr -match 'self\.verifyPairingWithDevice\(silent: true\)')
-Assert-Test "Timer dinh ky 15 giay giam sat khi app dang active" ($pairingMgr -match 'Timer\.publish\(every: 15\.0')
+Assert-Test "Timer 60 giay tranh tranh chap voi phien inject" ($pairingMgr -match 'Timer\.publish\(every: 60\.0')
 Assert-Test "Lang nghe su thay doi trang thai cua LocalDevVPN" ($pairingMgr -match 'AirLiftTunnelManager\.shared\.\$status')
 
 Write-Host "`n3. Kiem tra ham chu dong kiem tra (Active Probe) va phat hien revoke:" -ForegroundColor Yellow

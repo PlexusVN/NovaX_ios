@@ -150,7 +150,10 @@ final class AirLiftPairingManager: ObservableObject {
 
     func startContinuousPairingMonitor() {
         verificationTimer?.cancel()
-        verificationTimer = Timer.publish(every: 15.0, on: .main, in: .common)
+        // A full RemoteXPC/InstallationProxy probe is intentionally not run
+        // every few seconds: repeated handshakes can contend with an inject on
+        // slower iOS 27 devices. Foreground/manual checks still run immediately.
+        verificationTimer = Timer.publish(every: 60.0, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
                 Task { @MainActor [weak self] in

@@ -29,6 +29,7 @@ final class AirLiftTunnelManager: ObservableObject {
     enum ServiceStatus: String {
         case unavailable = "Chưa kiểm tra dịch vụ"
         case checking = "Đang kiểm tra RSD/lockdownd qua 10.7.0.1..."
+        case routeReady = "Đã nhận diện route LocalDevVPN; AirLift sẽ xác thực RSD"
         case reachable = "Dịch vụ RSD/lockdownd đã sẵn sàng"
         case unreachable = "Không nhận được phản hồi RSD/lockdownd"
     }
@@ -101,7 +102,7 @@ final class AirLiftTunnelManager: ObservableObject {
             if routeDetected {
                 return TunnelProbeResult(
                     routeDetected: true,
-                    serviceReachable: true,
+                    serviceReachable: false,
                     message: "Đã nhận diện route LocalDevVPN \(expectedSource) → \(host)."
                 )
             }
@@ -117,7 +118,7 @@ final class AirLiftTunnelManager: ObservableObject {
         if result.serviceReachable || result.routeDetected {
             status = .connected
             isEnabled = true
-            serviceStatus = .reachable
+            serviceStatus = result.serviceReachable ? .reachable : .routeReady
             lastErrorMessage = nil
         } else {
             status = .disconnected

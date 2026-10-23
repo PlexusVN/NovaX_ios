@@ -608,7 +608,7 @@ struct AirLiftDashboardCard: View {
                 readinessFactorRow(
                     title: "AirLift Engine (AirTraffic)",
                     isMet: airTrafficClient.engineHealthState.isHealthy,
-                    detail: airTrafficClient.engineHealthState.isHealthy ? "Sẵn sàng ghi đè" : "Chưa phản hồi"
+                    detail: airTrafficClient.engineHealthState.isHealthy ? "Kênh xác thực OK" : "Chưa phản hồi"
                 )
                 readinessFactorRow(
                     title: "Bật AirLift Engine toàn bộ",
@@ -663,7 +663,7 @@ struct AirLiftDashboardCard: View {
 
     private var ios27ReadinessSummaryText: String {
         if isIOS27FullyReady {
-            return "Đầy đủ yếu tố: VPN + Ghép đôi + AirTraffic OK. Sẵn sàng kích hoạt cheat!"
+            return "VPN + Ghép đôi + AirTraffic đã xác thực. Canary sẽ được kiểm tra lại trước mỗi lần ghi."
         }
         if isComprehensiveChecking {
             return "Đang tự động kiểm tra VPN, Ghép đôi và AirLift..."
@@ -1025,7 +1025,7 @@ struct AirLiftSettingsSection: View {
 
     private var ios27ReadinessSummaryText: String {
         if isIOS27FullyReady {
-            return "Đầy đủ yếu tố: VPN + Ghép đôi + AirTraffic OK. Sẵn sàng kích hoạt cheat!"
+            return "VPN + Ghép đôi + AirTraffic đã xác thực. Canary sẽ được kiểm tra lại trước mỗi lần ghi."
         }
         if isComprehensiveChecking {
             return "Đang tự động kiểm tra VPN, Ghép đôi và AirLift..."

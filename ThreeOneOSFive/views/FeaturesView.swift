@@ -260,7 +260,7 @@ struct FeaturesView: View {
                             Circle()
                                 .fill(isAirLiftReadyForIOS27 ? Color(hex: 0x10B981) : AppTheme.statusWarning)
                                 .frame(width: 7, height: 7)
-                            Text(isAirLiftReadyForIOS27 ? "iOS 27: Sẵn sàng ghi đè file" : "iOS 27: Cần kiểm tra AirLift")
+                            Text(isAirLiftReadyForIOS27 ? "iOS 27: Kênh AirLift đã xác thực" : "iOS 27: Cần kiểm tra AirLift")
                                 .font(.system(size: 10, weight: .bold, design: .rounded))
                                 .foregroundColor(isAirLiftReadyForIOS27 ? Color(hex: 0x065F46) : AppTheme.statusWarning)
                         }

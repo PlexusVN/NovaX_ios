@@ -93,6 +93,17 @@ Assert-Condition "AirliftFFI binary ton tai" (Test-Path "c:\Users\Khai\Desktop\N
 Assert-Condition "RPPairing host that duoc goi" ((Get-Content "c:\Users\Khai\Desktop\Nova IOS 27\NovaX\ThreeOneOSFive\helpers\AirLiftPairingManager.swift" -Raw) -match "al_pairing_run_host")
 Assert-Condition "AirTraffic write that duoc goi" ((Get-Content "c:\Users\Khai\Desktop\Nova IOS 27\NovaX\ThreeOneOSFive\helpers\AirTrafficProtocolClient.swift" -Raw) -match "al_exploit_write_dir")
 Assert-Condition "Canary read-back duoc bat buoc" ((Get-Content "c:\Users\Khai\Desktop\Nova IOS 27\NovaX\ThreeOneOSFive\helpers\AirTrafficProtocolClient.swift" -Raw) -match "exactBytesRecovered")
+$airTrafficClient = Get-Content "c:\Users\Khai\Desktop\Nova IOS 27\NovaX\ThreeOneOSFive\helpers\AirTrafficProtocolClient.swift" -Raw
+$airliftPatch = Get-Content "c:\Users\Khai\Desktop\Nova IOS 27\NovaX\patches\airlift-rsd-timeout-fallback.patch" -Raw
+Assert-Condition "Canary fail-closed, khong ghi tiep khi verify loi" ($airTrafficClient -notmatch "proceeding with direct writeDirectory")
+Assert-Condition "Moi FFI call duoc serialize tren mot queue" (
+    ($airTrafficClient -match "ffiExecutionQueue") -and
+    ($airTrafficClient -match "configureTargetHosts\(candidates\)")
+)
+Assert-Condition "Rust huy canary/write khi qua timeout" (
+    ($airliftPatch -match "AIRTRAFFIC_OPERATION_TIMEOUT") -and
+    ($airliftPatch -match "operation cancelled")
+)
 
 Write-Host "`n================================================================" -ForegroundColor Cyan
 if ($allPassed) {
