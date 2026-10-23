@@ -10,7 +10,7 @@ Astra dùng ứng dụng LocalDevVPN riêng cùng `AirliftFFI` để ghép đôi
 | VPN tích hợp | Đã gỡ | Không còn `TunnelProv.appex`, target dependency hay quyền `packet-tunnel-provider` |
 | RPPairing host | Đã tích hợp | `al_pairing_run_host` sinh identity, TXT record và PIN thật |
 | Bonjour | Đã tích hợp | Chỉ publish `_remotepairing-pairable-host._tcp` với dữ liệu do RPPairing engine trả về |
-| RSD/Lockdown | Đã tích hợp | Kiểm tra `10.7.0.1:49152` hoặc Lockdown `10.7.0.1:62078` |
+| RSD/Lockdown | Đã tích hợp | Nhận diện route tới `10.7.0.1` qua interface tunnel thực tế, sau đó xác minh Lockdown `10.7.0.1:62078` |
 | AFC + streaming zip + AirTraffic | Đã tích hợp | `al_exploit_run` bắt buộc xác nhận canary read-back trước khi `al_exploit_write_dir` chạy |
 | Patch `.3105` | Đã nối vào router | Nhóm file theo container/thư mục rồi ghi từng batch qua AirTraffic khi bật AirLift |
 

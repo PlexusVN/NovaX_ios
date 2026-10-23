@@ -147,7 +147,9 @@ struct AirLiftDashboardCard: View {
 
                 HStack(spacing: 4) {
                     Circle().fill(tunnelStatusColor).frame(width: 6, height: 6)
-                    Text(tunnelManager.status.rawValue)
+                    Text(tunnelManager.isTunnelRouteDetected && !tunnelManager.isServiceReachable
+                         ? "VPN đã bật · dịch vụ chưa phản hồi"
+                         : tunnelManager.status.rawValue)
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
                         .foregroundColor(tunnelStatusColor)
                 }

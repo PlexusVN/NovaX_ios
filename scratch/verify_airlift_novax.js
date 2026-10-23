@@ -23,7 +23,9 @@ const swiftFiles = [
     'ThreeOneOSFive/helpers/AirLiftPairingManager.swift',
     'ThreeOneOSFive/helpers/AirTrafficProtocolClient.swift',
     'ThreeOneOSFive/helpers/StorageEngineCoordinator.swift',
+    'ThreeOneOSFive/helpers/FeaturePatchService.swift',
     'ThreeOneOSFive/views/AirLiftSettingsSection.swift',
+    'ThreeOneOSFive/views/SecurityUtils.swift',
     'ThreeOneOSFive/views/SettingsView.swift',
     'ThreeOneOSFive/helpers/KernelExploit.swift',
     'ThreeOneOSFive/App.swift'
@@ -70,7 +72,48 @@ console.log('\n4. Kiểm tra kết nối LocalDevVPN bên ngoài:');
 const tunnelDetector = fs.readFileSync(path.join(__dirname, '..', 'ThreeOneOSFive/helpers/AirLiftTunnelManager.swift'), 'utf8');
 check('Mở app LocalDevVPN bằng URL scheme', tunnelDetector.includes('localdevvpn://'));
 check('Kiểm tra peer 10.7.0.1', tunnelDetector.includes('10.7.0.1'));
+check('Nhận diện route VPN theo interface utun/ipsec thực tế', tunnelDetector.includes('hasTunnelRoute') && tunnelDetector.includes('hasPrefix("utun")'));
+check('UI chỉ báo ONLINE khi Lockdown phản hồi', tunnelDetector.includes('var isOperational: Bool { isServiceReachable }'));
+check('Không dùng cổng RSD 49152 cố định', !tunnelDetector.includes('49152'));
 check('Không tạo NETunnelProviderManager', !tunnelDetector.includes('NETunnelProviderManager'));
+
+const airTrafficClient = fs.readFileSync(path.join(__dirname, '..', 'ThreeOneOSFive/helpers/AirTrafficProtocolClient.swift'), 'utf8');
+check('AirTraffic cho FFI tự xác minh sau khi có route tunnel',
+    airTrafficClient.includes('guard tunnel.isTunnelRouteDetected else') &&
+    !airTrafficClient.includes('guard tunnel.isOperational else'));
+
+const featurePatch = fs.readFileSync(path.join(__dirname, '..', 'ThreeOneOSFive/helpers/FeaturePatchService.swift'), 'utf8');
+const injectStart = featurePatch.indexOf('func injectCodePatch(');
+const injectEnd = featurePatch.indexOf('func unjectCodePatch(', injectStart);
+const injectCode = featurePatch.slice(injectStart, injectEnd);
+const restoreStart = injectEnd;
+const restoreEnd = featurePatch.indexOf('func isCodePatchInjected(', restoreStart);
+const restoreCode = featurePatch.slice(restoreStart, restoreEnd);
+check('CodePatch AirLift resolve container qua pairing transport', featurePatch.includes('airLiftCodePatchDirectory') && featurePatch.includes('resolveAppContainer'));
+check('Không bắt buộc direct container trước nhánh AirLift',
+    injectCode.indexOf('if useAirLift') >= 0 &&
+    injectCode.indexOf('airLiftCodePatchDirectory') > injectCode.indexOf('if useAirLift') &&
+    injectCode.indexOf('codePatchDirectory(variant:') > injectCode.indexOf('airLiftCodePatchDirectory'));
+check('Khôi phục cũng resolve container qua AirLift trước direct',
+    restoreCode.indexOf('if useAirLift') >= 0 &&
+    restoreCode.indexOf('airLiftCodePatchDirectory') > restoreCode.indexOf('if useAirLift') &&
+    restoreCode.indexOf('codePatchDirectory(variant:') > restoreCode.indexOf('airLiftCodePatchDirectory'));
+check('INJECT giữ nguyên tên file tải xuống khi tạo đích', injectCode.includes('destDir.appendingPathComponent(downloaded.fileName)'));
+check('KHÔI PHỤC giữ nguyên tên file tải xuống khi tạo đích', restoreCode.includes('destDir.appendingPathComponent(downloaded.fileName)'));
+check('Lỗi resolve AirLift của INJECT được chuyển thành lỗi hiển thị', injectCode.includes('catch let error as AirLiftError'));
+check('Lỗi resolve AirLift của KHÔI PHỤC được chuyển thành lỗi hiển thị', restoreCode.includes('catch let error as AirLiftError'));
+check('Tên file lấy từ header đã giải mã và được kiểm tra an toàn',
+    featurePatch.includes('X-CodePatch-File-Name') &&
+    featurePatch.includes('encodedName.removingPercentEncoding') &&
+    featurePatch.includes('validCodePatchFileName(decodedName)'));
+
+const securityUtils = fs.readFileSync(path.join(__dirname, '..', 'ThreeOneOSFive/views/SecurityUtils.swift'), 'utf8');
+check('Proxy guard chỉ dựa trên cờ proxy tường minh',
+    securityUtils.includes('kCFNetworkProxiesHTTPEnable') &&
+    securityUtils.includes('kCFNetworkProxiesHTTPSEnable') &&
+    securityUtils.includes('kCFNetworkProxiesProxyAutoConfigEnable'));
+check('Proxy guard không chặn LocalDevVPN chỉ vì interface utun',
+    !securityUtils.includes('hasPrefix("utun")'));
 
 // 5. Kiểm tra Giao diện Settings
 console.log('\n5. Kiểm tra Giao diện Cài đặt (Settings UI):');

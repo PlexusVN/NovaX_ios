@@ -36,14 +36,15 @@ final class AirLiftTunnelManager: ObservableObject {
     @Published var status: TunnelStatus = .checking
     @Published var serviceStatus: ServiceStatus = .unavailable
     @Published var isEnabled = false
+    @Published private(set) var isTunnelRouteDetected = false
     @Published var lastErrorMessage: String?
 
     var isServiceReachable: Bool { serviceStatus == .reachable }
     var isOperational: Bool { isServiceReachable }
 
     private let peerAddress = "10.7.0.1"
+    private let expectedInterfaceAddress = "10.7.1.1"
     private let lockdownPort: UInt16 = 62078
-    private let rsdPort: UInt16 = 49152
     private var cancellables = Set<AnyCancellable>()
 
     private init() {
@@ -81,24 +82,41 @@ final class AirLiftTunnelManager: ObservableObject {
 
         let host = peerAddress
         let port = lockdownPort
-        let remoteServicePort = rsdPort
+        let expectedSource = expectedInterfaceAddress
         let result = await Task.detached(priority: .utility) {
+            let routeDetected = Self.hasTunnelRoute(to: host)
             let lockdown = Self.queryLockdown(host: host, port: port)
-            if lockdown.ok { return lockdown }
-            if Self.canConnectTCP(host: host, port: remoteServicePort) {
-                return .init(ok: true, message: "RSD đang lắng nghe trên cổng \(remoteServicePort).")
+            if lockdown.ok {
+                return TunnelProbeResult(
+                    routeDetected: routeDetected,
+                    serviceReachable: true,
+                    message: lockdown.message
+                )
             }
-            return .init(
-                ok: false,
-                message: "\(lockdown.message) RSD \(host):\(remoteServicePort) cũng không kết nối được. Hãy mở LocalDevVPN và bật tunnel."
+            let message = routeDetected
+                ? "Đã nhận diện route LocalDevVPN \(expectedSource) → \(host), nhưng lockdownd \(host):\(port) chưa phản hồi. Hãy đặt Tunnel IP = \(expectedSource)/32, Device IP = \(host)/32 rồi tắt/bật lại tunnel."
+                : "Không tìm thấy route LocalDevVPN tới \(host). Hãy bật tunnel và kiểm tra Tunnel IP = \(expectedSource)/32, Device IP = \(host)/32."
+            return TunnelProbeResult(
+                routeDetected: routeDetected,
+                serviceReachable: false,
+                message: "\(message) \(lockdown.message)"
             )
         }.value
 
-        if result.ok {
+        isTunnelRouteDetected = result.routeDetected || result.serviceReachable
+        if result.serviceReachable {
             status = .connected
             isEnabled = true
             serviceStatus = .reachable
             lastErrorMessage = nil
+        } else if result.routeDetected {
+            // The external VPN really is active. The UI remains OFFLINE until
+            // QueryType succeeds; an operation may still ask AirliftFFI to run
+            // its authoritative authenticated RSD/Lockdown + pairing checks.
+            status = .connected
+            isEnabled = true
+            serviceStatus = .unreachable
+            lastErrorMessage = result.message
         } else {
             status = .disconnected
             isEnabled = false
@@ -110,6 +128,83 @@ final class AirLiftTunnelManager: ObservableObject {
     private struct LockdownProbeResult: Sendable {
         let ok: Bool
         let message: String
+    }
+
+    private struct TunnelProbeResult: Sendable {
+        let routeDetected: Bool
+        let serviceReachable: Bool
+        let message: String
+    }
+
+    /// Confirms that iOS routes the AirLift peer through LocalDevVPN. A UDP
+    /// connect does not send traffic; it only asks the kernel to select a route
+    /// and local source address for the peer.
+    private nonisolated static func hasTunnelRoute(to host: String) -> Bool {
+        guard let source = routeSource(to: host),
+              routeSource(to: "203.0.113.1") != source else {
+            return false
+        }
+
+        var interfaces: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&interfaces) == 0, let first = interfaces else { return false }
+        defer { freeifaddrs(interfaces) }
+
+        var cursor: UnsafeMutablePointer<ifaddrs>? = first
+        while let current = cursor {
+            defer { cursor = current.pointee.ifa_next }
+            guard let address = current.pointee.ifa_addr,
+                  address.pointee.sa_family == sa_family_t(AF_INET) else {
+                continue
+            }
+            let name = String(cString: current.pointee.ifa_name)
+            guard name.hasPrefix("utun") || name.hasPrefix("ipsec") ||
+                    name.hasPrefix("tap") || name.hasPrefix("ppp") else {
+                continue
+            }
+            if numericHost(address) == source { return true }
+        }
+        return false
+    }
+
+    private nonisolated static func routeSource(to host: String) -> String? {
+        let descriptor = socket(AF_INET, SOCK_DGRAM, 0)
+        guard descriptor >= 0 else { return nil }
+        defer { close(descriptor) }
+
+        var peer = sockaddr_in()
+        peer.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        peer.sin_family = sa_family_t(AF_INET)
+        peer.sin_port = UInt16(9).bigEndian
+        guard inet_pton(AF_INET, host, &peer.sin_addr) == 1 else { return nil }
+        let connected = withUnsafePointer(to: &peer) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                Darwin.connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        guard connected == 0 else { return nil }
+
+        var local = sockaddr_in()
+        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let resolved = withUnsafeMutablePointer(to: &local) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                getsockname(descriptor, $0, &length)
+            }
+        }
+        guard resolved == 0, local.sin_addr.s_addr != 0 else { return nil }
+        return withUnsafeMutablePointer(to: &local) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                numericHost($0)
+            }
+        }
+    }
+
+    private nonisolated static func numericHost(_ address: UnsafeMutablePointer<sockaddr>) -> String? {
+        var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+        let length = socklen_t(MemoryLayout<sockaddr_in>.size)
+        guard getnameinfo(address, length, &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST) == 0 else {
+            return nil
+        }
+        return String(cString: host)
     }
 
     /// A real lockdown QueryType exchange. Merely opening TCP is not enough:
@@ -170,27 +265,6 @@ final class AirLiftTunnelManager: ObservableObject {
             return .init(ok: true, message: "lockdownd phản hồi hợp lệ.")
         } catch {
             return .init(ok: false, message: "Không phân tích được phản hồi lockdownd: \(error.localizedDescription)")
-        }
-    }
-
-    private nonisolated static func canConnectTCP(host: String, port: UInt16) -> Bool {
-        let descriptor = socket(AF_INET, SOCK_STREAM, 0)
-        guard descriptor >= 0 else { return false }
-        defer { close(descriptor) }
-
-        var timeout = timeval(tv_sec: 2, tv_usec: 0)
-        setsockopt(descriptor, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
-        setsockopt(descriptor, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
-
-        var address = sockaddr_in()
-        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
-        address.sin_family = sa_family_t(AF_INET)
-        address.sin_port = port.bigEndian
-        guard inet_pton(AF_INET, host, &address.sin_addr) == 1 else { return false }
-        return withUnsafePointer(to: &address) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0
-            }
         }
     }
 

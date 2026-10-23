@@ -177,7 +177,10 @@ final class AirTrafficProtocolClient: ObservableObject {
     private func verifyTransportAndPairing() async throws {
         let tunnel = AirLiftTunnelManager.shared
         await tunnel.verifyLoopbackService()
-        guard tunnel.isOperational else {
+        // QueryType is a useful UI diagnostic, but it must not be the sole gate:
+        // AirliftFFI performs the authoritative authenticated RSD/Lockdown probe
+        // and can use transport routes that the lightweight 62078 check cannot.
+        guard tunnel.isTunnelRouteDetected else {
             throw AirLiftError.socketConnectionFailed(
                 tunnel.lastErrorMessage ?? "Hãy mở ứng dụng LocalDevVPN, bật tunnel rồi thử lại."
             )

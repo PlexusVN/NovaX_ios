@@ -444,6 +444,16 @@ final class FeaturePatchService: ObservableObject {
         return request
     }
 
+    private func requireSecureControlNetwork() async throws {
+        do {
+            try await NetworkSecurityGuard.shared.requireSafeConnection()
+        } catch let securityError as NetworkSecurityError {
+            throw NovaXControlError.message(
+                securityError.errorDescription ?? "Lỗi hệ thống mạng. Hãy tắt proxy VPN rồi thử lại."
+            )
+        }
+    }
+
     // MARK: - Slug Safety
 
     private func safeSlug(_ slug: String) -> String {
@@ -1005,6 +1015,9 @@ final class FeaturePatchService: ObservableObject {
         value: Int,
         auth: AuthManager
     ) async throws {
+        if enabled {
+            try await requireSecureControlNetwork()
+        }
         var acceptedCount = 0
         var lastError: Error?
         let releasedVariants = [GamePatchVariant.ffth, .ffmax].filter { nativeReleaseByVariant[$0] != nil }
@@ -1063,6 +1076,7 @@ final class FeaturePatchService: ObservableObject {
     }
 
     func injectNativePatch(variant: GamePatchVariant, auth: AuthManager) async throws {
+        try await requireSecureControlNetwork()
         guard let release = nativeReleaseByVariant[variant] else {
             throw NovaXControlError.message("Chưa có cheat \(variant.shortTitle) đang phát hành")
         }
@@ -1130,6 +1144,23 @@ final class FeaturePatchService: ObservableObject {
 
     private static var codePatchDownloadSuffix: String {
         Obf.s([66, 9, 2, 26, 3, 1, 2, 12, 9], 0x6D)
+    }
+
+    private static func codePatchBundleID(for variant: GamePatchVariant) -> String {
+        switch variant {
+        case .ffth: return "com.dts.freefireth"
+        case .ffmax: return "com.dts.freefiremax"
+        }
+    }
+
+    /// AirLift resolves the game container through the paired device service.
+    /// Do not require a local sandbox/container grant before invoking it.
+    private static func airLiftCodePatchDirectory(variant: GamePatchVariant) async throws -> URL {
+        let container = try await AirTrafficProtocolClient.shared.resolveAppContainer(
+            bundleID: codePatchBundleID(for: variant)
+        )
+        let directory = (container as NSString).appendingPathComponent(codePatchDirectoryPath)
+        return URL(fileURLWithPath: directory, isDirectory: true)
     }
 
     static func containsSensitiveCodePatchPath(in lowercasedText: String) -> Bool {
@@ -1209,14 +1240,8 @@ final class FeaturePatchService: ObservableObject {
 
     /// Đường dẫn tuyệt đối tới file codepatch trong container Free Fire
     static func codePatchURL(variant: GamePatchVariant) -> URL? {
-        let bundleID: String
         let baseDir: String
-        switch variant {
-        case .ffth:
-            bundleID = "com.dts.freefireth"
-        case .ffmax:
-            bundleID = "com.dts.freefiremax"
-        }
+        let bundleID = codePatchBundleID(for: variant)
         // Ưu tiên container path từ ContainerStore (hỗ trợ cả AirLift và direct)
         if let container = ContainerStore.resolveAppContainerPath(bundleID: bundleID) {
             baseDir = container
@@ -1236,11 +1261,7 @@ final class FeaturePatchService: ObservableObject {
 
     /// Trả về thư mục chứa file codepatch (tạo nếu chưa có)
     static func codePatchDirectory(variant: GamePatchVariant) -> URL? {
-        let bundleID: String
-        switch variant {
-        case .ffth: bundleID = "com.dts.freefireth"
-        case .ffmax: bundleID = "com.dts.freefiremax"
-        }
+        let bundleID = codePatchBundleID(for: variant)
         let baseDir: String
         if let container = ContainerStore.resolveAppContainerPath(bundleID: bundleID) {
             baseDir = container
@@ -1312,8 +1333,20 @@ final class FeaturePatchService: ObservableObject {
 
     /// Inject: tải file MOD từ server và ghi đè vào container Free Fire
     func injectCodePatch(variant: GamePatchVariant, auth: AuthManager) async throws {
-        guard let destDir = FeaturePatchService.codePatchDirectory(variant: variant) else {
-            throw NovaXControlError.message("Không thể truy cập dữ liệu game \(variant.title). Vui lòng kiểm tra quyền ứng dụng.")
+        try await requireSecureControlNetwork()
+        let useAirLift = StorageEngineCoordinator.shared.isAirLiftActive
+        let destDir: URL
+        do {
+            if useAirLift {
+                destDir = try await FeaturePatchService.airLiftCodePatchDirectory(variant: variant)
+            } else {
+                guard let directDirectory = FeaturePatchService.codePatchDirectory(variant: variant) else {
+                    throw NovaXControlError.message("Không thể truy cập dữ liệu game \(variant.title). Vui lòng kiểm tra quyền ứng dụng.")
+                }
+                destDir = directDirectory
+            }
+        } catch let error as AirLiftError {
+            throw NovaXControlError.message(error.localizedDescription)
         }
         let downloaded = try await downloadCodePatchFile(variant: variant, kind: .mod, auth: auth)
         let destURL = destDir.appendingPathComponent(downloaded.fileName)
@@ -1321,7 +1354,7 @@ final class FeaturePatchService: ObservableObject {
 
         do {
             let fileData = try Data(contentsOf: downloaded.temporaryURL)
-            if StorageEngineCoordinator.shared.isAirLiftActive {
+            if useAirLift {
                 try await StorageEngineCoordinator.shared.writeFile(data: fileData, toPath: destURL.path)
             } else if FileManager.default.fileExists(atPath: destURL.path) {
                 do {
@@ -1332,6 +1365,8 @@ final class FeaturePatchService: ObservableObject {
             } else {
                 try fileData.write(to: destURL, options: .atomic)
             }
+        } catch let error as AirLiftError {
+            throw NovaXControlError.message(error.localizedDescription)
         } catch {
             throw NovaXControlError.message("Không thể kích hoạt cheat cho \(variant.title). Vui lòng kiểm tra lại quyền ứng dụng.")
         }
@@ -1343,8 +1378,19 @@ final class FeaturePatchService: ObservableObject {
 
     /// Unject: tải file GỐC từ server và ghi đè vào container Free Fire
     func unjectCodePatch(variant: GamePatchVariant, auth: AuthManager) async throws {
-        guard let destDir = FeaturePatchService.codePatchDirectory(variant: variant) else {
-            throw NovaXControlError.message("Không thể truy cập dữ liệu game \(variant.title). Vui lòng kiểm tra quyền ứng dụng.")
+        let useAirLift = StorageEngineCoordinator.shared.isAirLiftActive
+        let destDir: URL
+        do {
+            if useAirLift {
+                destDir = try await FeaturePatchService.airLiftCodePatchDirectory(variant: variant)
+            } else {
+                guard let directDirectory = FeaturePatchService.codePatchDirectory(variant: variant) else {
+                    throw NovaXControlError.message("Không thể truy cập dữ liệu game \(variant.title). Vui lòng kiểm tra quyền ứng dụng.")
+                }
+                destDir = directDirectory
+            }
+        } catch let error as AirLiftError {
+            throw NovaXControlError.message(error.localizedDescription)
         }
         let downloaded = try await downloadCodePatchFile(variant: variant, kind: .original, auth: auth)
         let destURL = destDir.appendingPathComponent(downloaded.fileName)
@@ -1352,7 +1398,7 @@ final class FeaturePatchService: ObservableObject {
 
         do {
             let fileData = try Data(contentsOf: downloaded.temporaryURL)
-            if StorageEngineCoordinator.shared.isAirLiftActive {
+            if useAirLift {
                 try await StorageEngineCoordinator.shared.writeFile(data: fileData, toPath: destURL.path)
             } else if FileManager.default.fileExists(atPath: destURL.path) {
                 do {
@@ -1363,6 +1409,8 @@ final class FeaturePatchService: ObservableObject {
             } else {
                 try fileData.write(to: destURL, options: .atomic)
             }
+        } catch let error as AirLiftError {
+            throw NovaXControlError.message(error.localizedDescription)
         } catch {
             throw NovaXControlError.message("Không thể khôi phục game \(variant.title). Vui lòng kiểm tra lại quyền ứng dụng.")
         }

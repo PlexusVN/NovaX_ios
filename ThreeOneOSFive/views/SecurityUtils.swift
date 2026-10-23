@@ -3,6 +3,7 @@ import UIKit
 import CryptoKit
 import Security
 import CommonCrypto
+import CFNetwork
 
 // MARK: - Keychain helpers (sideload-safe: no entitlement dependency)
 
@@ -93,20 +94,172 @@ enum HMACUtils {
     }
 }
 
-// MARK: - Certificate Pinning (Disabled)
+// MARK: - Proxy / TLS interception protection
 
-class CertPinningDelegate: NSObject, URLSessionDelegate {
+enum NetworkSecurityError: LocalizedError {
+    case proxyConfigured
+    case tlsInterceptionDetected
+
+    var errorDescription: String? {
+        switch self {
+        case .proxyConfigured:
+            return "Lỗi hệ thống: phát hiện HTTP/HTTPS proxy. Hãy tắt ProxyPin, proxy hoặc VPN bắt gói tin rồi thử lại. LocalDevVPN của AirLift vẫn được hỗ trợ."
+        case .tlsInterceptionDetected:
+            return "Lỗi hệ thống: kết nối HTTPS đang bị giải mã bởi chứng chỉ CA proxy. Hãy tắt ProxyPin/proxy VPN và gỡ hoặc tắt tin cậy chứng chỉ CA rồi thử lại."
+        }
+    }
+}
+
+private enum AstraServerTrust {
+    static let protectedHost = "zynox.click"
+
+    // SHA-256 of the DER certificates currently authorized for zynox.click:
+    // the active leaf, Google Trust Services WE1 intermediate, and its
+    // GlobalSign ECC Root CA R4. Keeping the intermediate/root pins permits
+    // ordinary leaf renewal without accepting a user-installed MITM CA.
+    private static let certificatePins: Set<String> = [
+        "IdQUF8E+9XNz3x4jmjWBYdYAZvahNfxagxuz9wc77wA=",
+        "oof/q3Ysxpom1IIDft9wH2U86JkCXGKn5cuIu5tBnLs=",
+        "sIXXC5ZPGRpz5K8NVK56Dgeq/a+bcd0IYhOKtzJaJKI="
+    ]
+
+    static func accepts(_ trust: SecTrust, host: String) -> Bool {
+        guard host.caseInsensitiveCompare(protectedHost) == .orderedSame else { return false }
+        SecTrustSetPolicies(trust, SecPolicyCreateSSL(true, host as CFString))
+        var trustError: CFError?
+        guard SecTrustEvaluateWithError(trust, &trustError) else { return false }
+
+        guard let chain = SecTrustCopyCertificateChain(trust) as? [SecCertificate] else { return false }
+        for certificate in chain {
+            let der = SecCertificateCopyData(certificate) as Data
+            let pin = Data(SHA256.hash(data: der)).base64EncodedString()
+            if certificatePins.contains(pin) { return true }
+        }
+        return false
+    }
+}
+
+final class CertPinningDelegate: NSObject, URLSessionDelegate {
     static let shared = CertPinningDelegate()
 
     func urlSession(_ session: URLSession,
                     didReceive challenge: URLAuthenticationChallenge,
                     completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
-        completionHandler(.performDefaultHandling, nil)
+        guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+              challenge.protectionSpace.host.caseInsensitiveCompare(AstraServerTrust.protectedHost) == .orderedSame,
+              let trust = challenge.protectionSpace.serverTrust else {
+            completionHandler(.performDefaultHandling, nil)
+            return
+        }
+        guard AstraServerTrust.accepts(trust, host: challenge.protectionSpace.host) else {
+            completionHandler(.cancelAuthenticationChallenge, nil)
+            return
+        }
+        completionHandler(.useCredential, URLCredential(trust: trust))
+    }
+}
+
+private final class ProxyProbeDelegate: NSObject, URLSessionDelegate {
+    private let lock = NSLock()
+    private var rejectedTrust = false
+
+    var detectedInterception: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return rejectedTrust
+    }
+
+    func urlSession(_ session: URLSession,
+                    didReceive challenge: URLAuthenticationChallenge,
+                    completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+              challenge.protectionSpace.host.caseInsensitiveCompare(AstraServerTrust.protectedHost) == .orderedSame,
+              let trust = challenge.protectionSpace.serverTrust else {
+            completionHandler(.performDefaultHandling, nil)
+            return
+        }
+        if AstraServerTrust.accepts(trust, host: challenge.protectionSpace.host) {
+            completionHandler(.useCredential, URLCredential(trust: trust))
+        } else {
+            lock.lock()
+            rejectedTrust = true
+            lock.unlock()
+            completionHandler(.cancelAuthenticationChallenge, nil)
+        }
+    }
+}
+
+final class NetworkSecurityGuard {
+    static let shared = NetworkSecurityGuard()
+
+    private init() {}
+
+    func requireSafeConnection() async throws {
+        if Self.hasExplicitSystemProxy() {
+            throw NetworkSecurityError.proxyConfigured
+        }
+
+        let delegate = ProxyProbeDelegate()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpShouldSetCookies = false
+        configuration.httpCookieAcceptPolicy = .never
+        configuration.timeoutIntervalForRequest = 8
+        configuration.timeoutIntervalForResource = 10
+        let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+        defer { session.invalidateAndCancel() }
+
+        guard let url = URL(string: "https://zynox.click/Nova-logo.png") else { return }
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
+        do {
+            _ = try await session.data(for: request)
+        } catch {
+            if delegate.detectedInterception {
+                throw NetworkSecurityError.tlsInterceptionDetected
+            }
+            // Offline/DNS failures are handled by the protected API call. They
+            // must not be mislabeled as a proxy or block LocalDevVPN/AirLift.
+        }
+    }
+
+    private static func hasExplicitSystemProxy() -> Bool {
+        guard let settings = CFNetworkCopySystemProxySettings()?.takeRetainedValue() as? [String: Any] else {
+            return false
+        }
+
+        func dictionaryHasProxy(_ dictionary: [String: Any]) -> Bool {
+            func enabled(_ key: CFString) -> Bool {
+                if let number = dictionary[key as String] as? NSNumber { return number.boolValue }
+                if let boolean = dictionary[key as String] as? Bool { return boolean }
+                return false
+            }
+            return enabled(kCFNetworkProxiesHTTPEnable)
+                || enabled(kCFNetworkProxiesHTTPSEnable)
+                || enabled(kCFNetworkProxiesSOCKSEnable)
+                || enabled(kCFNetworkProxiesProxyAutoConfigEnable)
+                || enabled(kCFNetworkProxiesProxyAutoDiscoveryEnable)
+        }
+
+        if dictionaryHasProxy(settings) { return true }
+
+        // Wi-Fi/manual proxies can be reported only inside __SCOPED__. Inspect
+        // every interface, including utun, but only react to explicit proxy
+        // flags. LocalDevVPN configures a route to 10.7.0.1 and no proxy flags,
+        // so its AirLift tunnel remains allowed.
+        if let scoped = settings["__SCOPED__"] as? [String: Any] {
+            for value in scoped.values {
+                if let dictionary = value as? [String: Any], dictionaryHasProxy(dictionary) {
+                    return true
+                }
+            }
+        }
+        return false
     }
 }
 
 // Legacy API (backward compat)
-var expectedServerPin: String { "" }
+var expectedServerPin: String { "oof/q3Ysxpom1IIDft9wH2U86JkCXGKn5cuIu5tBnLs=" }
 
 // MARK: - Device Utils
 
