@@ -166,6 +166,46 @@ final class AirLiftTunnelManager: ObservableObject {
         return false
     }
 
+    /// Addresses RemoteXPC may advertise back to the device while it
+    /// establishes the tunnel. These must be real non-tunnel interfaces
+    /// (Wi-Fi/cellular), not the LocalDevVPN peer itself.
+    nonisolated static func remoteXPCHostCandidates() -> [String] {
+        var interfaces: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&interfaces) == 0, let first = interfaces else { return [] }
+        defer { freeifaddrs(interfaces) }
+
+        var wifi: [String] = []
+        var cellularAndOther: [String] = []
+        var seen = Set<String>()
+        var cursor: UnsafeMutablePointer<ifaddrs>? = first
+
+        while let current = cursor {
+            defer { cursor = current.pointee.ifa_next }
+            guard let address = current.pointee.ifa_addr,
+                  address.pointee.sa_family == sa_family_t(AF_INET),
+                  let ipv4 = numericHost(address),
+                  !ipv4.hasPrefix("127."),
+                  !ipv4.hasPrefix("169.254."),
+                  seen.insert(ipv4).inserted else {
+                continue
+            }
+
+            let name = String(cString: current.pointee.ifa_name)
+            guard !isTunnelInterface(name) else { continue }
+            if name == "en0" {
+                wifi.append(ipv4)
+            } else {
+                cellularAndOther.append(ipv4)
+            }
+        }
+        return wifi + cellularAndOther
+    }
+
+    private nonisolated static func isTunnelInterface(_ name: String) -> Bool {
+        name.hasPrefix("utun") || name.hasPrefix("ipsec") ||
+            name.hasPrefix("tap") || name.hasPrefix("ppp")
+    }
+
     private nonisolated static func routeSource(to host: String) -> String? {
         let descriptor = socket(AF_INET, SOCK_DGRAM, 0)
         guard descriptor >= 0 else { return nil }

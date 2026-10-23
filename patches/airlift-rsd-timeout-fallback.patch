@@ -1,0 +1,72 @@
+diff --git a/rust-core/src/exploit.rs b/rust-core/src/exploit.rs
+index a759c80..3193c15 100644
+--- a/rust-core/src/exploit.rs
++++ b/rust-core/src/exploit.rs
+@@ -334,7 +334,7 @@ async fn try_rsd(
+ 
+         logger.log(format!("airlift: trying RSD tunnel on {ip_str}:{RSD_PORT} via RemoteXPC..."));
+         match tokio::time::timeout(
+-            std::time::Duration::from_millis(2500),
++            std::time::Duration::from_millis(6000),
+             idevice_ffi::tunnel_provider::tunnel_create_remotexpc_multihost_async(
+                 socket_addr,
+                 "Airlift",
+@@ -358,7 +358,7 @@ async fn try_rsd(
+                 if failure.kind != idevice_ffi::tunnel_provider::TunnelFailureKind::TunnelFailureRsdUnreachable {
+                     logger.log(format!("airlift: fallback trying raw RPPairing on {ip_str}:{RSD_PORT}..."));
+                     match tokio::time::timeout(
+-                        std::time::Duration::from_millis(2500),
++                        std::time::Duration::from_millis(6000),
+                         idevice_ffi::tunnel_provider::tunnel_create_rppairing_multihost_async(
+                             socket_addr,
+                             "Airlift",
+@@ -393,9 +393,48 @@ async fn try_rsd(
+                 }
+             }
+             Err(_) => {
+-                let err_msg = format!("{ip_str}:{RSD_PORT}: RemoteXPC timed out after 2.5s");
++                let err_msg = format!("{ip_str}:{RSD_PORT}: RemoteXPC timed out after 6s");
+                 logger.log(format!("airlift: {err_msg}"));
+                 *last_err = err_msg;
++
++                // A RemoteXPC handshake timeout does not prove that RSD is
++                // unreachable. Some builds expose raw RPPairing on the same
++                // endpoint, so retain the older reliable fallback instead of
++                // abandoning this host and eventually reporting 172.16.0.1.
++                logger.log(format!("airlift: timeout fallback trying raw RPPairing on {ip_str}:{RSD_PORT}..."));
++                match tokio::time::timeout(
++                    std::time::Duration::from_millis(6000),
++                    idevice_ffi::tunnel_provider::tunnel_create_rppairing_multihost_async(
++                        socket_addr,
++                        "Airlift",
++                        &mut rpf,
++                        &extra_hosts,
++                    ),
++                ).await {
++                    Ok(Ok((adapter, handshake))) => {
++                        logger.log(format!("airlift: tunnel connected successfully on {ip_str}:{RSD_PORT} via raw RPPairing!"));
++                        set_last_working_route(CachedRoute {
++                            host: ip_str.clone(),
++                            mode: CachedRouteMode::RsdRawRpPairing,
++                        });
++                        return Some(AppDeviceTunnel::Rsd { adapter, handshake });
++                    }
++                    Ok(Err(raw_failure)) => {
++                        let is_pair_verify = raw_failure.kind == idevice_ffi::tunnel_provider::TunnelFailureKind::TunnelFailurePairVerify;
++                        let extra_hint = if is_pair_verify {
++                            " (iPhone rejected pairing keys — re-pair in Settings › Privacy & Security › Developer Mode)"
++                        } else {
++                            ""
++                        };
++                        *last_err = format!("{ip_str}:{RSD_PORT}: {:?}{extra_hint}", raw_failure.kind);
++                        logger.log(format!("airlift: raw RPPairing on {ip_str}:{RSD_PORT} failed: {:?}{extra_hint}", raw_failure.kind));
++                    }
++                    Err(_) => {
++                        let raw_err = format!("{ip_str}:{RSD_PORT}: raw RPPairing timed out after 6s");
++                        logger.log(format!("airlift: {raw_err}"));
++                        *last_err = raw_err;
++                    }
++                }
+             }
+         }
+     }

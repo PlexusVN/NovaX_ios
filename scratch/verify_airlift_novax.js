@@ -81,6 +81,9 @@ const airTrafficClient = fs.readFileSync(path.join(__dirname, '..', 'ThreeOneOSF
 check('AirTraffic cho FFI tự xác minh sau khi có route tunnel',
     airTrafficClient.includes('guard tunnel.isTunnelRouteDetected else') &&
     !airTrafficClient.includes('guard tunnel.isOperational else'));
+check('RemoteXPC multihost candidates are configured',
+    tunnelDetector.includes('remoteXPCHostCandidates') &&
+    airTrafficClient.includes('al_set_target_hosts'));
 
 const featurePatch = fs.readFileSync(path.join(__dirname, '..', 'ThreeOneOSFive/helpers/FeaturePatchService.swift'), 'utf8');
 const injectStart = featurePatch.indexOf('func injectCodePatch(');
@@ -109,9 +112,9 @@ check('Tên file lấy từ header đã giải mã và được kiểm tra an to
 
 const securityUtils = fs.readFileSync(path.join(__dirname, '..', 'ThreeOneOSFive/views/SecurityUtils.swift'), 'utf8');
 check('Proxy guard chỉ dựa trên cờ proxy tường minh',
-    securityUtils.includes('kCFNetworkProxiesHTTPEnable') &&
-    securityUtils.includes('kCFNetworkProxiesHTTPSEnable') &&
-    securityUtils.includes('kCFNetworkProxiesProxyAutoConfigEnable'));
+    securityUtils.includes('enabled("HTTPEnable")') &&
+    securityUtils.includes('enabled("HTTPSEnable")') &&
+    securityUtils.includes('enabled("ProxyAutoConfigEnable")'));
 check('Proxy guard không chặn LocalDevVPN chỉ vì interface utun',
     !securityUtils.includes('hasPrefix("utun")'));
 

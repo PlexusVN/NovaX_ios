@@ -8,6 +8,7 @@
 import Foundation
 import Combine
 import AirliftFFI
+import Darwin
 
 enum AirLiftError: Error, LocalizedError {
     case tunnelNotConnected
@@ -199,10 +200,33 @@ final class AirTrafficProtocolClient: ObservableObject {
     }
 
     private func configureTargetHost() async throws {
-        let code = primaryHost.withCString { al_set_target_host($0) }
-        guard code == 0 else {
+        // Drop a route cached by a previous VPN/session, then provide both the
+        // LocalDevVPN peer and real Wi-Fi/cellular interface addresses needed
+        // by RemoteXPC's multihost handshake.
+        al_clear_target_hosts()
+        let primaryCode = primaryHost.withCString { al_set_target_host($0) }
+        guard primaryCode == 0 else {
             throw AirLiftError.socketConnectionFailed("Không thể đặt host LocalDevVPN \(primaryHost).")
         }
+
+        var candidates = [primaryHost]
+        for candidate in AirLiftTunnelManager.remoteXPCHostCandidates()
+            where !candidates.contains(candidate) {
+            candidates.append(candidate)
+        }
+
+        let allocated = candidates.map { strdup($0) }
+        defer { allocated.forEach { free($0) } }
+        var pointers = allocated.map { UnsafePointer($0) }
+        let candidatesCode: Int32 = pointers.withUnsafeBufferPointer { buffer in
+            guard let base = buffer.baseAddress else { return -1 }
+            return al_set_target_hosts(base, buffer.count)
+        }
+        guard candidatesCode == 0 else {
+            al_clear_target_hosts()
+            throw AirLiftError.socketConnectionFailed("Không thể cấu hình route RemoteXPC.")
+        }
+        log("airlift: configured target hosts: \(candidates.joined(separator: ", "))")
     }
 
     private func verifyCanary(pairingPath: String, targetDirectory: String) async throws {

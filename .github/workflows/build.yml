@@ -23,6 +23,15 @@ jobs:
         run: |
           test -f Frameworks/AirliftFFI.xcframework/ios-arm64/libairlift_ffi.a
 
+      - name: Build patched AirliftFFI
+        run: |
+          git clone --filter=blob:none https://github.com/Mak5er/AirCard-iOS.git "$RUNNER_TEMP/AirCard-iOS"
+          git -C "$RUNNER_TEMP/AirCard-iOS" checkout 40640c4d827aeab8d798285b57d24fcf6be070d0
+          git -C "$RUNNER_TEMP/AirCard-iOS" apply "$GITHUB_WORKSPACE/patches/airlift-rsd-timeout-fallback.patch"
+          DEVELOPER_DIR="$(xcode-select -p)" bash "$RUNNER_TEMP/AirCard-iOS/build-ios.sh"
+          rm -rf Frameworks/AirliftFFI.xcframework
+          cp -R "$RUNNER_TEMP/AirCard-iOS/AirliftFFI.xcframework" Frameworks/AirliftFFI.xcframework
+
       - name: Build App (Unsigned)
         run: |
           mkdir -p build
@@ -59,3 +68,9 @@ jobs:
         with:
           name: Astra-Unsigned-IPA
           path: build/Astra.ipa
+
+      - name: Upload patched AirliftFFI
+        uses: actions/upload-artifact@v4
+        with:
+          name: Astra-Patched-AirliftFFI
+          path: Frameworks/AirliftFFI.xcframework

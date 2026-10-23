@@ -69,6 +69,10 @@ $tunnelDetector = Get-Content -Path "c:\Users\Khai\Desktop\Nova IOS 27\NovaX\Thr
 Assert-Condition "Mo app LocalDevVPN bang URL scheme" ($tunnelDetector -match "localdevvpn://")
 Assert-Condition "Kiem tra peer 10.7.0.1" ($tunnelDetector -match "10.7.0.1")
 Assert-Condition "Khong tao NETunnelProviderManager" ($tunnelDetector -notmatch "NETunnelProviderManager")
+Assert-Condition "Dong bo host RemoteXPC Wi-Fi/cellular" (
+    ($tunnelDetector -match "remoteXPCHostCandidates") -and
+    ((Get-Content "c:\Users\Khai\Desktop\Nova IOS 27\NovaX\ThreeOneOSFive\helpers\AirTrafficProtocolClient.swift" -Raw) -match "al_set_target_hosts")
+)
 
 # 5. Settings UI Integration
 Write-Host "`n5. Kiem tra Giao dien Cai dat (Settings UI):" -ForegroundColor Yellow
