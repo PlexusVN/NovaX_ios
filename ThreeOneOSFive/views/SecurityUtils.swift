@@ -229,16 +229,20 @@ final class NetworkSecurityGuard {
         }
 
         func dictionaryHasProxy(_ dictionary: [String: Any]) -> Bool {
-            func enabled(_ key: CFString) -> Bool {
-                if let number = dictionary[key as String] as? NSNumber { return number.boolValue }
-                if let boolean = dictionary[key as String] as? Bool { return boolean }
+            func enabled(_ key: String) -> Bool {
+                if let number = dictionary[key] as? NSNumber { return number.boolValue }
+                if let boolean = dictionary[key] as? Bool { return boolean }
                 return false
             }
-            return enabled(kCFNetworkProxiesHTTPEnable)
-                || enabled(kCFNetworkProxiesHTTPSEnable)
-                || enabled(kCFNetworkProxiesSOCKSEnable)
-                || enabled(kCFNetworkProxiesProxyAutoConfigEnable)
-                || enabled(kCFNetworkProxiesProxyAutoDiscoveryEnable)
+            // Several CFNetwork proxy constants are marked unavailable for an
+            // iOS deployment target even though the settings dictionary uses
+            // these stable key names. Reading the dictionary by key keeps this
+            // check available on-device without relying on macOS-only symbols.
+            return enabled("HTTPEnable")
+                || enabled("HTTPSEnable")
+                || enabled("SOCKSEnable")
+                || enabled("ProxyAutoConfigEnable")
+                || enabled("ProxyAutoDiscoveryEnable")
         }
 
         if dictionaryHasProxy(settings) { return true }
