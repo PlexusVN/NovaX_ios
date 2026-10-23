@@ -282,10 +282,10 @@ final class FeaturePatchService: ObservableObject {
             NovaXFeatureOption(value: 0, title: "Ngực"),
             NovaXFeatureOption(value: 1, title: "Đầu")
         ]),
-        NovaXFeatureDefinition(id: "aim.target", title: "Mục tiêu", section: "Aim", type: "select", min: 0, max: 2, default: 0, options: [
-            NovaXFeatureOption(value: 0, title: "Gần tâm"),
-            NovaXFeatureOption(value: 1, title: "Gần người"),
-            NovaXFeatureOption(value: 2, title: "Máu thấp")
+        NovaXFeatureDefinition(id: "aim.target", title: "Vị trí Silent Aim", section: "Aim", type: "select", min: 0, max: 2, default: 0, options: [
+            NovaXFeatureOption(value: 0, title: "Bụng"),
+            NovaXFeatureOption(value: 1, title: "Đầu"),
+            NovaXFeatureOption(value: 2, title: "Hỗn hợp")
         ]),
         NovaXFeatureDefinition(id: "aim.headRate", title: "Tỉ lệ Head", section: "Aim", type: "select", min: 0, max: 4, default: 0, options: [
             NovaXFeatureOption(value: 0, title: "0%"),
