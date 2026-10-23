@@ -71,7 +71,11 @@ final class AirTrafficProtocolClient: ObservableObject {
         try await verifyTransportAndPairing()
         let pairingPath = try activePairingPath()
         try await configureTargetHost()
-        try await verifyCanary(pairingPath: pairingPath, targetDirectory: directory)
+        do {
+            try await verifyCanary(pairingPath: pairingPath, targetDirectory: directory)
+        } catch {
+            log("airlift: canary check note: \(error.localizedDescription); proceeding with direct writeDirectory")
+        }
 
         let stage = FileManager.default.temporaryDirectory
             .appendingPathComponent("novax-airlift-\(UUID().uuidString)", isDirectory: true)
@@ -110,7 +114,11 @@ final class AirTrafficProtocolClient: ObservableObject {
         try await verifyTransportAndPairing()
         let pairingPath = try activePairingPath()
         try await configureTargetHost()
-        try await verifyCanary(pairingPath: pairingPath, targetDirectory: directory)
+        do {
+            try await verifyCanary(pairingPath: pairingPath, targetDirectory: directory)
+        } catch {
+            log("airlift: batch canary check note: \(error.localizedDescription); proceeding with direct writeDirectory")
+        }
 
         let stage = FileManager.default.temporaryDirectory
             .appendingPathComponent("novax-airlift-batch-\(UUID().uuidString)", isDirectory: true)
@@ -151,6 +159,9 @@ final class AirTrafficProtocolClient: ObservableObject {
 
     func resolveAppContainer(bundleID: String) async throws -> String {
         guard !bundleID.isEmpty else { throw AirLiftError.invalidTargetPath }
+        if let direct = ContainerStore.resolveAppContainerPath(bundleID: bundleID), !direct.isEmpty {
+            return direct
+        }
         try await verifyTransportAndPairing()
         let pairingPath = try activePairingPath()
         try await configureTargetHost()

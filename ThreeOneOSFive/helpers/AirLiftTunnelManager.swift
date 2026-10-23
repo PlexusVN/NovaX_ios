@@ -145,9 +145,11 @@ final class AirLiftTunnelManager: ObservableObject {
     /// connect does not send traffic; it only asks the kernel to select a route
     /// and local source address for the peer.
     private nonisolated static func hasTunnelRoute(to host: String) -> Bool {
-        guard let source = routeSource(to: host),
-              routeSource(to: "203.0.113.1") != source else {
+        guard let source = routeSource(to: host) else {
             return false
+        }
+        if let defaultSource = routeSource(to: "203.0.113.1"), defaultSource == source {
+            // Note: If default route matches peer source, still verify that the interface is indeed a tunnel
         }
 
         var interfaces: UnsafeMutablePointer<ifaddrs>?

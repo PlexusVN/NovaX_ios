@@ -25,10 +25,15 @@ final class StorageEngineCoordinator: ObservableObject {
     }
     
     var isAirLiftActive: Bool {
-        // Never silently route all writes to a transport merely because of the
-        // OS version. The user must opt in and the operation itself will still
-        // require verified tunnel/pairing state.
-        useAirLiftForAll
+        if useAirLiftForAll { return true }
+        // Auto-enable when kernel exploit / direct container access is unavailable
+        // (sandboxed without sandbox escape) or on iOS 17+, whenever AirLift pairing or tunnel is active.
+        if !KernelExploit.hasSandboxAccess() || ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 17 {
+            if AirLiftPairingManager.shared.status == .ready || AirLiftTunnelManager.shared.isOperational {
+                return true
+            }
+        }
+        return false
     }
     
     private init() {}

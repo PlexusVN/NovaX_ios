@@ -292,7 +292,7 @@ struct AirLiftDashboardCard: View {
 
     private var pairingInstructions: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("QUY TRÌNH GHÉP ĐÔI TRÊN THIẾT BỊ (iOS 27+):")
+            Text("QUY TRÌNH GHÉP ĐÔI TRÊN THIẾT BỊ (iOS 16+ / iOS 27):")
                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                 .foregroundColor(AppTheme.statusInfo)
             Text("1. Đảm bảo iPhone đã bật Wi-Fi (hoặc Điểm phát sóng).")

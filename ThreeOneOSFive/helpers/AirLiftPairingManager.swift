@@ -34,7 +34,7 @@ final class AirLiftPairingManager: ObservableObject {
         var errorDescription: String? {
             switch self {
             case .unsupportedOS:
-                return "Ghép đôi trực tiếp yêu cầu iOS 27 trở lên."
+                return "Ghép đôi trực tiếp yêu cầu iOS 16 trở lên."
             case .busy:
                 return "Một phiên ghép đôi đang chạy."
             case .localNetworkPermission:
@@ -141,7 +141,7 @@ final class AirLiftPairingManager: ObservableObject {
     }
 
     func pairDirectlyOnDevice() async {
-        guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 else {
+        guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 16 else {
             notify(message: PairingError.unsupportedOS.localizedDescription)
             return
         }

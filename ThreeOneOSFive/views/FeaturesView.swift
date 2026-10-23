@@ -453,11 +453,14 @@ struct FeaturesView: View {
                 if let controlErr = error as? NovaXControlError {
                     let desc = controlErr.localizedDescription
                     let lower = desc.lowercased()
-                    let isSensitive = lower.contains("/") || lower.contains("\\") ||
+                    let isAirLiftMessage = desc.contains("LocalDevVPN") || desc.contains("Pairing") ||
+                        desc.contains("pairing") || desc.contains("AirLift") ||
+                        desc.contains("RSD") || desc.contains("lockdownd")
+                    let isSensitive = !isAirLiftMessage && (lower.contains("/") || lower.contains("\\") ||
                         lower.contains("container") || lower.contains("assembly") ||
                         lower.contains(".bundle") || lower.contains(".bytes") ||
                         FeaturePatchService.containsSensitiveCodePatchPath(in: lower) ||
-                        lower.contains("file") || lower.contains("directory") || lower.contains("path")
+                        lower.contains("file") || lower.contains("directory") || lower.contains("path"))
                     cleanMsg = isSensitive ? defaultMsg : desc
                 } else {
                     cleanMsg = defaultMsg

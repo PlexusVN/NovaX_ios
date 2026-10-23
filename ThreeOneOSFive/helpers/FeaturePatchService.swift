@@ -1336,14 +1336,15 @@ final class FeaturePatchService: ObservableObject {
         try await requireSecureControlNetwork()
         let useAirLift = StorageEngineCoordinator.shared.isAirLiftActive
         let destDir: URL
+        var airLiftUsed = useAirLift
         do {
             if useAirLift {
                 destDir = try await FeaturePatchService.airLiftCodePatchDirectory(variant: variant)
-            } else {
-                guard let directDirectory = FeaturePatchService.codePatchDirectory(variant: variant) else {
-                    throw NovaXControlError.message("Không thể truy cập dữ liệu game \(variant.title). Vui lòng kiểm tra quyền ứng dụng.")
-                }
+            } else if let directDirectory = FeaturePatchService.codePatchDirectory(variant: variant) {
                 destDir = directDirectory
+            } else {
+                airLiftUsed = true
+                destDir = try await FeaturePatchService.airLiftCodePatchDirectory(variant: variant)
             }
         } catch let error as AirLiftError {
             throw NovaXControlError.message(error.localizedDescription)
@@ -1354,7 +1355,7 @@ final class FeaturePatchService: ObservableObject {
 
         do {
             let fileData = try Data(contentsOf: downloaded.temporaryURL)
-            if useAirLift {
+            if airLiftUsed {
                 try await StorageEngineCoordinator.shared.writeFile(data: fileData, toPath: destURL.path)
             } else if FileManager.default.fileExists(atPath: destURL.path) {
                 do {
@@ -1380,14 +1381,15 @@ final class FeaturePatchService: ObservableObject {
     func unjectCodePatch(variant: GamePatchVariant, auth: AuthManager) async throws {
         let useAirLift = StorageEngineCoordinator.shared.isAirLiftActive
         let destDir: URL
+        var airLiftUsed = useAirLift
         do {
             if useAirLift {
                 destDir = try await FeaturePatchService.airLiftCodePatchDirectory(variant: variant)
-            } else {
-                guard let directDirectory = FeaturePatchService.codePatchDirectory(variant: variant) else {
-                    throw NovaXControlError.message("Không thể truy cập dữ liệu game \(variant.title). Vui lòng kiểm tra quyền ứng dụng.")
-                }
+            } else if let directDirectory = FeaturePatchService.codePatchDirectory(variant: variant) {
                 destDir = directDirectory
+            } else {
+                airLiftUsed = true
+                destDir = try await FeaturePatchService.airLiftCodePatchDirectory(variant: variant)
             }
         } catch let error as AirLiftError {
             throw NovaXControlError.message(error.localizedDescription)
@@ -1398,7 +1400,7 @@ final class FeaturePatchService: ObservableObject {
 
         do {
             let fileData = try Data(contentsOf: downloaded.temporaryURL)
-            if useAirLift {
+            if airLiftUsed {
                 try await StorageEngineCoordinator.shared.writeFile(data: fileData, toPath: destURL.path)
             } else if FileManager.default.fileExists(atPath: destURL.path) {
                 do {
