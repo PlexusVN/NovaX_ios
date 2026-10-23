@@ -13,6 +13,7 @@ import Darwin
 enum AirLiftError: Error, LocalizedError {
     case tunnelNotConnected
     case pairingRequired
+    case pairingRevoked
     case invalidTargetPath
     case socketConnectionFailed(String)
     case airTrafficHandshakeFailed(String)
@@ -27,6 +28,8 @@ enum AirLiftError: Error, LocalizedError {
             return "Đường hầm LocalDevVPN chưa kết nối."
         case .pairingRequired:
             return "Chưa ghép đôi thiết bị với Astra. Hãy vào Cài đặt (bánh răng) › AIRLIFT › bấm 'Pair trên máy' để ghép đôi trước khi kích hoạt cheat."
+        case .pairingRevoked:
+            return "Thiết bị iPhone đã hủy ghép đôi với Astra trong Cài đặt. Vui lòng vào Cài đặt › AIRLIFT › bấm 'Pair trên máy' để ghép đôi lại."
         case .invalidTargetPath:
             return "Đường dẫn đích không hợp lệ hoặc không phải đường dẫn tuyệt đối."
         case .socketConnectionFailed(let message):
@@ -157,6 +160,60 @@ final class AirTrafficProtocolClient: ObservableObject {
         throw AirLiftError.remoteReadUnsupported
     }
 
+    static func isPairingRevokedError(_ error: String) -> Bool {
+        let err = error.lowercased()
+        return err.contains("tunnelfailurepairverify") ||
+               err.contains("rejected pairing keys") ||
+               err.contains("pairverify") ||
+               err.contains("pairing revoked") ||
+               err.contains("device rejected") ||
+               err.contains("re-pair in settings") ||
+               err.contains("invalidpairing") ||
+               err.contains("devicenotpaired") ||
+               err.contains("pairingrecord") ||
+               err.contains("not trusted") ||
+               err.contains("unpaired")
+    }
+
+    func verifyPairingWithDevice() async -> (isValid: Bool, isRevoked: Bool, message: String) {
+        guard let pairingPath = try? activePairingPath() else {
+            return (false, false, "Chưa có file pairing hợp lệ.")
+        }
+        guard AirLiftTunnelManager.shared.isOperational else {
+            return (false, false, "LocalDevVPN chưa kết nối.")
+        }
+
+        do {
+            try await configureTargetHost()
+        } catch {
+            return (false, false, error.localizedDescription)
+        }
+
+        let result: FFIStringResult = await runBlocking(name: "Astra.AirLift.ProbePairing") {
+            var output: UnsafeMutablePointer<CChar>?
+            var error: UnsafeMutablePointer<CChar>?
+            let code = pairingPath.withCString { pairing in
+                "com.apple.mobilesafari".withCString { bundle in
+                    al_find_app_container(pairing, bundle, nil, nil, &output, &error)
+                }
+            }
+            let value = Self.consumeString(&output)
+            let message = Self.consumeString(&error)
+            return FFIStringResult(code: code, value: value, error: message)
+        }
+
+        if result.code == 0 {
+            return (true, false, "Ghép đôi hoạt động tốt.")
+        }
+
+        if Self.isPairingRevokedError(result.error) {
+            AirLiftPairingManager.shared.handlePairingRevoked(reason: result.error)
+            return (false, true, "Thiết bị iPhone đã hủy ghép đôi trong Cài đặt.")
+        }
+
+        return (false, false, result.error.isEmpty ? "Không phản hồi từ thiết bị." : result.error)
+    }
+
     func resolveAppContainer(bundleID: String) async throws -> String {
         guard !bundleID.isEmpty else { throw AirLiftError.invalidTargetPath }
         if let direct = ContainerStore.resolveAppContainerPath(bundleID: bundleID), !direct.isEmpty {
@@ -179,6 +236,10 @@ final class AirTrafficProtocolClient: ObservableObject {
             return FFIStringResult(code: code, value: value, error: message)
         }
         guard result.code == 0, !result.value.isEmpty else {
+            if Self.isPairingRevokedError(result.error) {
+                AirLiftPairingManager.shared.handlePairingRevoked(reason: result.error)
+                throw AirLiftError.pairingRevoked
+            }
             throw AirLiftError.executionFailed(
                 result.error.isEmpty ? "Không tìm thấy container của \(bundleID)." : result.error
             )
@@ -202,7 +263,10 @@ final class AirTrafficProtocolClient: ObservableObject {
 
     private func activePairingPath() throws -> String {
         let pairing = AirLiftPairingManager.shared
-        guard pairing.status == .ready,
+        if pairing.status == .revoked {
+            throw AirLiftError.pairingRevoked
+        }
+        guard pairing.status.isPaired,
               let path = pairing.pairingFilePath,
               FileManager.default.fileExists(atPath: path) else {
             throw AirLiftError.pairingRequired
@@ -257,6 +321,10 @@ final class AirTrafficProtocolClient: ObservableObject {
             )
         }
         guard result.code == 0 else {
+            if Self.isPairingRevokedError(result.error) {
+                AirLiftPairingManager.shared.handlePairingRevoked(reason: result.error)
+                throw AirLiftError.pairingRevoked
+            }
             throw AirLiftError.verificationFailed(result.error.isEmpty ? "canary bị từ chối" : result.error)
         }
         guard let data = result.value.data(using: .utf8),
@@ -288,6 +356,10 @@ final class AirTrafficProtocolClient: ObservableObject {
             return FFIVoidResult(code: code, error: Self.consumeString(&error))
         }
         guard result.code == 0 else {
+            if Self.isPairingRevokedError(result.error) {
+                AirLiftPairingManager.shared.handlePairingRevoked(reason: result.error)
+                throw AirLiftError.pairingRevoked
+            }
             throw AirLiftError.executionFailed(
                 result.error.isEmpty ? "AirTraffic không xác nhận phiên ghi." : result.error
             )

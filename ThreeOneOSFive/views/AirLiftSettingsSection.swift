@@ -112,11 +112,14 @@ struct AirLiftDashboardCard: View {
                 .foregroundColor(tunnelManager.isOperational ? AppTheme.statusSuccess : AppTheme.statusError)
             Spacer()
             Button("KIỂM TRA") {
-                Task { await tunnelManager.verifyLoopbackService() }
+                Task {
+                    await tunnelManager.verifyLoopbackService()
+                    await pairingManager.verifyPairingWithDevice(silent: false)
+                }
             }
             .font(.system(size: 9, weight: .bold, design: .monospaced))
             .foregroundColor(AppTheme.statusInfo)
-            .disabled(tunnelManager.status == .checking)
+            .disabled(tunnelManager.status == .checking || pairingManager.status == .verifying)
         }
     }
 
@@ -176,24 +179,61 @@ struct AirLiftDashboardCard: View {
     }
 
     private var pairingStatus: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(pairingStatusColor.opacity(0.12))
-                    .frame(width: 32, height: 32)
-                Image(systemName: pairingManager.status == .ready ? "key.fill" : "lock.trianglebadge.exclamationmark")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(pairingStatusColor)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(pairingStatusColor.opacity(0.12))
+                        .frame(width: 32, height: 32)
+                    Image(systemName: pairingStatusIcon)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(pairingStatusColor)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("AirTraffic Pairing")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundColor(AppTheme.ink)
+                    Text(pairingManager.status.rawValue)
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundColor(pairingStatusColor)
+                }
+                Spacer()
+                if pairingManager.status.isPaired {
+                    Button("XÁC MINH") {
+                        Task { await pairingManager.verifyPairingWithDevice(silent: false) }
+                    }
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundColor(AppTheme.statusInfo)
+                    .disabled(pairingManager.status == .verifying)
+                }
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Text("AirTraffic Pairing")
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundColor(AppTheme.ink)
-                Text(pairingManager.status.rawValue)
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundColor(pairingStatusColor)
+
+            if pairingManager.status == .revoked {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(AppTheme.statusError)
+                    Text("iPhone đã hủy ghép đôi trong Cài đặt. Bấm 'Pair trên máy' ở dưới để kết nối lại.")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(AppTheme.statusError)
+                }
+                .padding(8)
+                .background(AppTheme.statusError.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
-            Spacer()
+        }
+    }
+
+    private var pairingStatusIcon: String {
+        switch pairingManager.status {
+        case .ready, .verified:
+            return "key.fill"
+        case .pairing, .waitingSettings, .verifying:
+            return "arrow.triangle.2.circlepath"
+        case .revoked:
+            return "lock.slash.fill"
+        case .missing, .invalid:
+            return "lock.trianglebadge.exclamationmark"
         }
     }
 
@@ -355,7 +395,7 @@ struct AirLiftDashboardCard: View {
                     )
             }
 
-            if pairingManager.status == .ready {
+            if pairingManager.status.isPaired {
                 Button {
                     Haptics.light()
                     pairingManager.deletePairingFile()
@@ -404,11 +444,11 @@ struct AirLiftDashboardCard: View {
 
     private var pairingStatusColor: Color {
         switch pairingManager.status {
-        case .ready:
+        case .ready, .verified:
             return AppTheme.statusSuccess
-        case .pairing, .waitingSettings:
+        case .pairing, .waitingSettings, .verifying:
             return AppTheme.statusInfo
-        case .missing, .invalid:
+        case .missing, .invalid, .revoked:
             return AppTheme.statusError
         }
     }
@@ -472,6 +512,16 @@ struct AirLiftSettingsSection: View {
                     .font(.subheadline)
                     .foregroundStyle(pairingStatusColor)
             }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                Task { await pairingManager.verifyPairingWithDevice(silent: false) }
+            }
+
+            if pairingManager.status == .revoked {
+                Text("iPhone đã hủy ghép đôi trong Cài đặt. Vui lòng bấm 'Pair trực tiếp trên iPhone' bên dưới để ghép đôi lại.")
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.statusError)
+            }
             
             // 3. Pair trực tiếp trên iPhone
             Button {
@@ -504,7 +554,7 @@ struct AirLiftSettingsSection: View {
             }
             
             // 5. Xoá file pairing
-            if pairingManager.status == .ready {
+            if pairingManager.status.isPaired {
                 Button {
                     pairingManager.deletePairingFile()
                 } label: {
@@ -566,11 +616,11 @@ struct AirLiftSettingsSection: View {
 
     private var pairingStatusColor: Color {
         switch pairingManager.status {
-        case .ready:
+        case .ready, .verified:
             return AppTheme.statusSuccess
-        case .pairing, .waitingSettings:
+        case .pairing, .waitingSettings, .verifying:
             return AppTheme.statusInfo
-        case .missing, .invalid:
+        case .missing, .invalid, .revoked:
             return AppTheme.statusError
         }
     }

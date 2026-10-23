@@ -16,12 +16,19 @@ import AirliftFFI
 final class AirLiftPairingManager: ObservableObject {
     static let shared = AirLiftPairingManager()
 
-    enum PairingStatus: String {
+    enum PairingStatus: String, CaseIterable {
         case ready = "File pairing hợp lệ"
+        case verified = "Ghép đôi hoạt động"
+        case revoked = "Đã bị gỡ trong Cài đặt"
         case missing = "Chưa có"
         case invalid = "Không hợp lệ"
         case pairing = "Đang khởi tạo RPPairing..."
         case waitingSettings = "Chờ ghép đôi từ Cài đặt..."
+        case verifying = "Đang kiểm tra ghép đôi..."
+
+        var isPaired: Bool {
+            self == .ready || self == .verified
+        }
     }
 
     enum PairingError: LocalizedError {
@@ -55,12 +62,19 @@ final class AirLiftPairingManager: ObservableObject {
     @Published var pairingPIN = ""
     @Published var isWiFiConnected = true
 
+    var isPaired: Bool {
+        status.isPaired
+    }
+
     private let pathMonitor = NWPathMonitor()
     private let localNetworkAuthorization = LocalNetworkAuthorization()
     private var netService: NetService?
     private let audioKeepAlive = PairingAudioKeepAlive()
     private var continuation: CheckedContinuation<String, Error>?
     private var pairingThreadActive = false
+    private var cancellables = Set<AnyCancellable>()
+    private var verificationTimer: AnyCancellable?
+    private var isVerifyingPairing = false
 
     nonisolated private static let altIRKKey = "novax.airlift.hostAltIRK"
     nonisolated private static var storedAltIRK: String {
@@ -92,6 +106,7 @@ final class AirLiftPairingManager: ObservableObject {
         migrateLegacyPairingFileIfNeeded()
         checkPairingStatus()
         setupNetworkMonitoring()
+        setupLifecycleMonitoring()
     }
 
     private func setupNetworkMonitoring() {
@@ -103,9 +118,55 @@ final class AirLiftPairingManager: ObservableObject {
         pathMonitor.start(queue: DispatchQueue.global(qos: .utility))
     }
 
+    private func setupLifecycleMonitoring() {
+        NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.checkPairingStatus()
+                    if AirLiftTunnelManager.shared.isOperational && self.status.isPaired {
+                        await self.verifyPairingWithDevice(silent: true)
+                    }
+                }
+            }
+            .store(in: &cancellables)
+
+        AirLiftTunnelManager.shared.$status
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] tunnelStatus in
+                guard let self else { return }
+                if tunnelStatus == .connected && self.status.isPaired && !self.isVerifyingPairing {
+                    Task { @MainActor [weak self] in
+                        await self?.verifyPairingWithDevice(silent: true)
+                    }
+                }
+            }
+            .store(in: &cancellables)
+
+        startContinuousPairingMonitor()
+    }
+
+    func startContinuousPairingMonitor() {
+        verificationTimer?.cancel()
+        verificationTimer = Timer.publish(every: 15.0, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    guard UIApplication.shared.applicationState == .active else { return }
+                    self.checkPairingStatus()
+                    if self.status.isPaired && AirLiftTunnelManager.shared.isOperational && !self.isVerifyingPairing {
+                        await self.verifyPairingWithDevice(silent: true)
+                    }
+                }
+            }
+    }
+
     func checkPairingStatus() {
         guard FileManager.default.fileExists(atPath: pairingFileURL.path) else {
-            status = .missing
+            if status != .revoked {
+                status = .missing
+            }
             pairingFilePath = nil
             return
         }
@@ -115,8 +176,71 @@ final class AirLiftPairingManager: ObservableObject {
             pairingFilePath = nil
             return
         }
-        status = .ready
+        if status != .verified && status != .verifying && status != .pairing && status != .waitingSettings {
+            status = .ready
+        }
         pairingFilePath = pairingFileURL.path
+    }
+
+    func verifyPairingStatus(activeProbe: Bool = false) {
+        checkPairingStatus()
+        guard activeProbe, status.isPaired, AirLiftTunnelManager.shared.isOperational else {
+            return
+        }
+        Task {
+            await verifyPairingWithDevice(silent: true)
+        }
+    }
+
+    func verifyPairingWithDevice(silent: Bool = false) async {
+        guard !isVerifyingPairing else { return }
+        checkPairingStatus()
+        guard status.isPaired else {
+            if !silent {
+                notify(message: "Chưa có file pairing để kiểm tra.")
+            }
+            return
+        }
+        guard AirLiftTunnelManager.shared.isOperational else {
+            if !silent {
+                notify(message: "LocalDevVPN chưa kết nối. Hãy bật LocalDevVPN trước khi kiểm tra ghép đôi.")
+            }
+            return
+        }
+
+        isVerifyingPairing = true
+        let previousStatus = status
+        status = .verifying
+
+        let outcome = await AirTrafficProtocolClient.shared.verifyPairingWithDevice()
+        isVerifyingPairing = false
+
+        if outcome.isValid {
+            status = .verified
+            if !silent {
+                notify(message: "Ghép đôi đang hoạt động bình thường trên iPhone.")
+            }
+        } else if outcome.isRevoked {
+            if !silent {
+                showAlert = true
+            }
+        } else {
+            status = (previousStatus == .verifying) ? .ready : previousStatus
+            if !silent {
+                notify(message: "Không thể kiểm tra ghép đôi: \(outcome.message)")
+            }
+        }
+    }
+
+    func handlePairingRevoked(reason: String) {
+        stopBonjourBroadcast()
+        if FileManager.default.fileExists(atPath: pairingFileURL.path) {
+            try? FileManager.default.removeItem(at: pairingFileURL)
+        }
+        Self.storedAltIRK = ""
+        pairingFilePath = nil
+        status = .revoked
+        notify(message: "Thiết bị iPhone đã hủy ghép đôi với Astra trong Cài đặt. Vui lòng bấm 'Pair trên máy' để ghép đôi lại.")
     }
 
     func importPairingFile(from sourceURL: URL) -> Bool {
@@ -131,8 +255,12 @@ final class AirLiftPairingManager: ObservableObject {
                 return false
             }
             try data.write(to: pairingFileURL, options: [.atomic, .completeFileProtection])
-            checkPairingStatus()
+            status = .ready
+            pairingFilePath = pairingFileURL.path
             notify(message: "Đã nhập file pairing. Bật LocalDevVPN rồi chạy kiểm tra kết nối.")
+            if AirLiftTunnelManager.shared.isOperational {
+                Task { await verifyPairingWithDevice(silent: true) }
+            }
             return true
         } catch {
             notify(message: "Không thể nhập file pairing: \(error.localizedDescription)")
@@ -250,10 +378,11 @@ final class AirLiftPairingManager: ObservableObject {
                 try? data.write(to: pairingFileURL, options: [.atomic, .completeFileProtection])
             }
             checkPairingStatus()
-            guard status == .ready else {
+            guard status.isPaired else {
                 resolve(.failure(PairingError.emptyRecord))
                 return
             }
+            status = .verified
             let label = deviceName.isEmpty ? "iPhone" : deviceName
             resolve(.success(pairingFileURL.path))
             alertMessage = "Đã ghép đôi với \(label)."
@@ -319,7 +448,8 @@ final class AirLiftPairingManager: ObservableObject {
                 try FileManager.default.removeItem(at: pairingFileURL)
             }
             Self.storedAltIRK = ""
-            checkPairingStatus()
+            status = .missing
+            pairingFilePath = nil
             notify(message: "Đã xoá file pairing khỏi thiết bị.")
         } catch {
             notify(message: "Không thể xoá file pairing: \(error.localizedDescription)")

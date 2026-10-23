@@ -29,7 +29,7 @@ final class StorageEngineCoordinator: ObservableObject {
         // Auto-enable when kernel exploit / direct container access is unavailable
         // (sandboxed without sandbox escape) or on iOS 17+, whenever AirLift pairing or tunnel is active.
         if !KernelExploit.hasSandboxAccess() || ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 17 {
-            if AirLiftPairingManager.shared.status == .ready || AirLiftTunnelManager.shared.isOperational {
+            if AirLiftPairingManager.shared.status.isPaired || AirLiftTunnelManager.shared.isOperational {
                 return true
             }
         }
