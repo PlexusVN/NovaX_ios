@@ -507,6 +507,8 @@ struct FeaturesView: View {
                 )
             }
         }
+    }
+
     private var isAirLiftReadyForIOS27: Bool {
         AirLiftTunnelManager.shared.isOperational &&
         AirLiftPairingManager.shared.status.isPaired &&

@@ -37,6 +37,7 @@ enum AppTheme {
     // Semantic status palette: chỉ dùng để truyền đạt trạng thái.
     static let statusSuccess = Color(hex: 0x15803D)
     static let statusInfo    = Color(hex: 0x2563EB)
+    static let statusWarning = Color(hex: 0xD97706)
     static let statusError   = Color(hex: 0xDC2626)
 
     static let positive     = statusSuccess
