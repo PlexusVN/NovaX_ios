@@ -52,6 +52,10 @@ jobs:
           EXECUTABLE=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP_NAME/Info.plist")
           test -x "$APP_NAME/$EXECUTABLE"
           nm -gj "$APP_NAME/$EXECUTABLE" | grep -Fx "_ALGetGrappaToken"
+          strings "$APP_NAME/$EXECUTABLE" | grep -F "RemoteXPC timed out after 6s"
+          strings "$APP_NAME/$EXECUTABLE" | grep -F "timeout fallback trying raw RPPairing"
+          strings "$APP_NAME/$EXECUTABLE" | grep -F "AirTraffic write timed out after 180s; operation cancelled"
+          ! strings "$APP_NAME/$EXECUTABLE" | grep -F "proceeding with direct writeDirectory"
           echo "[build] Found App Bundle: $APP_NAME with Grappa helper linked"
 
       - name: Package IPA
@@ -68,3 +72,9 @@ jobs:
         with:
           name: Astra-Unsigned-IPA
           path: build/Astra.ipa
+
+      - name: Upload patched AirliftFFI
+        uses: actions/upload-artifact@v4
+        with:
+          name: Astra-Patched-AirliftFFI
+          path: Frameworks/AirliftFFI.xcframework
