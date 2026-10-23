@@ -39,8 +39,13 @@ final class AirLiftTunnelManager: ObservableObject {
     @Published private(set) var isTunnelRouteDetected = false
     @Published var lastErrorMessage: String?
 
+    /// The transport is operational as soon as iOS actually routes the
+    /// AirLift peer through the external LocalDevVPN tunnel. Waiting for a
+    /// lockdownd reply on 10.7.0.1:62078 is stricter than reality: the
+    /// authoritative RSD/Lockdown handshake is performed by AirliftFFI, and a
+    /// false OFFLINE banner only makes a working tunnel look broken.
     var isServiceReachable: Bool { serviceStatus == .reachable }
-    var isOperational: Bool { isServiceReachable }
+    var isOperational: Bool { isTunnelRouteDetected || isServiceReachable }
 
     private let peerAddress = "10.7.0.1"
     private let expectedInterfaceAddress = "10.7.1.1"

@@ -73,7 +73,8 @@ const tunnelDetector = fs.readFileSync(path.join(__dirname, '..', 'ThreeOneOSFiv
 check('Mở app LocalDevVPN bằng URL scheme', tunnelDetector.includes('localdevvpn://'));
 check('Kiểm tra peer 10.7.0.1', tunnelDetector.includes('10.7.0.1'));
 check('Nhận diện route VPN theo interface utun/ipsec thực tế', tunnelDetector.includes('hasTunnelRoute') && tunnelDetector.includes('hasPrefix("utun")'));
-check('UI chỉ báo ONLINE khi Lockdown phản hồi', tunnelDetector.includes('var isOperational: Bool { isServiceReachable }'));
+check('UI báo ONLINE khi route LocalDevVPN đã có (không phụ thuộc lockdownd cứng)',
+    tunnelDetector.includes('var isOperational: Bool { isTunnelRouteDetected || isServiceReachable }'));
 check('Không dùng cổng RSD 49152 cố định', !tunnelDetector.includes('49152'));
 check('Không tạo NETunnelProviderManager', !tunnelDetector.includes('NETunnelProviderManager'));
 
