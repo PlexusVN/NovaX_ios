@@ -238,6 +238,7 @@ struct NovaXCommandResponse: Codable {
 @MainActor
 final class FeaturePatchService: ObservableObject {
     @Published var categories: [PatchCategory] = []
+    @Published var patchStepMessage: String = ""
     @Published var patches: [PatchItem] = []
     @Published var isLoading = false
 
@@ -1333,27 +1334,33 @@ final class FeaturePatchService: ObservableObject {
 
     /// Inject: tải file MOD từ server và ghi đè vào container Free Fire
     func injectCodePatch(variant: GamePatchVariant, auth: AuthManager) async throws {
+        patchStepMessage = "Đang kiểm tra kết nối bảo mật..."
+        defer { patchStepMessage = "" }
         try await requireSecureControlNetwork()
         let useAirLift = StorageEngineCoordinator.shared.isAirLiftActive
         let destDir: URL
         var airLiftUsed = useAirLift
         do {
             if useAirLift {
+                patchStepMessage = "Đang xác định thư mục \(variant.shortTitle)..."
                 destDir = try await FeaturePatchService.airLiftCodePatchDirectory(variant: variant)
             } else if let directDirectory = FeaturePatchService.codePatchDirectory(variant: variant) {
                 destDir = directDirectory
             } else {
                 airLiftUsed = true
+                patchStepMessage = "Đang xác định thư mục qua AirLift..."
                 destDir = try await FeaturePatchService.airLiftCodePatchDirectory(variant: variant)
             }
         } catch let error as AirLiftError {
             throw NovaXControlError.message(error.localizedDescription)
         }
+        patchStepMessage = "Đang tải dữ liệu cheat từ máy chủ..."
         let downloaded = try await downloadCodePatchFile(variant: variant, kind: .mod, auth: auth)
         let destURL = destDir.appendingPathComponent(downloaded.fileName)
         defer { try? FileManager.default.removeItem(at: downloaded.temporaryURL) }
 
         do {
+            patchStepMessage = "Đang ghi đè file cheat vào game..."
             let fileData = try Data(contentsOf: downloaded.temporaryURL)
             if airLiftUsed {
                 try await StorageEngineCoordinator.shared.writeFile(data: fileData, toPath: destURL.path)
@@ -1379,26 +1386,32 @@ final class FeaturePatchService: ObservableObject {
 
     /// Unject: tải file GỐC từ server và ghi đè vào container Free Fire
     func unjectCodePatch(variant: GamePatchVariant, auth: AuthManager) async throws {
+        patchStepMessage = "Đang kiểm tra kết nối bảo mật..."
+        defer { patchStepMessage = "" }
         let useAirLift = StorageEngineCoordinator.shared.isAirLiftActive
         let destDir: URL
         var airLiftUsed = useAirLift
         do {
             if useAirLift {
+                patchStepMessage = "Đang xác định thư mục \(variant.shortTitle)..."
                 destDir = try await FeaturePatchService.airLiftCodePatchDirectory(variant: variant)
             } else if let directDirectory = FeaturePatchService.codePatchDirectory(variant: variant) {
                 destDir = directDirectory
             } else {
                 airLiftUsed = true
+                patchStepMessage = "Đang xác định thư mục qua AirLift..."
                 destDir = try await FeaturePatchService.airLiftCodePatchDirectory(variant: variant)
             }
         } catch let error as AirLiftError {
             throw NovaXControlError.message(error.localizedDescription)
         }
+        patchStepMessage = "Đang tải dữ liệu gốc từ máy chủ..."
         let downloaded = try await downloadCodePatchFile(variant: variant, kind: .original, auth: auth)
         let destURL = destDir.appendingPathComponent(downloaded.fileName)
         defer { try? FileManager.default.removeItem(at: downloaded.temporaryURL) }
 
         do {
+            patchStepMessage = "Đang ghi đè file gốc vào game..."
             let fileData = try Data(contentsOf: downloaded.temporaryURL)
             if airLiftUsed {
                 try await StorageEngineCoordinator.shared.writeFile(data: fileData, toPath: destURL.path)

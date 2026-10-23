@@ -60,9 +60,18 @@ final class AirTrafficProtocolClient: ObservableObject {
 
     @Published private(set) var verificationLevel: VerificationLevel = .none
     @Published fileprivate(set) var lastLogLine = ""
+    @Published private(set) var isBusy = false
 
     private let primaryHost = "10.7.0.1"
+    private var containerCache: [String: String] = [:]
+    private var verifiedCanaryDirectories = Set<String>()
+
     private init() {}
+
+    func clearCaches() {
+        containerCache.removeAll()
+        verifiedCanaryDirectories.removeAll()
+    }
 
     func writeFile(data: Data, targetPath: String) async throws {
         let target = try normalizedAbsolutePath(targetPath)
@@ -71,13 +80,22 @@ final class AirTrafficProtocolClient: ObservableObject {
         let filename = targetURL.lastPathComponent
         guard !filename.isEmpty else { throw AirLiftError.invalidTargetPath }
 
+        isBusy = true
+        defer { isBusy = false }
+
         try await verifyTransportAndPairing()
         let pairingPath = try activePairingPath()
         try await configureTargetHost()
-        do {
-            try await verifyCanary(pairingPath: pairingPath, targetDirectory: directory)
-        } catch {
-            log("airlift: canary check note: \(error.localizedDescription); proceeding with direct writeDirectory")
+
+        if !verifiedCanaryDirectories.contains(directory) {
+            do {
+                try await verifyCanary(pairingPath: pairingPath, targetDirectory: directory)
+                verifiedCanaryDirectories.insert(directory)
+                // Brief pause so airtrafficd cleanly flushes session before writeDirectory
+                try? await Task.sleep(nanoseconds: 200_000_000)
+            } catch {
+                log("airlift: canary check note: \(error.localizedDescription); proceeding with direct writeDirectory")
+            }
         }
 
         let stage = FileManager.default.temporaryDirectory
@@ -87,7 +105,7 @@ final class AirTrafficProtocolClient: ObservableObject {
             try FileManager.default.createDirectory(at: stage, withIntermediateDirectories: false)
             try data.write(
                 to: stage.appendingPathComponent(filename),
-                options: [.atomic, .completeFileProtection]
+                options: [.atomic]
             )
         } catch {
             throw AirLiftError.filePayloadCreationFailed
@@ -114,13 +132,22 @@ final class AirTrafficProtocolClient: ObservableObject {
     func writeFiles(_ files: [String: Data], targetDirectory: String) async throws {
         guard !files.isEmpty else { throw AirLiftError.filePayloadCreationFailed }
         let directory = try normalizedAbsolutePath(targetDirectory)
+
+        isBusy = true
+        defer { isBusy = false }
+
         try await verifyTransportAndPairing()
         let pairingPath = try activePairingPath()
         try await configureTargetHost()
-        do {
-            try await verifyCanary(pairingPath: pairingPath, targetDirectory: directory)
-        } catch {
-            log("airlift: batch canary check note: \(error.localizedDescription); proceeding with direct writeDirectory")
+
+        if !verifiedCanaryDirectories.contains(directory) {
+            do {
+                try await verifyCanary(pairingPath: pairingPath, targetDirectory: directory)
+                verifiedCanaryDirectories.insert(directory)
+                try? await Task.sleep(nanoseconds: 200_000_000)
+            } catch {
+                log("airlift: batch canary check note: \(error.localizedDescription); proceeding with direct writeDirectory")
+            }
         }
 
         let stage = FileManager.default.temporaryDirectory
@@ -135,7 +162,7 @@ final class AirTrafficProtocolClient: ObservableObject {
                 }
                 try data.write(
                     to: stage.appendingPathComponent(name),
-                    options: [.atomic, .completeFileProtection]
+                    options: [.atomic]
                 )
             }
         } catch let error as AirLiftError {
@@ -176,6 +203,9 @@ final class AirTrafficProtocolClient: ObservableObject {
     }
 
     func verifyPairingWithDevice() async -> (isValid: Bool, isRevoked: Bool, message: String) {
+        guard !isBusy else {
+            return (true, false, "Đang có phiên ghi file, bỏ qua kiểm tra.")
+        }
         guard let pairingPath = try? activePairingPath() else {
             return (false, false, "Chưa có file pairing hợp lệ.")
         }
@@ -189,29 +219,33 @@ final class AirTrafficProtocolClient: ObservableObject {
             return (false, false, error.localizedDescription)
         }
 
-        let result: FFIStringResult = await runBlocking(name: "Astra.AirLift.ProbePairing") {
-            var output: UnsafeMutablePointer<CChar>?
-            var error: UnsafeMutablePointer<CChar>?
-            let code = pairingPath.withCString { pairing in
-                "com.apple.mobilesafari".withCString { bundle in
-                    al_find_app_container(pairing, bundle, nil, nil, &output, &error)
+        do {
+            let result: FFIStringResult = try await runBlocking(name: "Astra.AirLift.ProbePairing", timeout: 12) {
+                var output: UnsafeMutablePointer<CChar>?
+                var error: UnsafeMutablePointer<CChar>?
+                let code = pairingPath.withCString { pairing in
+                    "com.apple.mobilesafari".withCString { bundle in
+                        al_find_app_container(pairing, bundle, nil, nil, &output, &error)
+                    }
                 }
+                let value = Self.consumeString(&output)
+                let message = Self.consumeString(&error)
+                return FFIStringResult(code: code, value: value, error: message)
             }
-            let value = Self.consumeString(&output)
-            let message = Self.consumeString(&error)
-            return FFIStringResult(code: code, value: value, error: message)
-        }
 
-        if result.code == 0 {
-            return (true, false, "Ghép đôi hoạt động tốt.")
-        }
+            if result.code == 0 {
+                return (true, false, "Ghép đôi hoạt động tốt.")
+            }
 
-        if Self.isPairingRevokedError(result.error) {
-            AirLiftPairingManager.shared.handlePairingRevoked(reason: result.error)
-            return (false, true, "Thiết bị iPhone đã hủy ghép đôi trong Cài đặt.")
-        }
+            if Self.isPairingRevokedError(result.error) {
+                AirLiftPairingManager.shared.handlePairingRevoked(reason: result.error)
+                return (false, true, "Thiết bị iPhone đã hủy ghép đôi trong Cài đặt.")
+            }
 
-        return (false, false, result.error.isEmpty ? "Không phản hồi từ thiết bị." : result.error)
+            return (false, false, result.error.isEmpty ? "Không phản hồi từ thiết bị." : result.error)
+        } catch {
+            return (false, false, error.localizedDescription)
+        }
     }
 
     func resolveAppContainer(bundleID: String) async throws -> String {
@@ -219,11 +253,18 @@ final class AirTrafficProtocolClient: ObservableObject {
         if let direct = ContainerStore.resolveAppContainerPath(bundleID: bundleID), !direct.isEmpty {
             return direct
         }
+        if let cached = containerCache[bundleID], !cached.isEmpty {
+            return cached
+        }
+
+        isBusy = true
+        defer { isBusy = false }
+
         try await verifyTransportAndPairing()
         let pairingPath = try activePairingPath()
         try await configureTargetHost()
 
-        let result: FFIStringResult = await runBlocking(name: "Astra.AirLift.FindContainer") {
+        let result: FFIStringResult = try await runBlocking(name: "Astra.AirLift.FindContainer", timeout: 20) {
             var output: UnsafeMutablePointer<CChar>?
             var error: UnsafeMutablePointer<CChar>?
             let code = pairingPath.withCString { pairing in
@@ -244,6 +285,7 @@ final class AirTrafficProtocolClient: ObservableObject {
                 result.error.isEmpty ? "Không tìm thấy container của \(bundleID)." : result.error
             )
         }
+        containerCache[bundleID] = result.value
         return result.value
     }
 
@@ -306,7 +348,7 @@ final class AirTrafficProtocolClient: ObservableObject {
 
     private func verifyCanary(pairingPath: String, targetDirectory: String) async throws {
         verificationLevel = .none
-        let result: FFIStringResult = await runBlocking(name: "Astra.AirLift.Canary") {
+        let result: FFIStringResult = try await runBlocking(name: "Astra.AirLift.Canary", timeout: 25) {
             var json: UnsafeMutablePointer<CChar>?
             var error: UnsafeMutablePointer<CChar>?
             let code = pairingPath.withCString { pairing in
@@ -341,7 +383,7 @@ final class AirTrafficProtocolClient: ObservableObject {
         sourceDirectory: String,
         targetDirectory: String
     ) async throws {
-        let result: FFIVoidResult = await runBlocking(name: "Astra.AirLift.Write") {
+        let result: FFIVoidResult = try await runBlocking(name: "Astra.AirLift.Write", timeout: 35) {
             var error: UnsafeMutablePointer<CChar>?
             let code = pairingPath.withCString { pairing in
                 sourceDirectory.withCString { source in
@@ -374,15 +416,32 @@ final class AirTrafficProtocolClient: ObservableObject {
         return value
     }
 
-    private func runBlocking<T: Sendable>(name: String, _ work: @escaping @Sendable () -> T) async -> T {
-        await withCheckedContinuation { continuation in
-            let thread = Thread {
-                continuation.resume(returning: work())
+    private func runBlocking<T: Sendable>(
+        name: String,
+        timeout: TimeInterval = 30,
+        _ work: @escaping @Sendable () -> T
+    ) async throws -> T {
+        try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask {
+                await withCheckedContinuation { continuation in
+                    let thread = Thread {
+                        continuation.resume(returning: work())
+                    }
+                    thread.name = name
+                    thread.stackSize = 8 * 1_024 * 1_024
+                    thread.qualityOfService = .userInitiated
+                    thread.start()
+                }
             }
-            thread.name = name
-            thread.stackSize = 8 * 1_024 * 1_024
-            thread.qualityOfService = .userInitiated
-            thread.start()
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                throw AirLiftError.socketConnectionFailed("Quá thời gian kết nối dịch vụ thiết bị (\(Int(timeout))s). Vui lòng thử lại.")
+            }
+            guard let result = try await group.next() else {
+                throw AirLiftError.socketConnectionFailed("Thao tác \(name) không có phản hồi.")
+            }
+            group.cancelAll()
+            return result
         }
     }
 

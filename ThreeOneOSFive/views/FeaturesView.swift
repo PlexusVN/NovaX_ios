@@ -300,7 +300,9 @@ struct FeaturesView: View {
                 if isCodePatchWorking {
                     HStack(spacing: 8) {
                         ProgressView().tint(AppTheme.ink).scaleEffect(0.85)
-                        Text(isInject ? "Đang kích hoạt cheat..." : "Đang khôi phục bản gốc...")
+                        Text(service.patchStepMessage.isEmpty
+                             ? (isInject ? "Đang kích hoạt cheat..." : "Đang khôi phục bản gốc...")
+                             : service.patchStepMessage)
                             .font(.system(size: 11, weight: .semibold, design: .rounded))
                             .foregroundStyle(AppTheme.grey500)
                     }
@@ -420,6 +422,8 @@ struct FeaturesView: View {
         Haptics.medium()
         isCodePatchWorking = true
         workingVariant = variant
+        let patchService = service
+        let currentAuth = authManager
         Task { @MainActor in
             defer {
                 isCodePatchWorking = false
@@ -430,15 +434,28 @@ struct FeaturesView: View {
                 }
             }
             do {
+                try await withThrowingTaskGroup(of: Void.self) { group in
+                    group.addTask {
+                        if inject {
+                            try await patchService.injectCodePatch(variant: variant, auth: currentAuth)
+                        } else {
+                            try await patchService.unjectCodePatch(variant: variant, auth: currentAuth)
+                        }
+                    }
+                    group.addTask {
+                        try await Task.sleep(nanoseconds: 60 * 1_000_000_000)
+                        throw NovaXControlError.message("Quá thời gian thao tác (60s). Vui lòng kiểm tra lại kết nối LocalDevVPN và thử lại.")
+                    }
+                    try await group.next()
+                    group.cancelAll()
+                }
                 if inject {
-                    try await service.injectCodePatch(variant: variant, auth: authManager)
                     activeToast = ToastInfo(
                         title: "Kích hoạt cheat thành công",
                         message: "Đã kích hoạt cheat cho \(variant.title) thành công.",
                         isSuccess: true
                     )
                 } else {
-                    try await service.unjectCodePatch(variant: variant, auth: authManager)
                     activeToast = ToastInfo(
                         title: "Khôi phục thành công",
                         message: "Đã khôi phục game \(variant.title) về ban đầu.",

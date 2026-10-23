@@ -123,6 +123,7 @@ final class AirLiftPairingManager: ObservableObject {
             .sink { [weak self] _ in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
+                    guard !AirTrafficProtocolClient.shared.isBusy else { return }
                     self.checkPairingStatus()
                     if AirLiftTunnelManager.shared.isOperational && self.status.isPaired {
                         await self.verifyPairingWithDevice(silent: true)
@@ -135,6 +136,7 @@ final class AirLiftPairingManager: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] tunnelStatus in
                 guard let self else { return }
+                guard !AirTrafficProtocolClient.shared.isBusy else { return }
                 if tunnelStatus == .connected && self.status.isPaired && !self.isVerifyingPairing {
                     Task { @MainActor [weak self] in
                         await self?.verifyPairingWithDevice(silent: true)
@@ -154,6 +156,7 @@ final class AirLiftPairingManager: ObservableObject {
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     guard UIApplication.shared.applicationState == .active else { return }
+                    guard !AirTrafficProtocolClient.shared.isBusy else { return }
                     self.checkPairingStatus()
                     if self.status.isPaired && AirLiftTunnelManager.shared.isOperational && !self.isVerifyingPairing {
                         await self.verifyPairingWithDevice(silent: true)
