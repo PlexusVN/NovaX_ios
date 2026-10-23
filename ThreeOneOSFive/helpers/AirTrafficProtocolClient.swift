@@ -26,7 +26,7 @@ enum AirLiftError: Error, LocalizedError {
         case .tunnelNotConnected:
             return "Đường hầm LocalDevVPN chưa kết nối."
         case .pairingRequired:
-            return "Chưa có file pairing hợp lệ."
+            return "Chưa ghép đôi thiết bị với Astra. Hãy vào Cài đặt (bánh răng) › AIRLIFT › bấm 'Pair trên máy' để ghép đôi trước khi kích hoạt cheat."
         case .invalidTargetPath:
             return "Đường dẫn đích không hợp lệ hoặc không phải đường dẫn tuyệt đối."
         case .socketConnectionFailed(let message):

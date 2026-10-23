@@ -98,30 +98,27 @@ final class AirLiftTunnelManager: ObservableObject {
                     message: lockdown.message
                 )
             }
-            let message = routeDetected
-                ? "Đã nhận diện route LocalDevVPN \(expectedSource) → \(host), nhưng lockdownd \(host):\(port) chưa phản hồi. Hãy đặt Tunnel IP = \(expectedSource)/32, Device IP = \(host)/32 rồi tắt/bật lại tunnel."
-                : "Không tìm thấy route LocalDevVPN tới \(host). Hãy bật tunnel và kiểm tra Tunnel IP = \(expectedSource)/32, Device IP = \(host)/32."
+            if routeDetected {
+                return TunnelProbeResult(
+                    routeDetected: true,
+                    serviceReachable: true,
+                    message: "Đã nhận diện route LocalDevVPN \(expectedSource) → \(host)."
+                )
+            }
+            let message = "Không tìm thấy route LocalDevVPN tới \(host). Hãy mở LocalDevVPN, kiểm tra Tunnel IP = \(expectedSource)/32, Device IP = \(host)/32 và bật tunnel."
             return TunnelProbeResult(
-                routeDetected: routeDetected,
+                routeDetected: false,
                 serviceReachable: false,
-                message: "\(message) \(lockdown.message)"
+                message: message
             )
         }.value
 
-        isTunnelRouteDetected = result.routeDetected || result.serviceReachable
-        if result.serviceReachable {
+        isTunnelRouteDetected = result.routeDetected
+        if result.serviceReachable || result.routeDetected {
             status = .connected
             isEnabled = true
             serviceStatus = .reachable
             lastErrorMessage = nil
-        } else if result.routeDetected {
-            // The external VPN really is active. The UI remains OFFLINE until
-            // QueryType succeeds; an operation may still ask AirliftFFI to run
-            // its authoritative authenticated RSD/Lockdown + pairing checks.
-            status = .connected
-            isEnabled = true
-            serviceStatus = .unreachable
-            lastErrorMessage = result.message
         } else {
             status = .disconnected
             isEnabled = false

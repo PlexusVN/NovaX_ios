@@ -105,11 +105,11 @@ struct AirLiftDashboardCard: View {
 
     private var transportStatus: some View {
         HStack(spacing: 6) {
-            Image(systemName: tunnelManager.isServiceReachable ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
-                .foregroundColor(tunnelManager.isServiceReachable ? AppTheme.statusSuccess : AppTheme.statusError)
-            Text(tunnelManager.serviceStatus.rawValue)
+            Image(systemName: tunnelManager.isOperational ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                .foregroundColor(tunnelManager.isOperational ? AppTheme.statusSuccess : AppTheme.statusError)
+            Text(tunnelManager.isOperational ? "Đường truyền LocalDevVPN đã sẵn sàng" : tunnelManager.serviceStatus.rawValue)
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .foregroundColor(tunnelManager.isServiceReachable ? AppTheme.statusSuccess : AppTheme.statusError)
+                .foregroundColor(tunnelManager.isOperational ? AppTheme.statusSuccess : AppTheme.statusError)
             Spacer()
             Button("KIỂM TRA") {
                 Task { await tunnelManager.verifyLoopbackService() }
@@ -147,8 +147,8 @@ struct AirLiftDashboardCard: View {
 
                 HStack(spacing: 4) {
                     Circle().fill(tunnelStatusColor).frame(width: 6, height: 6)
-                    Text(tunnelManager.isTunnelRouteDetected && !tunnelManager.isServiceReachable
-                         ? "VPN đã bật · dịch vụ chưa phản hồi"
+                    Text(tunnelManager.isOperational
+                         ? "VPN đã kết nối"
                          : tunnelManager.status.rawValue)
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
                         .foregroundColor(tunnelStatusColor)
