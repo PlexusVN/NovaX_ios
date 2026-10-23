@@ -21,6 +21,12 @@ final class StorageEngineCoordinator: ObservableObject {
     @AppStorage("useAirLiftForAll") var useAirLiftForAll: Bool = false {
         didSet {
             objectWillChange.send()
+            AirTrafficProtocolClient.shared.resetSession()
+            if useAirLiftForAll {
+                Task {
+                    _ = await AirTrafficProtocolClient.shared.checkRealAirLiftHealth()
+                }
+            }
         }
     }
     

@@ -58,7 +58,30 @@ final class AirTrafficProtocolClient: ObservableObject {
         case exactBytes = "Đã đọc lại đúng từng byte"
     }
 
+    enum EngineHealthState: Equatable, Sendable {
+        case idle
+        case checking
+        case healthy(String)
+        case error(String)
+
+        var isHealthy: Bool {
+            if case .healthy = self { return true }
+            return false
+        }
+
+        var message: String {
+            switch self {
+            case .idle: return "Chưa kiểm tra"
+            case .checking: return "Đang kiểm tra kết nối dịch vụ..."
+            case .healthy(let msg): return msg
+            case .error(let msg): return msg
+            }
+        }
+    }
+
     @Published private(set) var verificationLevel: VerificationLevel = .none
+    @Published private(set) var engineHealthState: EngineHealthState = .idle
+    @Published private(set) var lastHealthCheckDate: Date? = nil
     @Published fileprivate(set) var lastLogLine = ""
     @Published private(set) var isBusy = false
 
@@ -68,9 +91,54 @@ final class AirTrafficProtocolClient: ObservableObject {
 
     private init() {}
 
+    func resetSession() {
+        isBusy = false
+        al_clear_target_hosts()
+        clearCaches()
+        verificationLevel = .none
+        engineHealthState = .idle
+        lastLogLine = "AirTraffic session đã được làm mới."
+        log("airlift: session and caches reset")
+    }
+
     func clearCaches() {
         containerCache.removeAll()
         verifiedCanaryDirectories.removeAll()
+    }
+
+    @discardableResult
+    func checkRealAirLiftHealth() async -> (isHealthy: Bool, message: String) {
+        guard !isBusy else {
+            return (engineHealthState.isHealthy, "Đang có phiên ghi file, bỏ qua kiểm tra.")
+        }
+        guard StorageEngineCoordinator.shared.isAirTrafficEngineLinked else {
+            let msg = "AirliftFFI chưa được liên kết trong bản build."
+            engineHealthState = .error(msg)
+            return (false, msg)
+        }
+        guard AirLiftTunnelManager.shared.isOperational else {
+            let msg = "LocalDevVPN chưa kết nối (10.7.0.1)."
+            engineHealthState = .error(msg)
+            return (false, msg)
+        }
+        guard (try? activePairingPath()) != nil else {
+            let msg = "Chưa có file ghép đôi hoặc thiết bị đã hủy ghép đôi."
+            engineHealthState = .error(msg)
+            return (false, msg)
+        }
+
+        engineHealthState = .checking
+        let (isValid, isRevoked, msg) = await verifyPairingWithDevice()
+        if isValid {
+            let successMsg = "AirTraffic & RemoteXPC phản hồi tốt (10.7.0.1:62078)."
+            engineHealthState = .healthy(successMsg)
+            lastHealthCheckDate = Date()
+            return (true, successMsg)
+        } else {
+            let failMsg = isRevoked ? "Thiết bị iPhone đã hủy ghép đôi trong Cài đặt." : msg
+            engineHealthState = .error(failMsg)
+            return (false, failMsg)
+        }
     }
 
     func writeFile(data: Data, targetPath: String) async throws {

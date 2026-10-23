@@ -254,6 +254,24 @@ struct FeaturesView: View {
                         .foregroundStyle(AppTheme.grey500)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 20)
+
+                    if StorageEngineCoordinator.shared.isAirLiftActive {
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(isAirLiftReadyForIOS27 ? Color(hex: 0x10B981) : AppTheme.statusWarning)
+                                .frame(width: 7, height: 7)
+                            Text(isAirLiftReadyForIOS27 ? "iOS 27: Sẵn sàng ghi đè file" : "iOS 27: Cần kiểm tra AirLift")
+                                .font(.system(size: 10, weight: .bold, design: .rounded))
+                                .foregroundColor(isAirLiftReadyForIOS27 ? Color(hex: 0x065F46) : AppTheme.statusWarning)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule().fill(
+                                isAirLiftReadyForIOS27 ? Color(hex: 0x10B981).opacity(0.14) : AppTheme.statusWarning.opacity(0.1)
+                            )
+                        )
+                    }
                 }
                 .padding(.top, 22)
                 .padding(.bottom, 16)
@@ -489,6 +507,11 @@ struct FeaturesView: View {
                 )
             }
         }
+    private var isAirLiftReadyForIOS27: Bool {
+        AirLiftTunnelManager.shared.isOperational &&
+        AirLiftPairingManager.shared.status.isPaired &&
+        AirLiftPairingManager.shared.status != .revoked &&
+        AirTrafficProtocolClient.shared.engineHealthState.isHealthy
     }
 
     private func scanInstalledGames() {
