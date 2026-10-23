@@ -137,10 +137,20 @@ final class AirTrafficProtocolClient: ObservableObject {
         engineHealthState = .checking
         let (isValid, isRevoked, msg) = await verifyPairingWithDevice()
         if isValid {
-            let successMsg = "Pairing + RemoteXPC/RSD phản hồi tốt; canary sẽ được xác minh khi ghi."
-            engineHealthState = .healthy(successMsg)
-            lastHealthCheckDate = Date()
-            return (true, successMsg)
+            do {
+                // The AirTraffic write path stages metadata through Apple
+                // Books and com.apple.atc. Pairing can be healthy while Books
+                // is missing, so do not present that state as write-ready.
+                _ = try await resolveAppContainer(bundleID: "com.apple.iBooks")
+                let successMsg = "Pairing + RemoteXPC/RSD + Apple Books phản hồi tốt; canary sẽ được xác minh khi ghi."
+                engineHealthState = .healthy(successMsg)
+                lastHealthCheckDate = Date()
+                return (true, successMsg)
+            } catch {
+                let booksMessage = "Không thể xác nhận Apple Books/AirTraffic. Hãy cài hoặc mở Apple Books rồi thử lại: \(error.localizedDescription)"
+                engineHealthState = .error(booksMessage)
+                return (false, booksMessage)
+            }
         } else {
             let failMsg = isRevoked ? "Thiết bị iPhone đã hủy ghép đôi trong Cài đặt." : msg
             engineHealthState = .error(failMsg)
@@ -327,9 +337,6 @@ final class AirTrafficProtocolClient: ObservableObject {
             throw AirLiftError.executionFailed("Một thao tác AirLift khác đang chạy. Vui lòng chờ hoàn tất.")
         }
         guard !bundleID.isEmpty else { throw AirLiftError.invalidTargetPath }
-        if let direct = ContainerStore.resolveAppContainerPath(bundleID: bundleID), !direct.isEmpty {
-            return direct
-        }
         if let cached = containerCache[bundleID], !cached.isEmpty {
             return cached
         }

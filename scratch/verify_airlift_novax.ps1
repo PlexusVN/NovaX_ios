@@ -104,6 +104,10 @@ Assert-Condition "Rust huy canary/write khi qua timeout" (
     ($airliftPatch -match "AIRTRAFFIC_OPERATION_TIMEOUT") -and
     ($airliftPatch -match "operation cancelled")
 )
+Assert-Condition "Health check xac nhan Apple Books cho AirTraffic" (
+    ($airTrafficClient -match 'resolveAppContainer\(bundleID: "com\.apple\.iBooks"\)') -and
+    ($airTrafficClient -match "Apple Books/AirTraffic")
+)
 
 Write-Host "`n================================================================" -ForegroundColor Cyan
 if ($allPassed) {
