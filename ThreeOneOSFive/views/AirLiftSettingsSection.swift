@@ -82,7 +82,9 @@ struct AirLiftDashboardCard: View {
             Text("Astra sẽ chạy RPPairing host thật và phát Bonjour. Sau đó mở Cài đặt › Quyền riêng tư & Bảo mật › Chế độ nhà phát triển, chọn Pair with Astra và nhập PIN hiển thị trong ứng dụng.")
         }
         .task {
-            await runComprehensiveCheck()
+            if storageCoordinator.isAirLiftActive {
+                await runComprehensiveCheck()
+            }
         }
         .onChange(of: storageCoordinator.useAirLiftForAll) { isEnabled in
             if isEnabled {
@@ -227,7 +229,7 @@ struct AirLiftDashboardCard: View {
                     Image(systemName: "exclamationmark.circle.fill")
                         .font(.system(size: 11, weight: .bold))
                         .foregroundColor(AppTheme.statusError)
-                    Text("iPhone đã hủy ghép đôi trong Cài đặt. Bấm 'Pair trên máy' ở dưới để kết nối lại.")
+                    Text(pairingRecoveryMessage)
                         .font(.system(size: 10, weight: .medium))
                         .foregroundColor(AppTheme.statusError)
                 }
@@ -253,14 +255,31 @@ struct AirLiftDashboardCard: View {
 
     @ViewBuilder
     private var pairingGuidance: some View {
-        if pairingManager.isBroadcastingBonjour || pairingManager.status == .waitingSettings {
+        if pairingManager.isPairingHostActive || pairingManager.isBroadcastingBonjour || pairingManager.status == .waitingSettings {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
-                    ProgressView().tint(AppTheme.statusInfo).scaleEffect(0.8)
-                    Text("Đang phát sóng ghép đôi ngầm...")
+                    if pairingManager.isBroadcastingBonjour {
+                        Image(systemName: "antenna.radiowaves.left.and.right")
+                            .foregroundColor(AppTheme.statusSuccess)
+                    } else {
+                        ProgressView().tint(AppTheme.statusInfo).scaleEffect(0.8)
+                    }
+                    Text(pairingManager.bonjourStatusText)
                         .font(.system(size: 11, weight: .bold, design: .monospaced))
-                        .foregroundColor(AppTheme.statusInfo)
+                        .foregroundColor(pairingManager.isBroadcastingBonjour ? AppTheme.statusSuccess : AppTheme.statusInfo)
                     Spacer()
+                }
+                if pairingManager.canRetryBonjourAdvertisement {
+                    Button("Phát lại thiết bị Astra") {
+                        pairingManager.retryBonjourAdvertisement(userInitiated: true)
+                    }
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(AppTheme.statusInfo)
+                }
+                if !pairingManager.isBackgroundKeepAliveActive {
+                    Text("Không thể bật giữ nền bằng âm thanh. Hãy mở nhanh Chế độ nhà phát triển; nếu Astra biến mất, quay lại app và bấm phát lại.")
+                        .font(.system(size: 9))
+                        .foregroundColor(AppTheme.statusWarning)
                 }
                 pairingPINCard
                 wifiWarning
@@ -346,7 +365,7 @@ struct AirLiftDashboardCard: View {
 
     private var pairingInstructions: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("QUY TRÌNH GHÉP ĐÔI TRÊN THIẾT BỊ (iOS 16+ / iOS 27):")
+            Text("GHÉP ĐÔI TRÊN THIẾT BỊ (CHỈ BUILD IOS 27 CÒN HỖ TRỢ):")
                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                 .foregroundColor(AppTheme.statusInfo)
             Text("1. Đảm bảo iPhone đã bật Wi-Fi (hoặc Điểm phát sóng).")
@@ -375,21 +394,30 @@ struct AirLiftDashboardCard: View {
 
     private var pairingActions: some View {
         HStack(spacing: 8) {
-            Button {
-                Haptics.light()
-                showPairingStartAlert = true
-            } label: {
-                Label("Pair trên máy", systemImage: "iphone.and.arrow.forward")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .foregroundColor(AppTheme.statusInfo)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .background(AppTheme.statusInfo.opacity(0.06))
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(AppTheme.statusInfo.opacity(0.22), lineWidth: 1)
+            if ExploitSupportPolicy.currentPairingMode == .onDeviceOrImportedFile {
+                Button {
+                    Haptics.light()
+                    if pairingManager.isPairingHostActive {
+                        pairingManager.retryBonjourAdvertisement(userInitiated: true)
+                    } else {
+                        showPairingStartAlert = true
+                    }
+                } label: {
+                    Label(
+                        pairingManager.isPairingHostActive ? "Phát lại Astra" : "Pair trên máy",
+                        systemImage: "iphone.and.arrow.forward"
                     )
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundColor(AppTheme.statusInfo)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(AppTheme.statusInfo.opacity(0.06))
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(AppTheme.statusInfo.opacity(0.22), lineWidth: 1)
+                        )
+                }
             }
 
             Button {
@@ -433,7 +461,9 @@ struct AirLiftDashboardCard: View {
     private var storageEngineToggle: some View {
         Toggle(isOn: $storageCoordinator.useAirLiftForAll) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Sử dụng AirLift Engine toàn bộ")
+                Text(storageCoordinator.isAirLiftActive
+                    ? "AirLift bắt buộc theo phiên bản iOS"
+                    : "Ghi trực tiếp · Không cần AirLift")
                     .font(.system(size: 13, weight: .bold, design: .rounded))
                     .foregroundColor(AppTheme.ink)
                 Text("RPPairing + RSD/AFC + AirTraffic; bắt buộc canary read-back")
@@ -442,15 +472,22 @@ struct AirLiftDashboardCard: View {
             }
         }
         .tint(AppTheme.ink)
-        .disabled(!storageCoordinator.isAirTrafficEngineLinked)
+        .disabled(true)
     }
 
-    private var isIOS27FullyReady: Bool {
-        storageCoordinator.useAirLiftForAll &&
+    private var isAirLiftFullyReady: Bool {
+        storageCoordinator.isAirLiftActive &&
         tunnelManager.isOperational &&
         pairingManager.status.isPaired &&
         pairingManager.status != .revoked &&
         airTrafficClient.engineHealthState.isHealthy
+    }
+
+    private var pairingRecoveryMessage: String {
+        if ExploitSupportPolicy.currentPairingMode == .onDeviceOrImportedFile {
+            return "iPhone đã hủy ghép đôi trong Cài đặt. Bấm 'Pair trên máy' ở dưới để kết nối lại."
+        }
+        return "File pairing đã hết hiệu lực. Hãy tạo file pairing mới trên máy tính rồi nhập lại vào Astra."
     }
 
     private var realAirLiftStatusView: some View {
@@ -539,36 +576,36 @@ struct AirLiftDashboardCard: View {
             HStack(spacing: 10) {
                 ZStack {
                     Circle()
-                        .fill(isIOS27FullyReady ? Color(hex: 0x10B981).opacity(0.18) : AppTheme.statusWarning.opacity(0.15))
+                        .fill(isAirLiftFullyReady ? Color(hex: 0x10B981).opacity(0.18) : AppTheme.statusWarning.opacity(0.15))
                         .frame(width: 38, height: 38)
-                    Image(systemName: isIOS27FullyReady ? "checkmark.seal.fill" : (storageCoordinator.useAirLiftForAll ? "exclamationmark.triangle.fill" : "poweroff"))
+                    Image(systemName: isAirLiftFullyReady ? "checkmark.seal.fill" : (storageCoordinator.isAirLiftActive ? "exclamationmark.triangle.fill" : "poweroff"))
                         .font(.system(size: 18, weight: .bold))
-                        .foregroundColor(isIOS27FullyReady ? Color(hex: 0x10B981) : (storageCoordinator.useAirLiftForAll ? AppTheme.statusWarning : AppTheme.grey400))
+                        .foregroundColor(isAirLiftFullyReady ? Color(hex: 0x10B981) : (storageCoordinator.isAirLiftActive ? AppTheme.statusWarning : AppTheme.grey400))
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text(isIOS27FullyReady ? "SẴN SÀNG CHO IOS 27" : "TRẠNG THÁI GHI FILE IOS 27")
+                        Text(isAirLiftFullyReady ? "AIRLIFT SẴN SÀNG" : "TRẠNG THÁI GHI FILE AIRLIFT")
                             .font(.system(size: 12, weight: .black, design: .rounded))
-                            .foregroundColor(isIOS27FullyReady ? Color(hex: 0x065F46) : AppTheme.ink)
+                            .foregroundColor(isAirLiftFullyReady ? Color(hex: 0x065F46) : AppTheme.ink)
 
-                        Text(isIOS27FullyReady ? "SẴN SÀNG" : (isComprehensiveChecking ? "ĐANG KIỂM TRA" : "CHƯA SẴN SÀNG"))
+                        Text(isAirLiftFullyReady ? "SẴN SÀNG" : (isComprehensiveChecking ? "ĐANG KIỂM TRA" : "CHƯA SẴN SÀNG"))
                             .font(.system(size: 8, weight: .heavy, design: .monospaced))
                             .foregroundColor(.white)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(
                                 Capsule().fill(
-                                    isIOS27FullyReady
+                                    isAirLiftFullyReady
                                     ? Color(hex: 0x10B981)
-                                    : (isComprehensiveChecking ? AppTheme.statusInfo : (storageCoordinator.useAirLiftForAll ? AppTheme.statusError : AppTheme.grey500))
+                                    : (isComprehensiveChecking ? AppTheme.statusInfo : (storageCoordinator.isAirLiftActive ? AppTheme.statusError : AppTheme.grey500))
                                 )
                             )
                     }
 
                     Text(ios27ReadinessSummaryText)
                         .font(.system(size: 10, weight: .medium, design: .rounded))
-                        .foregroundColor(isIOS27FullyReady ? Color(hex: 0x047857) : AppTheme.grey500)
+                        .foregroundColor(isAirLiftFullyReady ? Color(hex: 0x047857) : AppTheme.grey500)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -585,9 +622,9 @@ struct AirLiftDashboardCard: View {
                     } else {
                         Image(systemName: "arrow.triangle.2.circlepath")
                             .font(.system(size: 13, weight: .bold))
-                            .foregroundColor(isIOS27FullyReady ? Color(hex: 0x065F46) : AppTheme.ink)
+                            .foregroundColor(isAirLiftFullyReady ? Color(hex: 0x065F46) : AppTheme.ink)
                             .padding(6)
-                            .background(Circle().fill(isIOS27FullyReady ? Color(hex: 0x10B981).opacity(0.18) : AppTheme.grey100))
+                            .background(Circle().fill(isAirLiftFullyReady ? Color(hex: 0x10B981).opacity(0.18) : AppTheme.grey100))
                     }
                 }
                 .buttonStyle(.plain)
@@ -612,8 +649,8 @@ struct AirLiftDashboardCard: View {
                 )
                 readinessFactorRow(
                     title: "Bật AirLift Engine toàn bộ",
-                    isMet: storageCoordinator.useAirLiftForAll,
-                    detail: storageCoordinator.useAirLiftForAll ? "Đã bật" : "Chưa bật"
+                    isMet: storageCoordinator.isAirLiftActive,
+                    detail: storageCoordinator.isAirLiftActive ? "Bắt buộc theo phiên bản iOS" : "Không cần cho phiên bản iOS này"
                 )
             }
             .padding(.top, 2)
@@ -622,7 +659,7 @@ struct AirLiftDashboardCard: View {
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(
-                    isIOS27FullyReady
+                    isAirLiftFullyReady
                     ? LinearGradient(
                         colors: [Color(hex: 0x10B981).opacity(0.14), Color(hex: 0x059669).opacity(0.08)],
                         startPoint: .topLeading,
@@ -637,9 +674,9 @@ struct AirLiftDashboardCard: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .stroke(
-                            isIOS27FullyReady
+                            isAirLiftFullyReady
                             ? Color(hex: 0x10B981).opacity(0.4)
-                            : (storageCoordinator.useAirLiftForAll ? AppTheme.statusWarning.opacity(0.35) : AppTheme.grey200),
+                            : (storageCoordinator.isAirLiftActive ? AppTheme.statusWarning.opacity(0.35) : AppTheme.grey200),
                             lineWidth: 1
                         )
                 )
@@ -662,23 +699,25 @@ struct AirLiftDashboardCard: View {
     }
 
     private var ios27ReadinessSummaryText: String {
-        if isIOS27FullyReady {
+        if isAirLiftFullyReady {
             return "VPN + Ghép đôi + AirTraffic đã xác thực. Canary sẽ được kiểm tra lại trước mỗi lần ghi."
         }
         if isComprehensiveChecking {
             return "Đang tự động kiểm tra VPN, Ghép đôi và AirLift..."
         }
-        if !storageCoordinator.useAirLiftForAll {
-            return "Hãy gạt công tắc bật AirLift ở trên để kích hoạt ghi file cho iOS 27."
+        if !storageCoordinator.isAirLiftActive {
+            return "Phiên bản iOS này dùng đường ghi trực tiếp và không cần pairing AirLift."
         }
         if !tunnelManager.isOperational {
             return "Thiếu LocalDevVPN: Vui lòng mở app LocalDevVPN và bật tunnel 10.7.0.1."
         }
         if pairingManager.status == .revoked {
-            return "iPhone đã hủy ghép đôi trong Cài đặt: Vui lòng bấm Pair trên máy."
+            return pairingRecoveryMessage
         }
         if !pairingManager.status.isPaired {
-            return "Thiếu Pairing: Vui lòng bấm Pair trên máy để ghép đôi thiết bị."
+            return ExploitSupportPolicy.currentPairingMode == .onDeviceOrImportedFile
+                ? "Thiếu Pairing: Vui lòng bấm Pair trên máy để ghép đôi thiết bị."
+                : "Thiếu Pairing: Hãy tạo file pairing trên máy tính rồi nhập vào Astra."
         }
         if !airTrafficClient.engineHealthState.isHealthy {
             return "AirLift chưa phản hồi: Bấm 'LÀM MỚI' ở trên để khởi động lại session."
@@ -798,24 +837,38 @@ struct AirLiftSettingsSection: View {
             }
 
             if pairingManager.status == .revoked {
-                Text("iPhone đã hủy ghép đôi trong Cài đặt. Vui lòng bấm 'Pair trực tiếp trên iPhone' bên dưới để ghép đôi lại.")
+                Text(pairingRecoveryMessage)
                     .font(.caption)
                     .foregroundStyle(AppTheme.statusError)
             }
             
-            // 3. Pair trực tiếp trên iPhone
-            Button {
-                Task { await pairingManager.pairDirectlyOnDevice() }
-            } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: "link.badge.plus")
-                        .font(.system(size: 18))
-                        .foregroundStyle(AppTheme.statusInfo)
-                        .frame(width: 24)
-                    
-                    Text("Pair trực tiếp trên iPhone")
-                        .foregroundStyle(AppTheme.statusInfo)
+            // 3. Pair trực tiếp chỉ có trên các build iOS 27 còn hỗ trợ.
+            if ExploitSupportPolicy.currentPairingMode == .onDeviceOrImportedFile {
+                Button {
+                    Task { await pairingManager.pairDirectlyOnDevice() }
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "link.badge.plus")
+                            .font(.system(size: 18))
+                            .foregroundStyle(AppTheme.statusInfo)
+                            .frame(width: 24)
+
+                        Text(pairingManager.isPairingHostActive ? "Phát lại thiết bị Astra" : "Pair trực tiếp trên iPhone")
+                            .foregroundStyle(AppTheme.statusInfo)
+                    }
                 }
+                HStack {
+                    Text("Bonjour")
+                    Spacer()
+                    Text(pairingManager.bonjourStatusText)
+                        .font(.caption)
+                        .multilineTextAlignment(.trailing)
+                        .foregroundStyle(pairingManager.isBroadcastingBonjour ? AppTheme.statusSuccess : Color.secondary)
+                }
+            } else if ExploitSupportPolicy.currentPairingMode == .importedFile {
+                Text("Phiên bản iOS này dùng AirLift nhưng không ghép trực tiếp trong Chế độ nhà phát triển. Hãy tạo pairing file bằng máy tính rồi chọn “Nhập file pairing” bên dưới. Quy tắc này áp dụng cả iOS 26.7.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             
             // 4. Nhập file pairing
@@ -858,18 +911,20 @@ struct AirLiftSettingsSection: View {
                         .foregroundStyle(AppTheme.ink)
                         .frame(width: 24)
                     
-                    Text("Sử dụng AirLift cho toàn bộ")
+                    Text(storageCoordinator.isAirLiftActive
+                        ? "AirLift bắt buộc theo phiên bản iOS"
+                        : "Ghi trực tiếp · Không cần AirLift")
                         .foregroundStyle(.primary)
                 }
             }
             .tint(AppTheme.ink)
-            .disabled(!storageCoordinator.isAirTrafficEngineLinked)
+            .disabled(true)
 
             // 7. Trạng thái AirTraffic thực tế
             realAirLiftStatusFormRow
 
             // 8. Nhãn sẵn sàng cho iOS 27
-            ios27ReadinessFormRow
+            airLiftReadinessFormRow
         } footer: {
             Text("Astra không còn chứa VPN tích hợp. Hãy bật ứng dụng LocalDevVPN riêng; Astra chỉ kiểm tra RSD/Lockdown và ghi qua AirTraffic sau khi canary được đọc lại chính xác.")
                 .font(.footnote)
@@ -888,7 +943,9 @@ struct AirLiftSettingsSection: View {
             )
         }
         .task {
-            await runComprehensiveCheck()
+            if storageCoordinator.isAirLiftActive {
+                await runComprehensiveCheck()
+            }
         }
         .onChange(of: storageCoordinator.useAirLiftForAll) { isEnabled in
             if isEnabled {
@@ -897,12 +954,19 @@ struct AirLiftSettingsSection: View {
         }
     }
     
-    private var isIOS27FullyReady: Bool {
-        storageCoordinator.useAirLiftForAll &&
+    private var isAirLiftFullyReady: Bool {
+        storageCoordinator.isAirLiftActive &&
         tunnelManager.isOperational &&
         pairingManager.status.isPaired &&
         pairingManager.status != .revoked &&
         airTrafficClient.engineHealthState.isHealthy
+    }
+
+    private var pairingRecoveryMessage: String {
+        if ExploitSupportPolicy.currentPairingMode == .onDeviceOrImportedFile {
+            return "iPhone đã hủy ghép đôi trong Cài đặt. Vui lòng bấm 'Pair trực tiếp trên iPhone' để ghép đôi lại."
+        }
+        return "File pairing đã hết hiệu lực. Hãy tạo file pairing mới trên máy tính rồi nhập lại vào Astra."
     }
 
     private var realAirLiftStatusFormRow: some View {
@@ -952,42 +1016,42 @@ struct AirLiftSettingsSection: View {
         .padding(.vertical, 4)
     }
 
-    private var ios27ReadinessFormRow: some View {
+    private var airLiftReadinessFormRow: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Image(systemName: isIOS27FullyReady ? "checkmark.seal.fill" : (storageCoordinator.useAirLiftForAll ? "exclamationmark.triangle.fill" : "poweroff"))
+                Image(systemName: isAirLiftFullyReady ? "checkmark.seal.fill" : (storageCoordinator.isAirLiftActive ? "exclamationmark.triangle.fill" : "poweroff"))
                     .font(.system(size: 16, weight: .bold))
-                    .foregroundColor(isIOS27FullyReady ? Color(hex: 0x10B981) : (storageCoordinator.useAirLiftForAll ? AppTheme.statusWarning : AppTheme.grey400))
+                    .foregroundColor(isAirLiftFullyReady ? Color(hex: 0x10B981) : (storageCoordinator.isAirLiftActive ? AppTheme.statusWarning : AppTheme.grey400))
 
-                Text(isIOS27FullyReady ? "SẴN SÀNG ĐỂ INJECT CHO IOS 27" : "TRẠNG THÁI GHI FILE CHO IOS 27")
+                Text(isAirLiftFullyReady ? "AIRLIFT SẴN SÀNG ĐỂ INJECT" : "TRẠNG THÁI GHI FILE AIRLIFT")
                     .font(.system(size: 12, weight: .black, design: .rounded))
-                    .foregroundColor(isIOS27FullyReady ? Color(hex: 0x065F46) : AppTheme.ink)
+                    .foregroundColor(isAirLiftFullyReady ? Color(hex: 0x065F46) : AppTheme.ink)
 
                 Spacer()
 
-                Text(isIOS27FullyReady ? "SẴN SÀNG" : (isComprehensiveChecking ? "ĐANG KIỂM TRA" : "CHƯA SẴN SÀNG"))
+                Text(isAirLiftFullyReady ? "SẴN SÀNG" : (isComprehensiveChecking ? "ĐANG KIỂM TRA" : "CHƯA SẴN SÀNG"))
                     .font(.system(size: 8, weight: .heavy, design: .monospaced))
                     .foregroundColor(.white)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(
                         Capsule().fill(
-                            isIOS27FullyReady
+                            isAirLiftFullyReady
                             ? Color(hex: 0x10B981)
-                            : (isComprehensiveChecking ? AppTheme.statusInfo : (storageCoordinator.useAirLiftForAll ? AppTheme.statusError : AppTheme.grey500))
+                            : (isComprehensiveChecking ? AppTheme.statusInfo : (storageCoordinator.isAirLiftActive ? AppTheme.statusError : AppTheme.grey500))
                         )
                     )
             }
 
             Text(ios27ReadinessSummaryText)
                 .font(.caption)
-                .foregroundColor(isIOS27FullyReady ? Color(hex: 0x047857) : .secondary)
+                .foregroundColor(isAirLiftFullyReady ? Color(hex: 0x047857) : .secondary)
 
             HStack(spacing: 12) {
                 factorIcon(title: "VPN", isMet: tunnelManager.isOperational)
                 factorIcon(title: "Pairing", isMet: pairingManager.status.isPaired && pairingManager.status != .revoked)
                 factorIcon(title: "AirTraffic", isMet: airTrafficClient.engineHealthState.isHealthy)
-                factorIcon(title: "Bật AirLift", isMet: storageCoordinator.useAirLiftForAll)
+                factorIcon(title: "AirLift theo iOS", isMet: storageCoordinator.isAirLiftActive)
             }
             .padding(.top, 2)
         }
@@ -995,17 +1059,17 @@ struct AirLiftSettingsSection: View {
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(
-                    isIOS27FullyReady
+                    isAirLiftFullyReady
                     ? Color(hex: 0x10B981).opacity(0.12)
-                    : (storageCoordinator.useAirLiftForAll ? AppTheme.statusWarning.opacity(0.08) : AppTheme.grey100.opacity(0.5))
+                    : (storageCoordinator.isAirLiftActive ? AppTheme.statusWarning.opacity(0.08) : AppTheme.grey100.opacity(0.5))
                 )
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .stroke(
-                    isIOS27FullyReady
+                    isAirLiftFullyReady
                     ? Color(hex: 0x10B981).opacity(0.35)
-                    : (storageCoordinator.useAirLiftForAll ? AppTheme.statusWarning.opacity(0.25) : AppTheme.grey200),
+                    : (storageCoordinator.isAirLiftActive ? AppTheme.statusWarning.opacity(0.25) : AppTheme.grey200),
                     lineWidth: 1
                 )
         )
@@ -1024,23 +1088,25 @@ struct AirLiftSettingsSection: View {
     }
 
     private var ios27ReadinessSummaryText: String {
-        if isIOS27FullyReady {
+        if isAirLiftFullyReady {
             return "VPN + Ghép đôi + AirTraffic đã xác thực. Canary sẽ được kiểm tra lại trước mỗi lần ghi."
         }
         if isComprehensiveChecking {
             return "Đang tự động kiểm tra VPN, Ghép đôi và AirLift..."
         }
-        if !storageCoordinator.useAirLiftForAll {
-            return "Hãy gạt công tắc bật AirLift ở trên để kích hoạt ghi file cho iOS 27."
+        if !storageCoordinator.isAirLiftActive {
+            return "Phiên bản iOS này dùng đường ghi trực tiếp và không cần pairing AirLift."
         }
         if !tunnelManager.isOperational {
             return "Thiếu LocalDevVPN: Vui lòng mở app LocalDevVPN và bật tunnel 10.7.0.1."
         }
         if pairingManager.status == .revoked {
-            return "iPhone đã hủy ghép đôi trong Cài đặt: Vui lòng bấm Pair trên máy."
+            return pairingRecoveryMessage
         }
         if !pairingManager.status.isPaired {
-            return "Thiếu Pairing: Vui lòng bấm Pair trên máy để ghép đôi thiết bị."
+            return ExploitSupportPolicy.currentPairingMode == .onDeviceOrImportedFile
+                ? "Thiếu Pairing: Vui lòng bấm Pair trên máy để ghép đôi thiết bị."
+                : "Thiếu Pairing: Hãy tạo file pairing trên máy tính rồi nhập vào Astra."
         }
         if !airTrafficClient.engineHealthState.isHealthy {
             return "AirLift chưa phản hồi: Bấm 'LÀM MỚI' ở trên để khởi động lại session."

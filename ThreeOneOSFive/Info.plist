@@ -123,7 +123,5 @@
         <string>_remotepairing-pairable-host._tcp</string>
         <string>_aircardprobe._tcp</string>
     </array>
-    <key>MinimumOSVersion</key>
-    <string>18.0</string>
 </dict>
 </plist>

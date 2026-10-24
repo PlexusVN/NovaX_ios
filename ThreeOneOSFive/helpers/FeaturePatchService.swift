@@ -1336,10 +1336,13 @@ final class FeaturePatchService: ObservableObject {
     func injectCodePatch(variant: GamePatchVariant, auth: AuthManager) async throws {
         patchStepMessage = "Đang kiểm tra kết nối bảo mật..."
         defer { patchStepMessage = "" }
+        guard ExploitSupportPolicy.currentStorageMode != .unsupported else {
+            throw NovaXControlError.message("Phiên bản iOS này không nằm trong danh sách hỗ trợ ghi file của Astra.")
+        }
         try await requireSecureControlNetwork()
         let useAirLift = StorageEngineCoordinator.shared.isAirLiftActive
         let destDir: URL
-        var airLiftUsed = useAirLift
+        let airLiftUsed = useAirLift
         do {
             if useAirLift {
                 patchStepMessage = "Đang xác định thư mục \(variant.shortTitle)..."
@@ -1347,9 +1350,7 @@ final class FeaturePatchService: ObservableObject {
             } else if let directDirectory = FeaturePatchService.codePatchDirectory(variant: variant) {
                 destDir = directDirectory
             } else {
-                airLiftUsed = true
-                patchStepMessage = "Đang xác định thư mục qua AirLift..."
-                destDir = try await FeaturePatchService.airLiftCodePatchDirectory(variant: variant)
+                throw NovaXControlError.message("Không thể truy cập trực tiếp dữ liệu game \(variant.shortTitle). Hãy chạy lại quyền kernel/direct rồi thử lại.")
             }
         } catch let error as AirLiftError {
             throw NovaXControlError.message(error.localizedDescription)
@@ -1388,9 +1389,12 @@ final class FeaturePatchService: ObservableObject {
     func unjectCodePatch(variant: GamePatchVariant, auth: AuthManager) async throws {
         patchStepMessage = "Đang kiểm tra kết nối bảo mật..."
         defer { patchStepMessage = "" }
+        guard ExploitSupportPolicy.currentStorageMode != .unsupported else {
+            throw NovaXControlError.message("Phiên bản iOS này không nằm trong danh sách hỗ trợ ghi file của Astra.")
+        }
         let useAirLift = StorageEngineCoordinator.shared.isAirLiftActive
         let destDir: URL
-        var airLiftUsed = useAirLift
+        let airLiftUsed = useAirLift
         do {
             if useAirLift {
                 patchStepMessage = "Đang xác định thư mục \(variant.shortTitle)..."
@@ -1398,9 +1402,7 @@ final class FeaturePatchService: ObservableObject {
             } else if let directDirectory = FeaturePatchService.codePatchDirectory(variant: variant) {
                 destDir = directDirectory
             } else {
-                airLiftUsed = true
-                patchStepMessage = "Đang xác định thư mục qua AirLift..."
-                destDir = try await FeaturePatchService.airLiftCodePatchDirectory(variant: variant)
+                throw NovaXControlError.message("Không thể truy cập trực tiếp dữ liệu game \(variant.shortTitle). Hãy chạy lại quyền kernel/direct rồi thử lại.")
             }
         } catch let error as AirLiftError {
             throw NovaXControlError.message(error.localizedDescription)

@@ -13,8 +13,16 @@ import AVFAudio
 import AirliftFFI
 
 @MainActor
-final class AirLiftPairingManager: ObservableObject {
+final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegate {
     static let shared = AirLiftPairingManager()
+
+    enum BonjourStatus: Equatable {
+        case idle
+        case preparing
+        case publishing
+        case published
+        case failed(String)
+    }
 
     enum PairingStatus: String, CaseIterable {
         case ready = "File pairing hợp lệ"
@@ -35,17 +43,20 @@ final class AirLiftPairingManager: ObservableObject {
         case unsupportedOS
         case busy
         case localNetworkPermission
+        case publicationFailed(String)
         case emptyRecord
         case failed(String)
 
         var errorDescription: String? {
             switch self {
             case .unsupportedOS:
-                return "Ghép đôi trực tiếp yêu cầu iOS 16 trở lên."
+                return "Ghép đôi trực tiếp trong Chế độ nhà phát triển chỉ dùng cho các build iOS 27 còn hỗ trợ. iOS 18.7.2–18.8.x và iOS 26.6.2 trở lên (bao gồm iOS 26.7) phải nhập pairing file tạo từ máy tính."
             case .busy:
                 return "Một phiên ghép đôi đang chạy."
             case .localNetworkPermission:
                 return "Astra chưa được phép dùng Mạng cục bộ. Vào Cài đặt → Astra → bật Mạng cục bộ rồi thử lại."
+            case .publicationFailed(let message):
+                return "Không thể phát thiết bị Astra qua Bonjour: \(message)"
             case .emptyRecord:
                 return "Ghép đôi hoàn tất nhưng file thông tin xác thực bị trống."
             case .failed(let message):
@@ -59,22 +70,50 @@ final class AirLiftPairingManager: ObservableObject {
     @Published var alertMessage: String?
     @Published var showAlert = false
     @Published var isBroadcastingBonjour = false
+    @Published private(set) var bonjourStatus: BonjourStatus = .idle
     @Published var pairingPIN = ""
     @Published var isWiFiConnected = true
+    @Published private(set) var isBackgroundKeepAliveActive = false
 
     var isPaired: Bool {
         status.isPaired
+    }
+
+    var isPairingHostActive: Bool { pairingThreadActive }
+    var canRetryBonjourAdvertisement: Bool {
+        pairingThreadActive && pendingPublication != nil && !isBroadcastingBonjour
+    }
+
+    var bonjourStatusText: String {
+        switch bonjourStatus {
+        case .idle: return "Chưa phát dịch vụ ghép nối"
+        case .preparing: return "Đang khởi tạo RPPairing host"
+        case .publishing: return "Đang đăng ký thiết bị Astra với Bonjour"
+        case .published: return "Thiết bị Astra đang hiển thị để ghép nối"
+        case .failed(let detail): return "Bonjour chưa phát được (\(detail))"
+        }
     }
 
     private let pathMonitor = NWPathMonitor()
     private let localNetworkAuthorization = LocalNetworkAuthorization()
     private var netService: NetService?
     private let audioKeepAlive = PairingAudioKeepAlive()
+    private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
+    private var pendingPublication: PairingPublication?
+    private var publicationRetryCount = 0
+    private var publicationRetryWorkItem: DispatchWorkItem?
+    private var hostReadyWatchdog: DispatchWorkItem?
     private var continuation: CheckedContinuation<String, Error>?
     private var pairingThreadActive = false
     private var cancellables = Set<AnyCancellable>()
     private var verificationTimer: AnyCancellable?
     private var isVerifyingPairing = false
+
+    private struct PairingPublication {
+        let serviceID: String
+        let port: UInt16
+        let txt: [String: Data]
+    }
 
     nonisolated private static let altIRKKey = "novax.airlift.hostAltIRK"
     nonisolated private static var storedAltIRK: String {
@@ -102,7 +141,8 @@ final class AirLiftPairingManager: ObservableObject {
             .appendingPathComponent(pairingFileName)
     }
 
-    private init() {
+    private override init() {
+        super.init()
         migrateLegacyPairingFileIfNeeded()
         checkPairingStatus()
         setupNetworkMonitoring()
@@ -125,6 +165,11 @@ final class AirLiftPairingManager: ObservableObject {
                     guard let self else { return }
                     guard !AirTrafficProtocolClient.shared.isBusy else { return }
                     self.checkPairingStatus()
+                    if self.pairingThreadActive,
+                       self.pendingPublication != nil,
+                       !self.isBroadcastingBonjour {
+                        self.retryBonjourAdvertisement(userInitiated: false)
+                    }
                     if AirLiftTunnelManager.shared.isOperational && self.status.isPaired {
                         await self.verifyPairingWithDevice(silent: true)
                     }
@@ -246,7 +291,10 @@ final class AirLiftPairingManager: ObservableObject {
         Self.storedAltIRK = ""
         pairingFilePath = nil
         status = .revoked
-        notify(message: "Thiết bị iPhone đã hủy ghép đôi với Astra trong Cài đặt. Vui lòng bấm 'Pair trên máy' để ghép đôi lại.")
+        let guidance = ExploitSupportPolicy.currentPairingMode == .onDeviceOrImportedFile
+            ? "Vui lòng bấm 'Pair trên máy' để ghép đôi lại hoặc nhập pairing file hợp lệ."
+            : "Vui lòng tạo lại file pairing trên máy tính rồi nhập file mới vào Astra."
+        notify(message: "Thiết bị iPhone đã hủy ghép đôi với Astra. \(guidance)")
     }
 
     func importPairingFile(from sourceURL: URL) -> Bool {
@@ -275,19 +323,23 @@ final class AirLiftPairingManager: ObservableObject {
     }
 
     func pairDirectlyOnDevice() async {
-        guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 16 else {
+        guard ExploitSupportPolicy.currentPairingMode == .onDeviceOrImportedFile else {
             notify(message: PairingError.unsupportedOS.localizedDescription)
             return
         }
-        guard !pairingThreadActive else {
-            notify(message: PairingError.busy.localizedDescription)
+        if pairingThreadActive {
+            if pendingPublication != nil {
+                retryBonjourAdvertisement(userInitiated: true)
+            } else {
+                notify(message: "RPPairing đang khởi tạo. Nếu Astra chưa xuất hiện sau 15 giây, hãy đóng hẳn ứng dụng rồi mở lại để tạo phiên mới.")
+            }
             return
         }
 
-        guard await localNetworkAuthorization.request() else {
-            notify(message: PairingError.localNetworkPermission.localizedDescription)
-            return
-        }
+        // This probe exists to trigger the Local Network prompt. A timeout is
+        // not proof that permission was denied, so it must never prevent the
+        // real RPPairing host and NetService publication from starting.
+        _ = await localNetworkAuthorization.request()
 
         do {
             _ = try await startAndWait()
@@ -311,8 +363,11 @@ final class AirLiftPairingManager: ObservableObject {
         stopAdvertisingOnly()
         pairingPIN = ""
         status = .pairing
+        bonjourStatus = .preparing
         pairingThreadActive = true
-        audioKeepAlive.start()
+        isBackgroundKeepAliveActive = audioKeepAlive.start()
+        beginPairingBackgroundTask()
+        startHostReadyWatchdog()
 
         let outputPath = pairingFileURL.path
         let altIRK = Self.storedAltIRK
@@ -357,10 +412,17 @@ final class AirLiftPairingManager: ObservableObject {
 
     func stopBonjourBroadcast() {
         stopAdvertisingOnly()
+        pendingPublication = nil
+        publicationRetryCount = 0
+        hostReadyWatchdog?.cancel()
+        hostReadyWatchdog = nil
         pairingPIN = ""
         isBroadcastingBonjour = false
+        bonjourStatus = .idle
         if !pairingThreadActive {
             audioKeepAlive.stop()
+            isBackgroundKeepAliveActive = false
+            endPairingBackgroundTask()
         }
     }
 
@@ -372,9 +434,16 @@ final class AirLiftPairingManager: ObservableObject {
         errorMessage: String
     ) {
         stopAdvertisingOnly()
+        pendingPublication = nil
+        publicationRetryCount = 0
+        hostReadyWatchdog?.cancel()
+        hostReadyWatchdog = nil
         pairingThreadActive = false
         pairingPIN = ""
         audioKeepAlive.stop()
+        isBackgroundKeepAliveActive = false
+        endPairingBackgroundTask()
+        bonjourStatus = .idle
 
         if returnCode == 0,
            let data = try? Data(contentsOf: URL(fileURLWithPath: outputPath)),
@@ -406,21 +475,100 @@ final class AirLiftPairingManager: ObservableObject {
     }
 
     fileprivate func publish(serviceID: String, port: UInt16, txt: [String: Data]) {
+        hostReadyWatchdog?.cancel()
+        hostReadyWatchdog = nil
+        pendingPublication = PairingPublication(serviceID: serviceID, port: port, txt: txt)
+        publicationRetryCount = 0
+        publishPendingService()
+    }
+
+    private func publishPendingService() {
+        guard pairingThreadActive, let publication = pendingPublication else { return }
         stopAdvertisingOnly()
         let service = NetService(
             domain: "",
             type: "_remotepairing-pairable-host._tcp.",
-            name: serviceID,
-            port: Int32(port)
+            name: publication.serviceID,
+            port: Int32(publication.port)
         )
-        service.setTXTRecord(NetService.data(fromTXTRecord: txt))
+        service.delegate = self
+        service.setTXTRecord(NetService.data(fromTXTRecord: publication.txt))
         // The Rust RPPairing host already owns/listens on this TCP port.
         // NetService must advertise that existing listener only; asking it to
         // listen as well can make publication fail or contend for the port.
-        service.publish()
         netService = service
+        isBroadcastingBonjour = false
+        bonjourStatus = .publishing
+        status = .pairing
+        // The RPPairing auth tag is tied to the service identifier. Bonjour
+        // must not silently rename it to "name (2)" on a collision.
+        service.publish(options: .noAutoRename)
+    }
+
+    func retryBonjourAdvertisement(userInitiated: Bool) {
+        guard pairingThreadActive, pendingPublication != nil else {
+            if userInitiated {
+                notify(message: "RPPairing chưa tạo xong thông tin quảng bá. Hãy chờ vài giây rồi thử lại.")
+            }
+            return
+        }
+        publicationRetryWorkItem?.cancel()
+        publicationRetryWorkItem = nil
+        if userInitiated { publicationRetryCount = 0 }
+        publishPendingService()
+        if userInitiated {
+            notify(message: "Astra đang phát lại thiết bị ghép nối. Hãy giữ Wi‑Fi và quyền Mạng cục bộ bật rồi mở lại Chế độ nhà phát triển.")
+        }
+    }
+
+    func netServiceDidPublish(_ sender: NetService) {
+        guard sender === netService else { return }
+        publicationRetryWorkItem?.cancel()
+        publicationRetryWorkItem = nil
+        publicationRetryCount = 0
         isBroadcastingBonjour = true
+        bonjourStatus = .published
         status = .waitingSettings
+    }
+
+    func netService(_ sender: NetService, didNotPublish errorDict: [String: NSNumber]) {
+        guard sender === netService else { return }
+        isBroadcastingBonjour = false
+        let code = errorDict[NetService.errorCode] ?? 0
+        let domain = errorDict[NetService.errorDomain] ?? 0
+        let detail = "mã \(code) · miền \(domain)"
+        bonjourStatus = .failed(detail)
+
+        guard pairingThreadActive, pendingPublication != nil else { return }
+        if publicationRetryCount < 3 {
+            publicationRetryCount += 1
+            let delay = min(3.0, 0.75 * Double(publicationRetryCount))
+            let work = DispatchWorkItem { [weak self] in
+                MainActor.assumeIsolated { self?.publishPendingService() }
+            }
+            publicationRetryWorkItem = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+        } else {
+            status = .pairing
+            notify(message: PairingError.publicationFailed(
+                "\(detail). Kiểm tra Cài đặt → Astra → Mạng cục bộ, bật Wi‑Fi rồi bấm Pair trên máy để phát lại."
+            ).localizedDescription)
+        }
+    }
+
+    func netServiceDidStop(_ sender: NetService) {
+        guard sender === netService else { return }
+        isBroadcastingBonjour = false
+        guard pairingThreadActive, pendingPublication != nil else {
+            bonjourStatus = .idle
+            return
+        }
+        bonjourStatus = .failed("dịch vụ Bonjour đã dừng")
+        if UIApplication.shared.applicationState == .active {
+            DispatchQueue.main.async { [weak self] in
+                self?.retryBonjourAdvertisement(userInitiated: false)
+            }
+        }
     }
 
     fileprivate func showPIN(_ pin: String) {
@@ -429,9 +577,42 @@ final class AirLiftPairingManager: ObservableObject {
     }
 
     private func stopAdvertisingOnly() {
+        publicationRetryWorkItem?.cancel()
+        publicationRetryWorkItem = nil
+        netService?.delegate = nil
         netService?.stop()
         netService = nil
         isBroadcastingBonjour = false
+    }
+
+    private func startHostReadyWatchdog() {
+        hostReadyWatchdog?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self,
+                      self.pairingThreadActive,
+                      self.pendingPublication == nil else { return }
+                self.bonjourStatus = .failed("RPPairing host chưa sẵn sàng")
+                self.notify(message: "RPPairing không tạo được dịch vụ quảng bá sau 15 giây. Hãy đóng hẳn Astra, mở lại và thử ghép đôi lần nữa.")
+            }
+        }
+        hostReadyWatchdog = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 15, execute: work)
+    }
+
+    private func beginPairingBackgroundTask() {
+        endPairingBackgroundTask()
+        backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "Astra.RPPairing") { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.endPairingBackgroundTask()
+            }
+        }
+    }
+
+    private func endPairingBackgroundTask() {
+        guard backgroundTaskID != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundTaskID)
+        backgroundTaskID = .invalid
     }
 
     func openPairingSettings() {
@@ -510,7 +691,8 @@ final class AirLiftPairingManager: ObservableObject {
 }
 
 /// Requests Local Network access by advertising and browsing a temporary
-/// Bonjour service. Pairing does not start until that service is discoverable.
+/// Bonjour service. This is only a prompt trigger: a timeout or transient
+/// browser failure is not proof of denial, so the real publication still runs.
 @MainActor
 private final class LocalNetworkAuthorization {
     private let probeType = "_aircardprobe._tcp"
@@ -519,7 +701,7 @@ private final class LocalNetworkAuthorization {
     private var continuation: CheckedContinuation<Bool, Never>?
     private var timeoutWorkItem: DispatchWorkItem?
 
-    func request(timeout: TimeInterval = 12) async -> Bool {
+    func request(timeout: TimeInterval = 2.0) async -> Bool {
         guard continuation == nil else { return false }
         cleanup(resumeWith: nil)
 
@@ -538,7 +720,7 @@ private final class LocalNetworkAuthorization {
                 listener.newConnectionHandler = { connection in connection.cancel() }
                 listener.stateUpdateHandler = { [weak self] state in
                     guard case .failed = state else { return }
-                    Task { @MainActor [weak self] in self?.finish(false) }
+                    Task { @MainActor [weak self] in self?.finish(true) }
                 }
                 self.listener = listener
 
@@ -548,7 +730,7 @@ private final class LocalNetworkAuthorization {
                 )
                 browser.stateUpdateHandler = { [weak self] state in
                     guard case .failed = state else { return }
-                    Task { @MainActor [weak self] in self?.finish(false) }
+                    Task { @MainActor [weak self] in self?.finish(true) }
                 }
                 browser.browseResultsChangedHandler = { [weak self] results, _ in
                     guard !results.isEmpty else { return }
@@ -560,12 +742,12 @@ private final class LocalNetworkAuthorization {
                 browser.start(queue: .main)
 
                 let timeoutWorkItem = DispatchWorkItem { [weak self] in
-                    MainActor.assumeIsolated { self?.finish(false) }
+                    MainActor.assumeIsolated { self?.finish(true) }
                 }
                 self.timeoutWorkItem = timeoutWorkItem
                 DispatchQueue.main.asyncAfter(deadline: .now() + timeout, execute: timeoutWorkItem)
             } catch {
-                finish(false)
+                finish(true)
             }
         }
     }
@@ -617,8 +799,9 @@ private final class PairingAudioKeepAlive {
     private let player = AVAudioPlayerNode()
     private var running = false
 
-    func start() {
-        guard !running else { return }
+    @discardableResult
+    func start() -> Bool {
+        guard !running else { return true }
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
@@ -629,7 +812,7 @@ private final class PairingAudioKeepAlive {
                   let buffer = AVAudioPCMBuffer(
                     pcmFormat: format,
                     frameCapacity: max(1_024, AVAudioFrameCount(format.sampleRate))
-                  ) else { return }
+                  ) else { return false }
             buffer.frameLength = buffer.frameCapacity
             if let channels = buffer.floatChannelData {
                 for channel in 0..<Int(format.channelCount) {
@@ -641,8 +824,10 @@ private final class PairingAudioKeepAlive {
             player.scheduleBuffer(buffer, at: nil, options: .loops)
             player.play()
             running = true
+            return true
         } catch {
             stop()
+            return false
         }
     }
 

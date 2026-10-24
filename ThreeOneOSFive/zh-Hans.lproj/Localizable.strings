@@ -41,7 +41,7 @@
 "onboarding.install_message" = "Astra 需要受支持的签名方式才能访问设备功能。";
 "onboarding.install_ok" = "支持企业证书，包括 eSign 和类似的企业安装方式。";
 "onboarding.install_bad" = "不支持 SideStore、AltStore、3uTools 或 LiveContainer。";
-"onboarding.install_jailbreak" = "在 iOS 15 至 iOS 18.7.x 上，如果设备已越狱，Astra 将无法运行。";
+"onboarding.install_jailbreak" = "在 iOS 16 至 iOS 18.8.x 上，如果设备已越狱，Astra 将无法运行。";
 "onboarding.install_footer" = "继续前，请在未越狱的设备上使用受支持的证书。";
 
 "dashboard.exploit_access" = "漏洞利用权限";
@@ -57,14 +57,14 @@
 "dashboard.device_name" = "设备名称";
 "dashboard.hardware_model" = "硬件型号";
 "dashboard.access_footer" = "只有成功以读写模式打开系统文件后，才会报告权限获取成功。";
-"dashboard.unsupported_footer" = "iOS %@（%@）不在已验证范围内。支持：iOS 15.0–16.7.x、iOS 17.0–17.7.x、iOS 18.0–18.8.x、iOS 26.0–26.6.1、iOS 27.0 开发者 Beta 1–4 和公开 Beta 1–2。";
+"dashboard.unsupported_footer" = "iOS %@（%@）不在支持范围内。直接写入：iOS 16.0–18.7.1 和 iOS 26.0–26.6.1。AirLift + 电脑配对文件：iOS 18.7.2–18.8.x 和 iOS 26.6.2+（包括 26.7）。最高 27.2 beta 2 的兼容 iOS 27 构建可在设备上配对或导入文件。";
 "dashboard.app_browser" = "应用数据浏览器";
 "dashboard.browser" = "文件浏览器";
 "dashboard.open_browser" = "打开文件浏览器";
 "dashboard.browser_footer" = "浏览并读取此设备上所有应用和系统容器中的数据。";
 "dashboard.device_actions_warning" = "重新启动设备前，请先保存尚未应用的更改。";
 "dashboard.unsupported_device" = "不支持的设备";
-"dashboard.unsupported_message" = "暂不支持 iOS %@。\n\n当前支持：\n• iOS 15.0–16.7.x\n• iOS 17.0–17.7.x\n• iOS 18.0–18.8.x\n• iOS 26.0–26.6.1\n• iOS 27.0 开发者 Beta 1–4\n• iOS 27.0 公开 Beta 1–2";
+"dashboard.unsupported_message" = "iOS %@ 不支持文件写入。\n\n直接写入：iOS 16.0–18.7.1 和 iOS 26.0–26.6.1。\nAirLift + 电脑配对文件：iOS 18.7.2–18.8.x 和 iOS 26.6.2+（包括 26.7）。\nAirLift + 设备上配对/文件导入：最高 iOS 27.2 beta 2 的兼容构建。\niOS 27.2 beta 3 及更高版本已修复。";
 "dashboard.installation" = "应用安装";
 "dashboard.kernel_status" = "内核状态";
 "dashboard.kernel_running" = "正在激活…";
@@ -263,7 +263,7 @@
 "settings.beta_build" = "Beta %lld · %@";
 "settings.developer_beta_build" = "开发者 Beta %lld · %@";
 "settings.developer_public_beta_build" = "开发者 Beta %lld / 公开 Beta %lld · %@";
-"settings.supported_range_summary" = "已验证：iOS 15.0–16.7.x、iOS 17.0–17.7.x、iOS 18.0–18.8.x、iOS 26.0–26.6.1、iOS 27.0 开发者 Beta 1–4 和公开 Beta 1–2。";
+"settings.supported_range_summary" = "直接写入：iOS 16.0–18.7.1 和 iOS 26.0–26.6.1。AirLift + 电脑配对文件：iOS 18.7.2–18.8.x 和 iOS 26.6.2+（包括 26.7）。兼容到 iOS 27.2 beta 2 的 iOS 27 构建可在设备上配对。";
 
 "kernel.section_title" = "内核漏洞利用";
 "kernel.run_exploit" = "运行内核漏洞利用";
@@ -273,7 +273,7 @@
 "kernel.footer_warning" = "仅内存运行（重启后不保留）。失败时请重新打开应用后再试。";
 "kernel.auto_run" = "启动时自动运行";
 "kernel.failed_requires_relaunch" = "请重新打开应用后再试。";
-"settings.supported_versions_footer" = "仅启用上方列出的精确构建版本。其他 iOS 27 构建版本在验证前会标记为不支持。";
+"settings.supported_versions_footer" = "iOS 18.7.2–18.8.x 和 iOS 26.6.2 及更高版本（包括 iOS 26.7）使用 AirLift，并须导入电脑生成的配对文件。仍受支持的 iOS 27 构建可在设备上配对或导入文件。iOS 27.2 beta 3 及更高版本已修复。";
 "settings.sandbox_token" = "沙盒令牌";
 "settings.generate_token" = "生成令牌";
 "settings.token_footer" = "成功获得漏洞利用权限后可用。";

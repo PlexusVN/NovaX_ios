@@ -178,30 +178,40 @@ class AppState: ObservableObject {
     private var autoRunAttempted = false
 
     var kernelExploitApplicable: Bool {
-        KernelExploit.isApplicable(
+        ExploitSupportPolicy.supportsKernelExploit(
             major: AppInfo.versionTuple.major,
             minor: AppInfo.versionTuple.minor,
-            patch: AppInfo.versionTuple.patch,
+            patch: AppInfo.versionTuple.patch
+        )
+    }
+
+    var isSupported: Bool {
+        let version = AppInfo.versionTuple
+        return ExploitSupportPolicy.isSupported(
+            major: version.major,
+            minor: version.minor,
+            patch: version.patch,
             build: AppInfo.osBuild
         )
     }
 
-    var isSupported: Bool { hasDirectDirectoryAccess || hasSandboxAccess || (unsupportedMessage == nil && exploitStatus.isSuccess) }
-
     var hasFullAccess: Bool { hasDirectDirectoryAccess && hasSandboxAccess && exploitStatus.isSuccess }
 
     var accessLevelDescription: String {
-        var features: [String] = []
-        if hasDirectDirectoryAccess { features.append("Thư mục") }
-        if hasSandboxAccess { features.append("Sandbox") }
-        if exploitStatus.isSuccess { features.append("Kernel") }
-
-        if features.count == 3 {
-            return "Full quyền"
-        } else if features.isEmpty {
+        switch ExploitSupportPolicy.currentStorageMode {
+        case .direct:
+            return "Hỗ trợ · Ghi trực tiếp"
+        case .airLift:
+            switch ExploitSupportPolicy.currentPairingMode {
+            case .importedFile:
+                return "Hỗ trợ · AirLift · File pair máy tính"
+            case .onDeviceOrImportedFile:
+                return "Hỗ trợ · AirLift · Pair trên máy/file"
+            case .none, .unavailable:
+                return "Hỗ trợ · AirLift"
+            }
+        case .unsupported:
             return "Không hỗ trợ"
-        } else {
-            return "Được hỗ trợ (\(features.joined(separator: ", ")))"
         }
     }
 
@@ -225,11 +235,10 @@ class AppState: ObservableObject {
             return
         }
 
-        let applicable = KernelExploit.isApplicable(
+        let applicable = ExploitSupportPolicy.supportsKernelExploit(
             major: v.major,
             minor: v.minor,
-            patch: v.patch,
-            build: AppInfo.osBuild
+            patch: v.patch
         )
         guard applicable else { return }
 

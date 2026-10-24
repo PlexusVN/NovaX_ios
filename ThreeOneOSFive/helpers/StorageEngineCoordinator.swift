@@ -20,6 +20,11 @@ final class StorageEngineCoordinator: ObservableObject {
     
     @AppStorage("useAirLiftForAll") var useAirLiftForAll: Bool = false {
         didSet {
+            let required = ExploitSupportPolicy.currentStorageMode == .airLift
+            guard useAirLiftForAll == required else {
+                useAirLiftForAll = required
+                return
+            }
             objectWillChange.send()
             AirTrafficProtocolClient.shared.resetSession()
             if useAirLiftForAll {
@@ -31,18 +36,15 @@ final class StorageEngineCoordinator: ObservableObject {
     }
     
     var isAirLiftActive: Bool {
-        if useAirLiftForAll { return true }
-        // Auto-enable when kernel exploit / direct container access is unavailable
-        // (sandboxed without sandbox escape) or on iOS 17+, whenever AirLift pairing or tunnel is active.
-        if !KernelExploit.hasSandboxAccess() || ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 17 {
-            if AirLiftPairingManager.shared.status.isPaired || AirLiftTunnelManager.shared.isOperational {
-                return true
-            }
-        }
-        return false
+        ExploitSupportPolicy.currentStorageMode == .airLift
     }
     
-    private init() {}
+    private init() {
+        let required = ExploitSupportPolicy.currentStorageMode == .airLift
+        if useAirLiftForAll != required {
+            useAirLiftForAll = required
+        }
+    }
 
     private func airLiftAppliedKey(_ projectID: UUID) -> String {
         "airlift.applied.\(projectID.uuidString)"

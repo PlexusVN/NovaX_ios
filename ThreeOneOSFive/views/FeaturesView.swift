@@ -258,17 +258,17 @@ struct FeaturesView: View {
                     if StorageEngineCoordinator.shared.isAirLiftActive {
                         HStack(spacing: 6) {
                             Circle()
-                                .fill(isAirLiftReadyForIOS27 ? Color(hex: 0x10B981) : AppTheme.statusWarning)
+                                .fill(isAirLiftReady ? Color(hex: 0x10B981) : AppTheme.statusWarning)
                                 .frame(width: 7, height: 7)
-                            Text(isAirLiftReadyForIOS27 ? "iOS 27: Kênh AirLift đã xác thực" : "iOS 27: Cần kiểm tra AirLift")
+                            Text(isAirLiftReady ? "Kênh AirLift đã xác thực" : "Cần kiểm tra AirLift và pairing")
                                 .font(.system(size: 10, weight: .bold, design: .rounded))
-                                .foregroundColor(isAirLiftReadyForIOS27 ? Color(hex: 0x065F46) : AppTheme.statusWarning)
+                                .foregroundColor(isAirLiftReady ? Color(hex: 0x065F46) : AppTheme.statusWarning)
                         }
                         .padding(.horizontal, 10)
                         .padding(.vertical, 3)
                         .background(
                             Capsule().fill(
-                                isAirLiftReadyForIOS27 ? Color(hex: 0x10B981).opacity(0.14) : AppTheme.statusWarning.opacity(0.1)
+                                isAirLiftReady ? Color(hex: 0x10B981).opacity(0.14) : AppTheme.statusWarning.opacity(0.1)
                             )
                         )
                     }
@@ -509,7 +509,7 @@ struct FeaturesView: View {
         }
     }
 
-    private var isAirLiftReadyForIOS27: Bool {
+    private var isAirLiftReady: Bool {
         AirLiftTunnelManager.shared.isOperational &&
         AirLiftPairingManager.shared.status.isPaired &&
         AirLiftPairingManager.shared.status != .revoked &&

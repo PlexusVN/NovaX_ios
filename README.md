@@ -10,7 +10,7 @@
 
 <p align="center">
   <img alt="Version" src="https://img.shields.io/badge/version-1.2.6-E6753A?style=flat-square">
-  <img alt="iOS" src="https://img.shields.io/badge/iOS-17.0–18.7.1%20%7C%2026.0–26.6.1%20%7C%2027%20beta%201–4-222222?style=flat-square">
+  <img alt="iOS" src="https://img.shields.io/badge/iOS-16.0–18.8.x%20%7C%2026.x%20%7C%2027.0–27.2b2-222222?style=flat-square">
   <img alt="Swift" src="https://img.shields.io/badge/Swift-5-F05138?style=flat-square&logo=swift&logoColor=white">
   <img alt="Languages" src="https://img.shields.io/badge/languages-English%20%7C%20Tiếng%20Việt%20%7C%20简体中文-E6753A?style=flat-square">
 </p>
@@ -44,7 +44,7 @@
 
 ## What's new in 1.1.0
 
-- **Broader iOS support** — verified range now includes iOS 17.0–17.7.x (kernel exploit), iOS 18.0–18.7.1 (kernel exploit), iOS 26.0–26.6.1 and iOS 27 Developer Beta 1–4 / Public Beta 1–2.
+- **Version-aware storage** — iOS 16.0–18.7.1 and iOS 26.0–26.6.1 use direct writes; iOS 18.7.2–18.8.x and iOS 26.6.2+ (including 26.7) use AirLift with a computer-generated pairing file; compatible iOS 27 builds can pair on-device or import a file.
 - **Wrong-password feedback** — importing a `.3105` patch with an incorrect password now shows "Incorrect password" instead of failing silently.
 - **Onboarding for reinstalls** — onboarding reappears after overwriting the app with the same version, so fresh and overwritten installs both see the guided setup.
 
@@ -76,15 +76,15 @@ See the complete [Patch workspace guide](docs/PATCH_GUIDE.md).
 
 | System | Verified range/builds |
 | --- | --- |
-| iOS 17 | 17.0 through 17.7 (kernel exploit) |
-| iOS 18 | 18.0 through 18.7.1 (kernel exploit) |
-| iOS 26 | 26.0 through 26.6.1 |
-| iOS 27 Developer Beta 1 | `24A5355q` |
-| iOS 27 Developer Beta 2 | `24A5370h` |
-| iOS 27 Developer Beta 3 / Public Beta 1 | `24A5380h` |
-| iOS 27 Developer Beta 4 / Public Beta 2 | `24A5390f` |
+| iOS 16 | 16.0 through 16.7.x (direct/kernel) |
+| iOS 17 | 17.0 through 17.7.x (direct/kernel) |
+| iOS 18 | 18.0–18.7.1 direct/kernel; 18.7.2–18.8.x AirLift + computer-generated pairing file |
+| iOS 26 | 26.0–26.6.1 direct; 26.6.2 and newer, including 26.7, use AirLift + computer-generated pairing file |
+| iOS 27.0–27.1 | AirLift + on-device Developer Mode pairing or imported pairing file |
+| iOS 27.2 beta 1 | `24B5084k` — AirLift + on-device or imported pairing |
+| iOS 27.2 beta 2 | `24B5089g` — AirLift + on-device or imported pairing |
 
-Unlisted iOS 27 builds are marked unsupported rather than assumed compatible. The iOS 17–18 kernel exploit is opt-in (manual button) because a failed exploit attempt may restart the app.
+iOS 27.2 beta 3 (`24B5099f`) and newer are marked unsupported because the AirTraffic path is patched. Unlisted iOS 27.2 builds fail closed rather than being assumed compatible.
 
 ## Installation notes
 

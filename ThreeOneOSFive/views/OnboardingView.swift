@@ -199,19 +199,20 @@ struct OnboardingView: View {
                     .padding(.horizontal, 22)
             }
             VStack(alignment: .leading, spacing: 10) {
+                versionRow(icon: "checkmark.circle.fill", title: "iOS 16", value: ExploitSupportPolicy.verifiedIOS16Range, color: .green)
                 versionRow(icon: "checkmark.circle.fill", title: "iOS 17", value: ExploitSupportPolicy.verifiedIOS17Range, color: .green)
                 versionRow(icon: "checkmark.circle.fill", title: "iOS 18", value: ExploitSupportPolicy.verifiedIOS18Range, color: .green)
                 versionRow(icon: "checkmark.circle.fill", title: "iOS 26", value: ExploitSupportPolicy.verifiedIOS26Range, color: .green)
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 8) {
                         Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                        Text("iOS 27.0").font(.subheadline.weight(.semibold))
+                        Text("iOS 27").font(.subheadline.weight(.semibold))
                         Spacer()
-                        Text(language.text("onboarding.beta")).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        Text("AirLift").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     }
                     ForEach(ExploitSupportPolicy.verifiedIOS27Builds, id: \.build) { v in
                         HStack {
-                            Text("Beta \(v.beta)" + (v.publicBeta.map { " / Public \($0)" } ?? ""))
+                            Text(v.label)
                                 .font(.caption.weight(.medium)).foregroundStyle(.secondary)
                             Spacer()
                             Text(v.build).font(.caption.monospaced()).foregroundStyle(.secondary)

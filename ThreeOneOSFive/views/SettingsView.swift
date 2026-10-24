@@ -66,14 +66,15 @@ struct SettingsView: View {
                     HStack {
                         Text(language.text("settings.current_version"))
                         Spacer()
-                        Text(language.text(appState.isSupported ? (appState.hasFullAccess ? "settings.full_access" : "settings.kernel_access") : "settings.unsupported"))
+                        Text(appState.accessLevelDescription)
                         .foregroundStyle(appState.isSupported ? AppTheme.statusSuccess : AppTheme.statusError)
                     }
+                    LabeledContent("iOS 16", value: ExploitSupportPolicy.verifiedIOS16Range)
                     LabeledContent("iOS 17", value: ExploitSupportPolicy.verifiedIOS17Range)
                     LabeledContent("iOS 18", value: ExploitSupportPolicy.verifiedIOS18Range)
                     LabeledContent("iOS 26", value: ExploitSupportPolicy.verifiedIOS26Range)
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("iOS 27.0")
+                        Text("iOS 27 · AirLift")
                             .font(.body)
                         ForEach(ExploitSupportPolicy.verifiedIOS27Builds, id: \.build) { version in
                             Text(versionLabel(version))
@@ -145,22 +146,8 @@ struct SettingsView: View {
         AppUpdateChecker.currentVersion
     }
 
-    private func versionLabel(
-        _ version: (beta: Int, publicBeta: Int?, build: String)
-    ) -> String {
-        if let publicBeta = version.publicBeta {
-            return language.text(
-                "settings.developer_public_beta_build",
-                Int64(version.beta),
-                Int64(publicBeta),
-                version.build
-            )
-        }
-        return language.text(
-            "settings.developer_beta_build",
-            Int64(version.beta),
-            version.build
-        )
+    private func versionLabel(_ version: ExploitSupportPolicy.VerifiedBuild) -> String {
+        "\(version.label) · \(version.build)"
     }
 
     @ViewBuilder

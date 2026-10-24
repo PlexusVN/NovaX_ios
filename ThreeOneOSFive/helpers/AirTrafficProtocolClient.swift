@@ -27,9 +27,15 @@ enum AirLiftError: Error, LocalizedError {
         case .tunnelNotConnected:
             return "Đường hầm LocalDevVPN chưa kết nối."
         case .pairingRequired:
-            return "Chưa ghép đôi thiết bị với Astra. Hãy vào Cài đặt (bánh răng) › AIRLIFT › bấm 'Pair trên máy' để ghép đôi trước khi kích hoạt cheat."
+            if ExploitSupportPolicy.currentPairingMode == .onDeviceOrImportedFile {
+                return "Chưa ghép đôi thiết bị với Astra. Hãy vào Cài đặt (bánh răng) › AIRLIFT › bấm 'Pair trên máy' trước khi kích hoạt cheat."
+            }
+            return "Chưa có pairing hợp lệ. Hãy tạo file pairing bằng máy tính, sau đó vào Cài đặt (bánh răng) › AIRLIFT › Nhập file pairing."
         case .pairingRevoked:
-            return "Thiết bị iPhone đã hủy ghép đôi với Astra trong Cài đặt. Vui lòng vào Cài đặt › AIRLIFT › bấm 'Pair trên máy' để ghép đôi lại."
+            if ExploitSupportPolicy.currentPairingMode == .onDeviceOrImportedFile {
+                return "Thiết bị iPhone đã hủy ghép đôi với Astra. Vui lòng vào Cài đặt › AIRLIFT › bấm 'Pair trên máy' để ghép đôi lại."
+            }
+            return "File pairing đã hết hiệu lực. Hãy tạo lại file pairing bằng máy tính rồi nhập file mới vào Astra."
         case .invalidTargetPath:
             return "Đường dẫn đích không hợp lệ hoặc không phải đường dẫn tuyệt đối."
         case .socketConnectionFailed(let message):

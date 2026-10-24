@@ -21,6 +21,7 @@ $swiftFiles = @(
     "ThreeOneOSFive/helpers/AirTrafficProtocolClient.swift",
     "ThreeOneOSFive/helpers/StorageEngineCoordinator.swift",
     "ThreeOneOSFive/views/AirLiftSettingsSection.swift",
+    "ThreeOneOSFive/views/FeaturesView.swift",
     "ThreeOneOSFive/views/SettingsView.swift",
     "ThreeOneOSFive/helpers/KernelExploit.swift",
     "ThreeOneOSFive/App.swift"
@@ -55,13 +56,58 @@ Assert-Condition "Quyen dns-settings (NextDNS)" ($mainEnt -match "dns-settings")
 Assert-Condition "Da go quyen packet-tunnel-provider" ($mainEnt -notmatch "packet-tunnel-provider")
 Assert-Condition "Da go TunnelProv khoi project" (-not (Test-Path "c:\Users\Khai\Desktop\Nova IOS 27\NovaX\TunnelProv\PacketTunnelProvider.swift"))
 
-# 3. iOS 27 Support Policy
-Write-Host "`n3. Kiem tra Pham vi Ho tro iOS 27 (ExploitSupportPolicy):" -ForegroundColor Yellow
+# 3. iOS Storage Support Policy
+Write-Host "`n3. Kiem tra ma tran Direct/AirLift (ExploitSupportPolicy):" -ForegroundColor Yellow
 $kernelSwift = Get-Content -Path "c:\Users\Khai\Desktop\Nova IOS 27\NovaX\ThreeOneOSFive\helpers\KernelExploit.swift" -Raw
-Assert-Condition "Chua build iOS 27 RC (24A435)" ($kernelSwift -match "24A435")
-Assert-Condition "Chua build iOS 27 Final (24A437)" ($kernelSwift -match "24A437")
-Assert-Condition "Chua build iOS 27 Beta (24A5390f)" ($kernelSwift -match "24A5390f")
-Assert-Condition "Ho tro iOS 27 qua AirLift Engine" ($kernelSwift -match "if major == 27")
+Assert-Condition "iOS 16 nam trong kernel/direct policy" ($kernelSwift -match "if major == 16")
+Assert-Condition "iOS 18.7.1 tro xuong la direct" ($kernelSwift -match 'minor == 7 && patch <= 1')
+Assert-Condition "iOS 18.7.2 den 18.8.x la AirLift" ($kernelSwift -match '\(minor == 7 && patch >= 2\) \|\| minor == 8')
+Assert-Condition "iOS 26.6.1 tro xuong la direct" ($kernelSwift -match 'minor == 6 && patch <= 1')
+Assert-Condition "iOS 26.6.2 tro len la AirLift" (($kernelSwift -match 'if major == 26') -and ($kernelSwift -match 'return \.airLift'))
+Assert-Condition "iOS 26.7 dung AirLift theo nhanh 26.6.2+" (
+    ($kernelSwift -match 'if major == 26') -and
+    ($kernelSwift -match 'minor < 6 \|\| \(minor == 6 && patch <= 1\)') -and
+    ($kernelSwift -match 'return \.airLift')
+)
+Assert-Condition "iOS 27.2 beta 1 duoc ho tro" ($kernelSwift -match "24B5084k")
+Assert-Condition "iOS 27.2 beta 2 duoc ho tro" ($kernelSwift -match "24B5089g")
+Assert-Condition "iOS 27.2 build la phai dung allowlist" ($kernelSwift -match 'minor == 2, supportedIOS272Builds\.contains\(build\)')
+Assert-Condition "Kernel exploit khong dung chung voi danh sach AirLift" ($kernelSwift -match 'ExploitSupportPolicy\.supportsKernelExploit')
+$pairingSwift = Get-Content -Path "c:\Users\Khai\Desktop\Nova IOS 27\NovaX\ThreeOneOSFive\helpers\AirLiftPairingManager.swift" -Raw
+Assert-Condition "Policy tach pairing none/imported/on-device" (
+    ($kernelSwift -match 'enum PairingMode') -and
+    ($kernelSwift -match 'case importedFile') -and
+    ($kernelSwift -match 'case onDeviceOrImportedFile')
+)
+Assert-Condition "iOS 18 va 26 AirLift dung pairing file nhap" ($kernelSwift -match 'major >= 27 \? \.onDeviceOrImportedFile : \.importedFile')
+Assert-Condition "Pair truc tiep phai qua policy build iOS" ($pairingSwift -match 'currentPairingMode == \.onDeviceOrImportedFile')
+$appSwift = Get-Content -Path "c:\Users\Khai\Desktop\Nova IOS 27\NovaX\ThreeOneOSFive\App.swift" -Raw
+Assert-Condition "Trang thai ho tro chi dua tren ma tran OS/build" (
+    ($appSwift -match 'var isSupported: Bool\s*\{[\s\S]*?ExploitSupportPolicy\.isSupported') -and
+    ($appSwift -match 'var accessLevelDescription: String\s*\{\s*switch ExploitSupportPolicy\.currentStorageMode')
+)
+Assert-Condition "Trang thai phan biet Direct va tung kieu pairing AirLift" (
+    ($appSwift -match 'case \.direct:[\s\S]*?case \.airLift:') -and
+    ($appSwift -match 'case \.importedFile:') -and
+    ($appSwift -match 'case \.onDeviceOrImportedFile:') -and
+    ($appSwift -match 'case \.unsupported:')
+)
+Assert-Condition "iOS 26.7 duoc huong dan pairing bang may tinh" ($pairingSwift -match 'bao gồm iOS 26\.7')
+Assert-Condition "Bonjour chi bao dang phat sau delegate thanh cong" (
+    ($pairingSwift -match 'NetServiceDelegate') -and
+    ($pairingSwift -match 'func netServiceDidPublish') -and
+    ($pairingSwift -match 'func netService\(_ sender: NetService, didNotPublish') -and
+    ($pairingSwift -notmatch 'service\.publish\(\)\s*\r?\n\s*netService = service\s*\r?\n\s*isBroadcastingBonjour = true')
+)
+Assert-Condition "Probe Local Network timeout khong chan RPPairing" (
+    ($pairingSwift -match 'request\(timeout: TimeInterval = 2\.0\)') -and
+    ($pairingSwift -match 'MainActor\.assumeIsolated \{ self\?\.finish\(true\) \}')
+)
+Assert-Condition "Bonjour co retry va host watchdog" (
+    ($pairingSwift -match 'retryBonjourAdvertisement') -and
+    ($pairingSwift -match 'startHostReadyWatchdog')
+)
+Assert-Condition "Bonjour khong tu doi service ID cua RPPairing" ($pairingSwift -match 'publish\(options: \.noAutoRename\)')
 
 # 4. External LocalDevVPN
 Write-Host "`n4. Kiem tra ket noi LocalDevVPN ben ngoai:" -ForegroundColor Yellow
@@ -82,6 +128,8 @@ Assert-Condition "Nhung AirLiftSettingsSection vao SettingsView" ($settingsView 
 # 6. project.pbxproj Integration Check
 Write-Host "`n6. Kiem tra Cau hinh Build project.pbxproj:" -ForegroundColor Yellow
 $pbxContent = Get-Content -Path "c:\Users\Khai\Desktop\Nova IOS 27\NovaX\ThreeOneOSFive.xcodeproj\project.pbxproj" -Raw
+Assert-Condition "Tat ca deployment target la iOS 16.0" (([regex]::Matches($pbxContent, 'IPHONEOS_DEPLOYMENT_TARGET = 16\.0;')).Count -eq 4)
+Assert-Condition "Khong hard-code MinimumOSVersion trong Info.plist" (-not ((Get-Content "c:\Users\Khai\Desktop\Nova IOS 27\NovaX\ThreeOneOSFive\Info.plist" -Raw) -match 'MinimumOSVersion'))
 Assert-Condition "AirLiftTunnelManager dang ky trong PBXSources" ($pbxContent -match "3105N200")
 Assert-Condition "AirLiftPairingManager dang ky trong PBXSources" ($pbxContent -match "3105N201")
 Assert-Condition "AirTrafficProtocolClient dang ky trong PBXSources" ($pbxContent -match "3105N202")
@@ -112,7 +160,7 @@ Assert-Condition "Health check xac nhan Apple Books cho AirTraffic" (
 Write-Host "`n================================================================" -ForegroundColor Cyan
 if ($allPassed) {
     Write-Host ">>> KET QUA: 100% TIEU CHI XAC MINH DAT CHUAN [PASSED] <<<" -ForegroundColor Green
-    Write-Host ">>> TICH HOP BUILD DA DAT; CAN BUILD VA TEST TREN IPHONE/iOS 27 DE XAC NHAN RUNTIME. <<<" -ForegroundColor Green
+    Write-Host ">>> MA TRAN HO TRO VA TICH HOP CODE DAT KIEM TRA TINH; KHONG TEST THIET BI THEO YEU CAU. <<<" -ForegroundColor Green
 } else {
     Write-Host ">>> KET QUA: CO LOI CAN DIEU CHINH [FAILED] <<<" -ForegroundColor Red
 }

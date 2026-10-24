@@ -41,7 +41,7 @@
 "onboarding.install_message" = "Astra cần phương thức ký được hỗ trợ để truy cập các tính năng của thiết bị.";
 "onboarding.install_ok" = "Hoạt động với chứng chỉ doanh nghiệp, bao gồm eSign và các bản cài enterprise tương tự.";
 "onboarding.install_bad" = "Không hoạt động với SideStore, AltStore, 3uTools hoặc LiveContainer.";
-"onboarding.install_jailbreak" = "Trên iOS 15 đến iOS 18.7.x, Astra sẽ không hoạt động nếu thiết bị đã jailbreak.";
+"onboarding.install_jailbreak" = "Trên iOS 16 đến iOS 18.8.x, Astra sẽ không hoạt động nếu thiết bị đã jailbreak.";
 "onboarding.install_footer" = "Hãy dùng chứng chỉ được hỗ trợ trên thiết bị chưa jailbreak trước khi tiếp tục.";
 
 "dashboard.exploit_access" = "Quyền exploit";
@@ -57,14 +57,14 @@
 "dashboard.device_name" = "Tên thiết bị";
 "dashboard.hardware_model" = "Model phần cứng";
 "dashboard.access_footer" = "App chỉ báo thành công sau khi tệp hệ thống thực sự mở được ở chế độ đọc và ghi.";
-"dashboard.unsupported_footer" = "iOS %@ (%@) nằm ngoài phạm vi đã xác minh. Hỗ trợ: iOS 15.0–16.7.x, iOS 17.0–17.7.x, iOS 18.0–18.8.x, iOS 26.0–26.6.1, iOS 27.0 Developer Beta 1–4 và Public Beta 1–2.";
+"dashboard.unsupported_footer" = "iOS %@ (%@) nằm ngoài phạm vi hỗ trợ. Ghi trực tiếp: iOS 16.0–18.7.1 và iOS 26.0–26.6.1. AirLift + file pair máy tính: iOS 18.7.2–18.8.x và iOS 26.6.2+ (gồm 26.7). Các build iOS 27 còn tương thích đến 27.2 beta 2 có thể pair trên máy hoặc nhập file.";
 "dashboard.app_browser" = "Duyệt dữ liệu ứng dụng";
 "dashboard.browser" = "Trình duyệt file";
 "dashboard.open_browser" = "Mở trình duyệt file";
 "dashboard.browser_footer" = "Duyệt và đọc dữ liệu từ mọi ứng dụng và system container trên thiết bị.";
 "dashboard.device_actions_warning" = "Hãy lưu thay đổi trước khi khởi động lại thiết bị.";
 "dashboard.unsupported_device" = "Thiết bị không được hỗ trợ";
-"dashboard.unsupported_message" = "iOS %@ chưa được hỗ trợ.\n\nCác phiên bản hiện được hỗ trợ:\n• iOS 15.0–16.7.x\n• iOS 17.0–17.7.x\n• iOS 18.0–18.8.x\n• iOS 26.0–26.6.1\n• iOS 27.0 Developer Beta 1–4\n• iOS 27.0 Public Beta 1–2";
+"dashboard.unsupported_message" = "iOS %@ không được hỗ trợ ghi file.\n\nGhi trực tiếp: iOS 16.0–18.7.1 và iOS 26.0–26.6.1.\nAirLift + file pair máy tính: iOS 18.7.2–18.8.x và iOS 26.6.2+ (gồm 26.7).\nAirLift + pair trên máy/file: các build iOS 27 còn tương thích đến 27.2 beta 2.\niOS 27.2 beta 3 trở lên đã bị vá.";
 "dashboard.installation" = "Cài đặt ứng dụng";
 "dashboard.kernel_status" = "Trạng thái kernel";
 "dashboard.kernel_running" = "Đang kích hoạt…";
@@ -263,7 +263,7 @@
 "settings.beta_build" = "Beta %lld · %@";
 "settings.developer_beta_build" = "Developer Beta %lld · %@";
 "settings.developer_public_beta_build" = "Developer Beta %lld / Public Beta %lld · %@";
-"settings.supported_range_summary" = "Đã xác minh: iOS 15.0–16.7.x, iOS 17.0–17.7.x, iOS 18.0–18.8.x, iOS 26.0–26.6.1, iOS 27.0 Developer Beta 1–4 và Public Beta 1–2.";
+"settings.supported_range_summary" = "Ghi trực tiếp: iOS 16.0–18.7.1 và iOS 26.0–26.6.1. AirLift + file pair máy tính: iOS 18.7.2–18.8.x và iOS 26.6.2+ (gồm 26.7). iOS 27 còn tương thích đến 27.2 beta 2 có thể Pair trên máy.";
 
 "kernel.section_title" = "Kernel Exploit";
 "kernel.run_exploit" = "Chạy Kernel Exploit";
@@ -273,7 +273,7 @@
 "kernel.footer_warning" = "Chỉ chạy trong RAM (không tồn tại sau reboot). Nếu thất bại, hãy mở lại app rồi thử lại.";
 "kernel.auto_run" = "Tự chạy khi mở app";
 "kernel.failed_requires_relaunch" = "Mở lại app trước khi thử lại.";
-"settings.supported_versions_footer" = "Chỉ các build chính xác ở trên được bật. Build iOS 27 khác sẽ bị đánh dấu chưa hỗ trợ cho đến khi được xác minh.";
+"settings.supported_versions_footer" = "iOS 18.7.2–18.8.x và iOS 26.6.2 trở lên (bao gồm iOS 26.7) dùng AirLift với pairing file tạo từ máy tính. Các build iOS 27 còn hỗ trợ có thể Pair trên máy hoặc nhập file. iOS 27.2 beta 3 trở lên đã bị vá.";
 "settings.sandbox_token" = "Token sandbox";
 "settings.generate_token" = "Tạo token";
 "settings.token_footer" = "Khả dụng sau khi exploit cấp quyền thành công.";
