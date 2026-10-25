@@ -42,8 +42,14 @@ final class AuthManager: ObservableObject {
     }
 
     private func loadSavedKey() {
+        if let keychainKey = KeychainUtils.read(key: "novax_saved_license_key"), !keychainKey.isEmpty {
+            licenseKey = keychainKey
+            return
+        }
         if let saved = defaults.string(forKey: keyKey), !saved.isEmpty {
             licenseKey = saved
+            _ = KeychainUtils.save(key: "novax_saved_license_key", value: saved)
+            defaults.removeObject(forKey: keyKey)
         }
     }
 
@@ -146,10 +152,14 @@ final class AuthManager: ObservableObject {
                 expiresAt = df.date(from: expires)
             }
 
-            defaults.set(key, forKey: keyKey)
+            _ = KeychainUtils.save(key: "novax_saved_license_key", value: key)
+            defaults.removeObject(forKey: keyKey)
             authState = .verified
             errorMessage = nil
             startMonitor()
+            Task { [weak self] in
+                await self?.enrollDeviceIfNeeded(key: key, hwid: hw)
+            }
         } catch let error as URLError {
             switch error.code {
             case .notConnectedToInternet:
@@ -188,8 +198,75 @@ final class AuthManager: ObservableObject {
         expiresAt = nil
         errorMessage = nil
         defaults.removeObject(forKey: keyKey)
+        KeychainUtils.delete(key: "novax_saved_license_key")
         monitorTask?.cancel()
         monitorTask = nil
+    }
+
+    // MARK: - Astra Anti-Crack v2 Device Enrollment
+
+    private func enrollDeviceIfNeeded(key: String, hwid: String) async {
+        guard DeviceIdentityService.shared.enrolledDeviceKeyId == nil else { return }
+        do {
+            let (pubKeyX963, assurance) = try DeviceIdentityService.shared.getOrCreateKey()
+            let installId = DeviceIdentityService.shared.installId
+
+            guard let challengeUrl = URL(string: "https://zynox.click/api/v2/device/challenge") else { return }
+            var challengeReq = URLRequest(url: challengeUrl)
+            challengeReq.httpMethod = "POST"
+            challengeReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            challengeReq.timeoutInterval = 10
+            let cBody: [String: Any] = [
+                "key": key,
+                "hwid": hwid,
+                "install_id": installId
+            ]
+            challengeReq.httpBody = try JSONSerialization.data(withJSONObject: cBody)
+
+            let (cData, cResp) = try await pinnedSession.data(for: challengeReq)
+            guard (cResp as? HTTPURLResponse)?.statusCode == 200,
+                  let cJson = try JSONSerialization.jsonObject(with: cData) as? [String: Any],
+                  let challengeId = cJson["challenge_id"] as? String,
+                  let challenge = cJson["challenge"] as? String else {
+                return
+            }
+
+            let signature = try DeviceIdentityService.shared.signEnrollment(
+                challengeId: challengeId,
+                challenge: challenge,
+                key: key,
+                hwid: hwid,
+                installId: installId,
+                publicKeyX963: pubKeyX963,
+                assurance: assurance
+            )
+
+            guard let enrollUrl = URL(string: "https://zynox.click/api/v2/device/enroll") else { return }
+            var enrollReq = URLRequest(url: enrollUrl)
+            enrollReq.httpMethod = "POST"
+            enrollReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            enrollReq.timeoutInterval = 10
+            let eBody: [String: Any] = [
+                "challenge_id": challengeId,
+                "challenge": challenge,
+                "key": key,
+                "hwid": hwid,
+                "install_id": installId,
+                "public_key_x963": pubKeyX963,
+                "assurance_level": assurance.rawValue,
+                "signature": signature
+            ]
+            enrollReq.httpBody = try JSONSerialization.data(withJSONObject: eBody)
+
+            let (eData, eResp) = try await pinnedSession.data(for: enrollReq)
+            if (eResp as? HTTPURLResponse)?.statusCode == 200,
+               let eJson = try JSONSerialization.jsonObject(with: eData) as? [String: Any],
+               let deviceKeyId = eJson["device_key_id"] as? String {
+                DeviceIdentityService.shared.enrolledDeviceKeyId = deviceKeyId
+            }
+        } catch {
+            // Shadow mode: enrollment failure does not block login in early phases
+        }
     }
 
     // MARK: - Re-verify monitor

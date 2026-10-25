@@ -74,6 +74,9 @@
 		3105N204 /* AirLiftSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105N104; };
 		3105N205 /* AirliftFFI.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3105N105; };
 		3105N206 /* GrappaHelper.m in Sources */ = {isa = PBXBuildFile; fileRef = 3105N106; };
+		3105SEC01 /* DeviceIdentityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105SEC02; };
+		3105SEC03 /* RequestProofService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105SEC04; };
+		3105SEC05 /* ServerSignatureVerifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105SEC06; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -164,6 +167,9 @@
 		3105A122 /* vi */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = vi; path = vi.lproj/Localizable.strings; sourceTree = "<group>"; };
 		3105B123 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		3105L102 /* ThreeOneOSFive.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ThreeOneOSFive.entitlements; sourceTree = "<group>"; };
+		3105SEC02 /* DeviceIdentityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceIdentityService.swift; sourceTree = "<group>"; };
+		3105SEC04 /* RequestProofService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RequestProofService.swift; sourceTree = "<group>"; };
+		3105SEC06 /* ServerSignatureVerifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerSignatureVerifier.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -298,6 +304,9 @@
 				3105N101 /* AirLiftPairingManager.swift */,
 				3105N102 /* AirTrafficProtocolClient.swift */,
 				3105N103 /* StorageEngineCoordinator.swift */,
+				3105SEC02 /* DeviceIdentityService.swift */,
+				3105SEC04 /* RequestProofService.swift */,
+				3105SEC06 /* ServerSignatureVerifier.swift */,
 				3105N106 /* GrappaHelper.m */,
 				3105N107 /* GrappaHelper.h */,
 			);
@@ -463,6 +472,9 @@
 				3105N203,
 				3105N204,
 				3105N206,
+				3105SEC01,
+				3105SEC03,
+				3105SEC05,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
