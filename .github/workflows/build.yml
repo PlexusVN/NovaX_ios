@@ -19,15 +19,25 @@ jobs:
         run: |
           xcodebuild -version
 
+      - name: Set up Rust toolchain for AirliftFFI
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+
       - name: Verify AirliftFFI
         run: |
           test -f Frameworks/AirliftFFI.xcframework/ios-arm64/libairlift_ffi.a
 
       - name: Build patched AirliftFFI
         run: |
+          set -euxo pipefail
+          test -f patches/airlift-rsd-timeout-fallback.patch
           git clone --filter=blob:none https://github.com/Mak5er/AirCard-iOS.git "$RUNNER_TEMP/AirCard-iOS"
           git -C "$RUNNER_TEMP/AirCard-iOS" checkout 40640c4d827aeab8d798285b57d24fcf6be070d0
+          git -C "$RUNNER_TEMP/AirCard-iOS" apply --check "$GITHUB_WORKSPACE/patches/airlift-rsd-timeout-fallback.patch"
           git -C "$RUNNER_TEMP/AirCard-iOS" apply "$GITHUB_WORKSPACE/patches/airlift-rsd-timeout-fallback.patch"
+          rustc --version
+          cargo --version
           DEVELOPER_DIR="$(xcode-select -p)" bash "$RUNNER_TEMP/AirCard-iOS/build-ios.sh"
           rm -rf Frameworks/AirliftFFI.xcframework
           cp -R "$RUNNER_TEMP/AirCard-iOS/AirliftFFI.xcframework" Frameworks/AirliftFFI.xcframework
