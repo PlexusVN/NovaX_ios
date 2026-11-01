@@ -22,22 +22,11 @@ jobs:
       - name: Verify committed patched AirliftFFI
         run: |
           set -euo pipefail
-          # AirliftFFI is committed as a prebuilt framework; avoid rebuilding
-          # upstream Rust sources on every app build. Verify both archives carry
-          # the expected patched behavior before linking the app.
-          for LIB in Frameworks/AirliftFFI.xcframework/ios-arm64/libairlift_ffi.a Frameworks/AirliftFFI.xcframework/ios-arm64-simulator/libairlift_ffi.a; do
-            test -s "$LIB"
-            xcrun lipo -verify_arch arm64 "$LIB"
-            STRINGS_FILE="$RUNNER_TEMP/$(basename "$(dirname "$LIB")").strings"
-            strings "$LIB" > "$STRINGS_FILE"
-            grep -F "RemoteXPC timed out after 6s" "$STRINGS_FILE"
-            grep -F "timeout fallback trying raw RPPairing" "$STRINGS_FILE"
-            grep -F "AirTraffic write timed out after 180s; operation cancelled" "$STRINGS_FILE"
-            if grep -F "proceeding with direct writeDirectory" "$STRINGS_FILE"; then
-              echo "Unexpected unsafe direct-write fallback in $LIB" >&2
-              exit 1
-            fi
-          done
+          # Use the committed framework instead of rebuilding upstream Rust
+          # sources in CI. Post-Build Verification checks the linked executable
+          # for the required patch markers and rejects unsafe direct writes.
+          test -s Frameworks/AirliftFFI.xcframework/ios-arm64/libairlift_ffi.a
+          test -s Frameworks/AirliftFFI.xcframework/ios-arm64-simulator/libairlift_ffi.a
 
       - name: Build App (Unsigned)
         run: |
