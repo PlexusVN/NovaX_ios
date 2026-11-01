@@ -61,7 +61,14 @@ final class StorageEngineCoordinator: ObservableObject {
                 throw AirLiftError.executionFailed("AirTraffic engine chưa được liên kết; thao tác ghi đã bị chặn an toàn.")
             }
             log("storage: routing write via AirLift provider for \(destinationPath)")
-            try await AirTrafficProtocolClient.shared.writeFile(data: data, targetPath: destinationPath)
+            do {
+                try await AirTrafficProtocolClient.shared.writeFile(data: data, targetPath: destinationPath)
+            } catch {
+                if let airLiftError = error as? AirLiftError, airLiftError.requiresRePairing {
+                    AirLiftGatekeeperManager.shared.triggerRePair(reason: "Pairing AirLift không còn hợp lệ: \(airLiftError.localizedDescription)")
+                }
+                throw error
+            }
         } else {
             log("storage: routing write via Direct/Kernel provider for \(destinationPath)")
             let url = URL(fileURLWithPath: destinationPath)
@@ -136,10 +143,17 @@ final class StorageEngineCoordinator: ObservableObject {
             let destination = key.relativeDirectory.isEmpty
                 ? root
                 : (root as NSString).appendingPathComponent(key.relativeDirectory)
-            try await AirTrafficProtocolClient.shared.writeFiles(
-                files,
-                targetDirectory: destination
-            )
+            do {
+                try await AirTrafficProtocolClient.shared.writeFiles(
+                    files,
+                    targetDirectory: destination
+                )
+            } catch {
+                if let airLiftError = error as? AirLiftError, airLiftError.requiresRePairing {
+                    AirLiftGatekeeperManager.shared.triggerRePair(reason: "Pairing AirLift không còn hợp lệ: \(airLiftError.localizedDescription)")
+                }
+                throw error
+            }
         }
 
         UserDefaults.standard.set(true, forKey: airLiftAppliedKey(project.id))

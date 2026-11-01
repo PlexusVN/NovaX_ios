@@ -68,7 +68,7 @@ struct ProfileView: View {
                             .font(.system(size: 15, weight: .bold))
                             .foregroundStyle(AppTheme.ink)
                             .frame(width: 32, height: 32)
-                            .background(Color.white)
+                            .background(AppTheme.paperRaised)
                             .clipShape(Circle())
                             .overlay(Circle().stroke(AppTheme.grey200, lineWidth: 1))
                     }
@@ -94,7 +94,7 @@ struct ProfileView: View {
             AppLogo(size: 70)
                 .saturation(0)
                 .contrast(1.08)
-                .background(Color.white)
+                .background(AppTheme.paperRaised)
                 .clipShape(RoundedRectangle(cornerRadius: 19, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 19, style: .continuous)
@@ -137,7 +137,7 @@ struct ProfileView: View {
         }
         .frame(minHeight: 112, alignment: .center)
         .padding(19)
-        .background(Color.white)
+        .background(AppTheme.paperRaised)
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -191,7 +191,7 @@ struct ProfileView: View {
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(AppTheme.ink)
                             .frame(width: 36, height: 36)
-                            .background(Color.white)
+                            .background(AppTheme.paperRaised)
                             .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
                     }
                     .buttonStyle(.plain)
@@ -222,7 +222,7 @@ struct ProfileView: View {
             }
             .padding(.horizontal, 15)
             .padding(.vertical, 14)
-            .background(Color.white)
+            .background(AppTheme.paperRaised)
             .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 15, style: .continuous)
@@ -231,7 +231,7 @@ struct ProfileView: View {
             .padding(.top, 12)
         }
         .padding(20)
-        .background(Color.white)
+        .background(AppTheme.paperRaised)
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -388,7 +388,7 @@ struct ProfileView: View {
             }
         }
         .padding(20)
-        .background(Color.white)
+        .background(AppTheme.paperRaised)
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -461,7 +461,7 @@ struct ProfileView: View {
             .buttonStyle(PressableButtonStyle())
         }
         .padding(20)
-        .background(Color.white)
+        .background(AppTheme.paperRaised)
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -478,7 +478,7 @@ struct ProfileView: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .stroke(AppTheme.ink, lineWidth: 1)
-                        .background(Color.white)
+                        .background(AppTheme.paperRaised)
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .frame(width: 42, height: 42)
                     Image(systemName: "person.fill")
@@ -505,7 +505,7 @@ struct ProfileView: View {
             DeveloperContactsList()
         }
         .padding(20)
-        .background(Color.white)
+        .background(AppTheme.paperRaised)
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -604,7 +604,7 @@ struct ProfileView: View {
                 }
                 .padding(18)
             }
-            .background(Color.white)
+            .background(AppTheme.paperRaised)
             .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
             .shadow(color: Color.black.opacity(0.20), radius: 40, x: 0, y: 18)
             .padding(.horizontal, 28)

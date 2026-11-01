@@ -90,7 +90,7 @@ final class AirLiftTunnelManager: ObservableObject {
         let port = lockdownPort
         let expectedSource = expectedInterfaceAddress
         let result = await Task.detached(priority: .utility) {
-            let routeDetected = Self.hasTunnelRoute(to: host)
+            let routeDetected = Self.hasTunnelRoute(to: host, expectedSource: expectedSource)
             let lockdown = Self.queryLockdown(host: host, port: port)
             if lockdown.ok {
                 return TunnelProbeResult(
@@ -142,12 +142,13 @@ final class AirLiftTunnelManager: ObservableObject {
     /// Confirms that iOS routes the AirLift peer through LocalDevVPN. A UDP
     /// connect does not send traffic; it only asks the kernel to select a route
     /// and local source address for the peer.
-    private nonisolated static func hasTunnelRoute(to host: String) -> Bool {
+    private nonisolated static func hasTunnelRoute(to host: String, expectedSource: String) -> Bool {
         guard let source = routeSource(to: host) else {
             return false
         }
+        guard source == expectedSource else { return false }
         if let defaultSource = routeSource(to: "203.0.113.1"), defaultSource == source {
-            // Note: If default route matches peer source, still verify that the interface is indeed a tunnel
+            return false
         }
 
         var interfaces: UnsafeMutablePointer<ifaddrs>?

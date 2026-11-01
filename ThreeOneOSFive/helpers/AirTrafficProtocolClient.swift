@@ -52,6 +52,20 @@ enum AirLiftError: Error, LocalizedError {
             return "AirLift thất bại: \(message)"
         }
     }
+
+    /// Only these failures prove that the stored trust relationship itself is
+    /// gone. VPN, timeout, path, server and AirTraffic errors must never erase
+    /// a valid pairing or force the user through setup again.
+    var requiresRePairing: Bool {
+        switch self {
+        case .pairingRequired, .pairingRevoked:
+            return true
+        case .tunnelNotConnected, .invalidTargetPath, .socketConnectionFailed,
+             .airTrafficHandshakeFailed, .filePayloadCreationFailed,
+             .verificationFailed, .remoteReadUnsupported, .executionFailed:
+            return false
+        }
+    }
 }
 
 @MainActor
@@ -147,8 +161,10 @@ final class AirTrafficProtocolClient: ObservableObject {
                 // The AirTraffic write path stages metadata through Apple
                 // Books and com.apple.atc. Pairing can be healthy while Books
                 // is missing, so do not present that state as write-ready.
-                _ = try await resolveAppContainer(bundleID: "com.apple.iBooks")
-                let successMsg = "Pairing + RemoteXPC/RSD + Apple Books phản hồi tốt; canary sẽ được xác minh khi ghi."
+                let booksContainer = try await resolveAppContainer(bundleID: "com.apple.iBooks")
+                let pairingPath = try activePairingPath()
+                try await verifyCanary(pairingPath: pairingPath, targetDirectory: booksContainer)
+                let successMsg = "Pairing + RemoteXPC/RSD + Apple Books + canary đọc lại byte chính xác."
                 engineHealthState = .healthy(successMsg)
                 lastHealthCheckDate = Date()
                 return (true, successMsg)

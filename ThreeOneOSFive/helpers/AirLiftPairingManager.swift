@@ -122,6 +122,7 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
     }
 
     private let pairingFileName = "novax_airlift_pairing.plist"
+    private let pairingKeychainKey = "novax.airlift.pairingRecord.v1"
     private var pairingFileURL: URL {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let folder = support.appendingPathComponent("AirLift", isDirectory: true)
@@ -144,7 +145,9 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
     private override init() {
         super.init()
         migrateLegacyPairingFileIfNeeded()
+        restorePairingFileFromKeychainIfNeeded()
         checkPairingStatus()
+        backupPairingFileToKeychainIfValid()
         setupNetworkMonitoring()
         setupLifecycleMonitoring()
     }
@@ -223,6 +226,13 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
         }
         guard let record = loadPairingRecord(at: pairingFileURL),
               Self.isSupportedPairingRecord(record) else {
+            if restorePairingFileFromKeychainIfNeeded(replacingCurrentFile: true),
+               let restored = loadPairingRecord(at: pairingFileURL),
+               Self.isSupportedPairingRecord(restored) {
+                status = .ready
+                pairingFilePath = pairingFileURL.path
+                return
+            }
             status = .invalid
             pairingFilePath = nil
             return
@@ -288,9 +298,11 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
         if FileManager.default.fileExists(atPath: pairingFileURL.path) {
             try? FileManager.default.removeItem(at: pairingFileURL)
         }
+        KeychainUtils.delete(key: pairingKeychainKey)
         Self.storedAltIRK = ""
         pairingFilePath = nil
         status = .revoked
+        AirLiftGatekeeperManager.shared.triggerRePair(reason: "Thiết bị iPhone đã hủy ghép đôi với Astra trong Cài đặt.")
         let guidance = ExploitSupportPolicy.currentPairingMode == .onDeviceOrImportedFile
             ? "Vui lòng bấm 'Pair trên máy' để ghép đôi lại hoặc nhập pairing file hợp lệ."
             : "Vui lòng tạo lại file pairing trên máy tính rồi nhập file mới vào Astra."
@@ -309,6 +321,7 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
                 return false
             }
             try data.write(to: pairingFileURL, options: [.atomic, .completeFileProtection])
+            backupPairingDataToKeychain(data)
             status = .ready
             pairingFilePath = pairingFileURL.path
             notify(message: "Đã nhập file pairing. Bật LocalDevVPN rồi chạy kiểm tra kết nối.")
@@ -452,6 +465,7 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
             if outputPath != pairingFileURL.path {
                 try? data.write(to: pairingFileURL, options: [.atomic, .completeFileProtection])
             }
+            backupPairingDataToKeychain(data)
             checkPairingStatus()
             guard status.isPaired else {
                 resolve(.failure(PairingError.emptyRecord))
@@ -634,9 +648,11 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
             if FileManager.default.fileExists(atPath: pairingFileURL.path) {
                 try FileManager.default.removeItem(at: pairingFileURL)
             }
+            KeychainUtils.delete(key: pairingKeychainKey)
             Self.storedAltIRK = ""
             status = .missing
             pairingFilePath = nil
+            AirLiftGatekeeperManager.shared.triggerRePair(reason: "File pairing đã bị xóa khỏi thiết bị.")
             notify(message: "Đã xoá file pairing khỏi thiết bị.")
         } catch {
             notify(message: "Không thể xoá file pairing: \(error.localizedDescription)")
@@ -659,6 +675,40 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
         guard !FileManager.default.fileExists(atPath: pairingFileURL.path),
               FileManager.default.fileExists(atPath: legacyPairingFileURL.path) else { return }
         try? FileManager.default.moveItem(at: legacyPairingFileURL, to: pairingFileURL)
+    }
+
+    private func backupPairingFileToKeychainIfValid() {
+        guard let data = try? Data(contentsOf: pairingFileURL),
+              let object = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
+              let record = object as? [String: Any],
+              Self.isSupportedPairingRecord(record) else { return }
+        backupPairingDataToKeychain(data)
+    }
+
+    private func backupPairingDataToKeychain(_ data: Data) {
+        guard !data.isEmpty else { return }
+        _ = KeychainUtils.save(key: pairingKeychainKey, value: data.base64EncodedString())
+    }
+
+    @discardableResult
+    private func restorePairingFileFromKeychainIfNeeded(replacingCurrentFile: Bool = false) -> Bool {
+        if !replacingCurrentFile, FileManager.default.fileExists(atPath: pairingFileURL.path) {
+            return false
+        }
+        guard let encoded = KeychainUtils.read(key: pairingKeychainKey),
+              let data = Data(base64Encoded: encoded),
+              !data.isEmpty,
+              let object = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
+              let record = object as? [String: Any],
+              Self.isSupportedPairingRecord(record) else {
+            return false
+        }
+        do {
+            try data.write(to: pairingFileURL, options: [.atomic, .completeFileProtection])
+            return true
+        } catch {
+            return false
+        }
     }
 
     private nonisolated static func isSupportedPairingRecord(_ record: [String: Any]) -> Bool {

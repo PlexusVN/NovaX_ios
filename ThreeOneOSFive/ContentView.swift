@@ -38,7 +38,7 @@ struct ContentView: View {
                 compactLayout
             }
         }
-        .tint(AppTheme.ink)
+        .tint(AppTheme.gamingBlue)
         .imageScale(.small)
         .sheet(isPresented: $showSystemDashboard) {
             DashboardView(showCloseButton: true, onClose: { showSystemDashboard = false })
@@ -67,16 +67,28 @@ struct ContentView: View {
 
     private var compactLayout: some View {
         ZStack(alignment: .bottom) {
-            TabView(selection: tabSelection) {
+            GamingBackdrop()
+
+            ZStack {
                 ForEach(featureVisibility.visibleSections) { section in
+                    let isSelected = section.rawValue == tabNavigation.selectedTab
+
                     sectionContent(section)
-                        .tag(section.rawValue)
-                        .toolbar(.hidden, for: .tabBar)
+                        .opacity(isSelected ? 1 : 0)
+                        .scaleEffect(isSelected ? 1 : 0.978)
+                        .offset(x: isSelected ? 0 : (section.rawValue < tabNavigation.selectedTab ? -24 : 24))
+                        .blur(radius: isSelected ? 0 : 3.5)
+                        .allowsHitTesting(isSelected)
+                        .accessibilityHidden(!isSelected)
+                        .zIndex(isSelected ? 1 : 0)
                 }
             }
+            .animation(AppTheme.gamingTabSpring, value: tabNavigation.selectedTab)
 
             customFloatingTabBar
+                .zIndex(10)
         }
+        .preferredColorScheme(.dark)
     }
 
     private var customFloatingTabBar: some View {
@@ -85,18 +97,16 @@ struct ContentView: View {
                 let isSelected = section.rawValue == tabNavigation.selectedTab
 
                 Button {
-                    Haptics.light()
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
-                        tabNavigation.select(section.rawValue)
-                    }
+                    selectTab(section.rawValue)
                 } label: {
                     VStack(spacing: 3) {
                         Image(systemName: section.systemImage)
                             .font(.system(size: 19, weight: isSelected ? .bold : .medium))
-                            .foregroundColor(isSelected ? .white : AppTheme.grey500)
+                            .foregroundColor(isSelected ? .white : AppTheme.gamingTextSecondary)
+                            .scaleEffect(isSelected ? 1.08 : 0.94)
                         Text(language.text(section.titleKey))
                             .font(.system(size: 10, weight: .semibold, design: .rounded))
-                            .foregroundColor(isSelected ? .white : AppTheme.grey500)
+                            .foregroundColor(isSelected ? .white : AppTheme.gamingTextSecondary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.8)
                     }
@@ -106,26 +116,53 @@ struct ContentView: View {
                         ZStack {
                             if isSelected {
                                 Capsule()
-                                    .fill(AppTheme.ink)
+                                    .fill(AppTheme.gamingAccentGradient)
+                                    .overlay(
+                                        Capsule()
+                                            .stroke(Color.white.opacity(0.2), lineWidth: 0.8)
+                                    )
+                                    .shadow(color: AppTheme.gamingBlue.opacity(0.58), radius: 12, x: 0, y: 5)
                                     .matchedGeometryEffect(id: "TAB_BG", in: tabAnimationNamespace)
                             }
                         }
                     )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(GamingPressButtonStyle(scale: 0.96))
             }
+
+            Button {
+                Haptics.selection()
+                showSystemDashboard = true
+            } label: {
+                VStack(spacing: 3) {
+                    Image(systemName: "gearshape.fill")
+                        .font(.system(size: 19, weight: .medium))
+                        .foregroundColor(AppTheme.gamingTextSecondary)
+                    Text(language.text("tab.settings"))
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundColor(AppTheme.gamingTextSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+            }
+            .buttonStyle(GamingPressButtonStyle(scale: 0.96))
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 5)
         .background(
-            Capsule()
-                .fill(.ultraThinMaterial)
+            ZStack {
+                Capsule().fill(.ultraThinMaterial)
+                Capsule().fill(AppTheme.gamingSurface.opacity(0.88))
+            }
         )
         .overlay(
             Capsule()
-                .stroke(AppTheme.grey200, lineWidth: 1)
+                .stroke(AppTheme.gamingBorderGradient, lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.16), radius: 22, x: 0, y: 12)
+        .shadow(color: AppTheme.gamingBlue.opacity(0.22), radius: 24, x: 0, y: 10)
+        .shadow(color: Color.black.opacity(0.5), radius: 18, x: 0, y: 12)
         .padding(.horizontal, 20)
         .padding(.bottom, 18)
         .highPriorityGesture(
@@ -136,15 +173,9 @@ struct ContentView: View {
                     guard let currentIndex = sections.firstIndex(where: { $0.rawValue == tabNavigation.selectedTab }) else { return }
 
                     if translation < -40 && currentIndex < sections.count - 1 {
-                        Haptics.light()
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
-                            tabNavigation.select(sections[currentIndex + 1].rawValue)
-                        }
+                        selectTab(sections[currentIndex + 1].rawValue)
                     } else if translation > 40 && currentIndex > 0 {
-                        Haptics.light()
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
-                            tabNavigation.select(sections[currentIndex - 1].rawValue)
-                        }
+                        selectTab(sections[currentIndex - 1].rawValue)
                     }
                 }
         )
@@ -210,13 +241,6 @@ struct ContentView: View {
         }
     }
 
-    private var tabSelection: Binding<Int> {
-        Binding(
-            get: { tabNavigation.selectedTab },
-            set: { tabNavigation.select($0) }
-        )
-    }
-
     private var filesTabSession: Binding<FilesTabSession> {
         Binding(
             get: { tabNavigation.filesTabs },
@@ -250,6 +274,19 @@ struct ContentView: View {
             return featureVisibility.visibleSections.first ?? .features
         }
         return section
+    }
+
+    private func selectTab(_ target: Int) {
+        guard target != tabNavigation.selectedTab else {
+            Haptics.soft()
+            return
+        }
+
+        Haptics.selection()
+
+        withAnimation(AppTheme.gamingTabSpring) {
+            tabNavigation.select(target)
+        }
     }
 }
 
@@ -296,7 +333,7 @@ private struct DashboardView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                AppTheme.pageBackground.ignoresSafeArea()
+                GamingBackdrop()
 
                 ScrollView {
                     VStack(spacing: 16) {
@@ -357,7 +394,7 @@ private struct DashboardView: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white)
+        .background(AppTheme.paperRaised)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -510,7 +547,7 @@ private struct DashboardView: View {
 
     private var cardBackground: some View {
         RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .fill(Color.white)
+            .fill(AppTheme.paperRaised)
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(AppTheme.grey200, lineWidth: 1)

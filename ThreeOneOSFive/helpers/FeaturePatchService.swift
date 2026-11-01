@@ -1375,6 +1375,9 @@ final class FeaturePatchService: ObservableObject {
                 try fileData.write(to: destURL, options: .atomic)
             }
         } catch let error as AirLiftError {
+            if StorageEngineCoordinator.shared.isAirLiftActive, error.requiresRePairing {
+                AirLiftGatekeeperManager.shared.triggerRePair(reason: "Không thể patch file qua AirLift: \(error.localizedDescription)")
+            }
             throw NovaXControlError.message(error.localizedDescription)
         } catch {
             throw NovaXControlError.message("Không thể kích hoạt cheat cho \(variant.title). Vui lòng kiểm tra lại quyền ứng dụng.")
@@ -1427,6 +1430,9 @@ final class FeaturePatchService: ObservableObject {
                 try fileData.write(to: destURL, options: .atomic)
             }
         } catch let error as AirLiftError {
+            if StorageEngineCoordinator.shared.isAirLiftActive, error.requiresRePairing {
+                AirLiftGatekeeperManager.shared.triggerRePair(reason: "Không thể khôi phục game qua AirLift: \(error.localizedDescription)")
+            }
             throw NovaXControlError.message(error.localizedDescription)
         } catch {
             throw NovaXControlError.message("Không thể khôi phục game \(variant.title). Vui lòng kiểm tra lại quyền ứng dụng.")

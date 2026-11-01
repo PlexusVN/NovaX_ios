@@ -17,7 +17,7 @@ struct OnboardingView: View {
 
     var body: some View {
         ZStack {
-            AppTheme.pageBackground
+            GamingBackdrop()
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {

@@ -15,7 +15,7 @@ struct GuidesView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                AppTheme.pageBackground.ignoresSafeArea()
+                GamingBackdrop()
 
                 ScrollView {
                     VStack(spacing: 18) {
@@ -64,7 +64,7 @@ struct GuidesView: View {
                             .font(.system(size: 15, weight: .bold))
                             .foregroundStyle(AppTheme.ink)
                             .frame(width: 32, height: 32)
-                            .background(Color.white)
+                            .background(AppTheme.paperRaised)
                             .clipShape(Circle())
                             .overlay(Circle().stroke(AppTheme.grey200, lineWidth: 1))
                     }
@@ -114,7 +114,7 @@ struct GuidesView: View {
             Spacer()
         }
         .padding(18)
-        .background(Color.white)
+        .background(AppTheme.paperRaised)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
@@ -240,7 +240,7 @@ private struct GuideCardView: View {
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 7)
-                    .background(isLiked ? AppTheme.grey50 : Color.white)
+                    .background(isLiked ? AppTheme.grey50 : AppTheme.paperRaised)
                     .overlay(
                         Capsule().stroke(isLiked ? AppTheme.ink : AppTheme.grey200, lineWidth: 1)
                     )
@@ -263,7 +263,7 @@ private struct GuideCardView: View {
             }
         }
         .padding(18)
-        .background(Color.white)
+        .background(AppTheme.paperRaised)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)

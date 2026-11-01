@@ -57,7 +57,7 @@ struct SplashLoginView: View {
 
     var body: some View {
         ZStack {
-            AppTheme.pageBackground.ignoresSafeArea()
+            GamingBackdrop()
 
             if phase != .loading {
                 loginView
@@ -232,7 +232,7 @@ struct SplashLoginView: View {
     @ViewBuilder
     private func appLogoView(size: CGFloat, cornerRadius: CGFloat) -> some View {
         ZStack {
-            Color.white
+            AppTheme.paperRaised
 
             if let icon = UIImage(named: "NovaXLogo")
                 ?? UIImage(named: "AppIcon60x60")
@@ -281,7 +281,7 @@ struct SplashLoginView: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .stroke(AppTheme.ink, lineWidth: 1)
-                        .background(Color.white)
+                        .background(AppTheme.paperRaised)
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .frame(width: 42, height: 42)
                     Image(systemName: "key.fill")
@@ -388,7 +388,7 @@ struct SplashLoginView: View {
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(AppTheme.ink)
                         .frame(width: 36, height: 36)
-                        .background(Color.white)
+                        .background(AppTheme.paperRaised)
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -408,7 +408,7 @@ struct SplashLoginView: View {
             .padding(.top, 14)
         }
         .padding(20)
-        .background(Color.white)
+        .background(AppTheme.paperRaised)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
@@ -573,7 +573,7 @@ struct SplashLoginView: View {
                       valueColor: appState.isSupported ? AppTheme.statusSuccess : AppTheme.statusError)
         }
         .padding(19)
-        .background(Color.white)
+        .background(AppTheme.paperRaised)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -601,7 +601,7 @@ struct SplashLoginView: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .stroke(AppTheme.ink, lineWidth: 1)
-                        .background(Color.white)
+                        .background(AppTheme.paperRaised)
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .frame(width: 42, height: 42)
                     Image(systemName: "person.fill")
@@ -647,7 +647,7 @@ struct SplashLoginView: View {
             .padding(.top, 16)
         }
         .padding(19)
-        .background(Color.white)
+        .background(AppTheme.paperRaised)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -708,7 +708,7 @@ struct SplashLoginView: View {
                         .padding(.vertical, 16)
                 }
             }
-            .background(Color.white)
+            .background(AppTheme.paperRaised)
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .shadow(color: Color.black.opacity(0.18), radius: 35, x: 0, y: 15)
             .padding(.horizontal, 28)

@@ -8,6 +8,7 @@ final class AuthManager: ObservableObject {
     @Published var authState: AuthState = .idle
     @Published var licenseKey: String = ""
     @Published var hwid: String = DeviceUtils.hwid
+    @Published var deviceName: String = DeviceUtils.deviceMarketingName
     @Published var keyType: KeyType = .basic
     @Published var expiresAt: Date?
     @Published var errorMessage: String?
@@ -66,22 +67,26 @@ final class AuthManager: ObservableObject {
 
         let key = licenseKey.trimmingCharacters(in: .whitespaces)
         let hw = hwid
+        let devName = DeviceUtils.deviceMarketingName
         let secret = Obf.s([254, 223, 198, 209, 232, 157, 209, 197, 196, 216, 157, 219, 213, 201], 0xB0)
 
         let urlBase = Obf.s([219, 199, 199, 195, 192, 137, 156, 156, 201, 202, 221, 220, 203, 157, 208, 223, 218, 208, 216, 156, 210, 195, 218, 156, 197, 214, 193, 218, 213, 202, 140, 216, 214, 202, 142], 0xB3)
         let sepHwid = Obf.s([149, 219, 196, 218, 215, 142], 0xB3)
         let sepSecret = Obf.s([149, 192, 214, 208, 193, 214, 199, 142], 0xB3)
+        let sepDevName = "&device_name="
 
         guard let encodedKey = key.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
               let encodedHw = hw.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
               let encodedSecret = secret.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "\(urlBase)\(encodedKey)\(sepHwid)\(encodedHw)\(sepSecret)\(encodedSecret)") else {
+              let encodedDevName = devName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let url = URL(string: "\(urlBase)\(encodedKey)\(sepHwid)\(encodedHw)\(sepSecret)\(encodedSecret)\(sepDevName)\(encodedDevName)") else {
             authState = .error("Liên kết không hợp lệ")
             return
         }
 
         var request = URLRequest(url: url)
         request.timeoutInterval = 15
+        request.setValue(devName, forHTTPHeaderField: "X-Device-Name")
 
         do {
             let (data, response) = try await pinnedSession.data(for: request)

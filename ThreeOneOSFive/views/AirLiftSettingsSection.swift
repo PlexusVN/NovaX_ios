@@ -47,7 +47,7 @@ struct AirLiftDashboardCard: View {
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.white)
+                .fill(AppTheme.paperRaised)
                 .overlay(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .stroke(
@@ -324,7 +324,7 @@ struct AirLiftDashboardCard: View {
                     .tracking(6)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
-                    .background(Color.white)
+                    .background(AppTheme.paperRaised)
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -770,7 +770,6 @@ struct AirLiftDashboardCard: View {
         }
     }
 }
-
 // MARK: - Form Section (For Form-based SettingsView)
 
 struct AirLiftSettingsSection: View {
@@ -1185,6 +1184,589 @@ struct AirLiftDocumentPicker: UIViewControllerRepresentable {
         func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
             guard let url = urls.first else { return }
             parent.onPick(url)
+        }
+    }
+}
+
+// MARK: - AirLift Gatekeeper Manager (Dành cho iOS 27 & thiết bị cần AirLift)
+
+@MainActor
+final class AirLiftGatekeeperManager: ObservableObject {
+    static let shared = AirLiftGatekeeperManager()
+
+    private let setupCompletedKey = "airlift_ios27_setup_completed"
+    private let setupCompletedKeychainKey = "novax.airlift.setupCompleted.v1"
+    private let requireRePairKey = "airlift_ios27_require_repair"
+    private let rePairReasonKey = "airlift_ios27_repair_reason"
+
+    @Published var isSetupCompleted: Bool {
+        didSet {
+            UserDefaults.standard.set(isSetupCompleted, forKey: setupCompletedKey)
+            if isSetupCompleted {
+                _ = KeychainUtils.save(key: setupCompletedKeychainKey, value: "1")
+            } else {
+                KeychainUtils.delete(key: setupCompletedKeychainKey)
+            }
+        }
+    }
+
+    @Published var requiresRePair: Bool {
+        didSet {
+            UserDefaults.standard.set(requiresRePair, forKey: requireRePairKey)
+        }
+    }
+
+    @Published var rePairReason: String? {
+        didSet {
+            UserDefaults.standard.set(rePairReason, forKey: rePairReasonKey)
+        }
+    }
+
+    var requiresPairingForCurrentDevice: Bool {
+        ExploitSupportPolicy.currentStorageMode == .airLift
+    }
+
+    var isAirLiftFullyReady: Bool {
+        AirLiftTunnelManager.shared.isOperational &&
+        AirLiftPairingManager.shared.status.isPaired &&
+        AirLiftPairingManager.shared.status != .revoked &&
+        AirTrafficProtocolClient.shared.engineHealthState.isHealthy
+    }
+
+    var canBypassGatekeeper: Bool {
+        guard requiresPairingForCurrentDevice else { return true }
+        let hasCompleted = isSetupCompleted
+        let isPaired = AirLiftPairingManager.shared.status.isPaired && AirLiftPairingManager.shared.status != .revoked
+        return hasCompleted && isPaired && !requiresRePair
+    }
+
+    private init() {
+        let persistedCompletion = UserDefaults.standard.bool(forKey: setupCompletedKey)
+            || KeychainUtils.read(key: setupCompletedKeychainKey) == "1"
+        self.isSetupCompleted = persistedCompletion
+        self.requiresRePair = UserDefaults.standard.bool(forKey: requireRePairKey)
+        self.rePairReason = UserDefaults.standard.string(forKey: rePairReasonKey)
+        if persistedCompletion {
+            UserDefaults.standard.set(true, forKey: setupCompletedKey)
+        }
+    }
+
+    func markSetupCompleted() {
+        isSetupCompleted = true
+        requiresRePair = false
+        rePairReason = nil
+    }
+
+    func triggerRePair(reason: String) {
+        isSetupCompleted = false
+        requiresRePair = true
+        rePairReason = reason
+    }
+
+    func resetGatekeeper() {
+        isSetupCompleted = false
+        requiresRePair = false
+        rePairReason = nil
+    }
+}
+
+// MARK: - Dedicated iOS 27 AirLift & Pairing Setup View
+
+struct IOS27PairingSetupView: View {
+    @ObservedObject var auth: AuthManager
+    var onComplete: () -> Void
+
+    @StateObject private var gatekeeper = AirLiftGatekeeperManager.shared
+    @StateObject private var tunnelManager = AirLiftTunnelManager.shared
+    @StateObject private var pairingManager = AirLiftPairingManager.shared
+    @StateObject private var airTrafficClient = AirTrafficProtocolClient.shared
+    @StateObject private var storageCoordinator = StorageEngineCoordinator.shared
+
+    @State private var showDocumentPicker = false
+    @State private var showPairingStartAlert = false
+    @State private var isComprehensiveChecking = false
+
+    var isStep1Done: Bool { tunnelManager.isOperational }
+    var isStep2Done: Bool { pairingManager.status.isPaired && pairingManager.status != .revoked }
+    var isStep3Done: Bool { airTrafficClient.engineHealthState.isHealthy }
+    var isReadyToProceed: Bool { isStep1Done && isStep2Done && isStep3Done }
+
+    var completedStepsCount: Int {
+        (isStep1Done ? 1 : 0) + (isStep2Done ? 1 : 0) + (isStep3Done ? 1 : 0)
+    }
+
+    var body: some View {
+        ZStack {
+            GamingBackdrop()
+
+            ScrollView {
+                VStack(spacing: 16) {
+                    headerSection
+                        .padding(.top, 24)
+
+                    if gatekeeper.requiresRePair, let reason = gatekeeper.rePairReason, !reason.isEmpty {
+                        rePairNoticeCard(reason: reason)
+                    }
+
+                    overallProgressCard
+
+                    vpnStepCard
+
+                    pairingStepCard
+
+                    airTrafficStepCard
+
+                    actionButtonsSection
+                        .padding(.top, 10)
+                        .padding(.bottom, 48)
+                }
+                .padding(.horizontal, 16)
+            }
+        }
+        .sheet(isPresented: $showDocumentPicker) {
+            AirLiftDocumentPicker { url in
+                _ = pairingManager.importPairingFile(from: url)
+            }
+        }
+        .alert(isPresented: $pairingManager.showAlert) {
+            Alert(
+                title: Text("Thông báo AirLift"),
+                message: Text(pairingManager.alertMessage ?? ""),
+                dismissButton: .default(Text("Đóng"))
+            )
+        }
+        .alert("Ghép đôi trực tiếp", isPresented: $showPairingStartAlert) {
+            Button("Huỷ", role: .cancel) { }
+            Button("Bắt đầu phát sóng") {
+                Task { await pairingManager.pairDirectlyOnDevice() }
+            }
+        } message: {
+            Text("Astra sẽ chạy RPPairing host thật và phát Bonjour. Sau đó mở Cài đặt › Quyền riêng tư & Bảo mật › Chế độ nhà phát triển, chọn Pair with Astra và nhập PIN hiển thị.")
+        }
+        .task {
+            await runComprehensiveCheck()
+        }
+    }
+
+    // MARK: - Header
+    private var headerSection: some View {
+        VStack(spacing: 10) {
+            AppLogo(size: 64)
+
+            VStack(spacing: 6) {
+                Text("Astra")
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .foregroundStyle(AppTheme.ink)
+
+                HStack(spacing: 6) {
+                    Image(systemName: "shield.lefthalf.filled.badge.checkmark")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("CẤU HÌNH AIRLIFT · BẮT BUỘC CHO IOS 27")
+                        .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                        .tracking(0.6)
+                }
+                .foregroundColor(AppTheme.statusInfo)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(AppTheme.statusInfo.opacity(0.12))
+                .clipShape(Capsule())
+                .overlay(Capsule().stroke(AppTheme.statusInfo.opacity(0.3), lineWidth: 1))
+
+                Text("Thiết bị của bạn yêu cầu hoàn thành đủ 3 bước dưới đây để có quyền patch file vào hệ thống. Trạng thái sẽ được lưu tự động cho các lần khởi động sau.")
+                    .font(.system(size: 12))
+                    .multilineTextAlignment(.center)
+                    .foregroundColor(AppTheme.grey500)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 2)
+            }
+        }
+    }
+
+    // MARK: - Re-Pair Notice
+    private func rePairNoticeCard(reason: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.octagon.fill")
+                .font(.system(size: 20, weight: .bold))
+                .foregroundColor(AppTheme.statusError)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("PHÁT HIỆN LỖI PATCH FILE")
+                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    .foregroundColor(AppTheme.statusError)
+                Text(reason)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundColor(AppTheme.grey700)
+                Text("Vui lòng hoàn thành lại các bước bên dưới để tiếp tục.")
+                    .font(.system(size: 10.5))
+                    .foregroundColor(AppTheme.grey500)
+            }
+            Spacer()
+        }
+        .padding(14)
+        .background(AppTheme.statusError.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(AppTheme.statusError.opacity(0.4), lineWidth: 1)
+        )
+    }
+
+    // MARK: - Progress Card
+    private var overallProgressCard: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Text("TIẾN ĐỘ THIẾT LẬP")
+                    .font(.system(size: 11, weight: .black, design: .monospaced))
+                    .foregroundColor(AppTheme.grey500)
+                Spacer()
+                Text("\(completedStepsCount)/3 BƯỚC SẴN SÀNG")
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundColor(isReadyToProceed ? AppTheme.statusSuccess : AppTheme.statusInfo)
+            }
+
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(AppTheme.grey200)
+                        .frame(height: 6)
+
+                    Capsule()
+                        .fill(isReadyToProceed ? LinearGradient(colors: [AppTheme.statusSuccess, Color(hex: 0x10B981)], startPoint: .leading, endPoint: .trailing) : AppTheme.gamingAccentGradient)
+                        .frame(width: max(0, min(geo.size.width * CGFloat(completedStepsCount) / 3.0, geo.size.width)), height: 6)
+                        .animation(.spring(response: 0.35, dampingFraction: 0.75), value: completedStepsCount)
+                }
+            }
+            .frame(height: 6)
+        }
+        .padding(14)
+        .background(AppTheme.paperRaised)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(AppTheme.grey200, lineWidth: 1))
+    }
+
+    // MARK: - Step 1: LocalDevVPN
+    private var vpnStepCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                ZStack {
+                    Circle()
+                        .fill(isStep1Done ? AppTheme.statusSuccess.opacity(0.18) : AppTheme.statusError.opacity(0.18))
+                        .frame(width: 32, height: 32)
+                    Image(systemName: isStep1Done ? "checkmark" : "1.circle.fill")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(isStep1Done ? AppTheme.statusSuccess : AppTheme.ink)
+                }
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("BƯỚC 1: LOCALDEVVPN (10.7.0.1)")
+                        .font(.system(size: 12, weight: .black, design: .monospaced))
+                        .foregroundColor(AppTheme.ink)
+                    Text("Kênh loopback nội bộ để giao tiếp với hệ thống")
+                        .font(.system(size: 10))
+                        .foregroundColor(AppTheme.grey500)
+                }
+                Spacer()
+
+                Text(isStep1Done ? "ONLINE" : "OFFLINE")
+                    .font(.system(size: 9.5, weight: .heavy, design: .monospaced))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(isStep1Done ? AppTheme.statusSuccess : AppTheme.statusError))
+            }
+
+            Text("LocalDevVPN định tuyến IP thiết bị tới 10.7.0.1. Mở ứng dụng LocalDevVPN và bấm bật tunnel.")
+                .font(.system(size: 11))
+                .foregroundColor(AppTheme.grey700)
+
+            HStack(spacing: 10) {
+                Button {
+                    Haptics.medium()
+                    tunnelManager.openLocalDevVPN()
+                } label: {
+                    Label("Mở LocalDevVPN", systemImage: "arrow.up.forward.app.fill")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(AppTheme.gamingBlue)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+
+                Button {
+                    Haptics.light()
+                    Task { await tunnelManager.verifyLoopbackService() }
+                } label: {
+                    Label("Kiểm tra lại", systemImage: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(AppTheme.ink)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(AppTheme.paperMuted)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(AppTheme.grey200, lineWidth: 1))
+                }
+            }
+        }
+        .padding(16)
+        .background(AppTheme.paperRaised)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(isStep1Done ? AppTheme.statusSuccess.opacity(0.35) : AppTheme.grey200, lineWidth: 1))
+    }
+
+    // MARK: - Step 2: Pairing
+    private var pairingStepCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                ZStack {
+                    Circle()
+                        .fill(isStep2Done ? AppTheme.statusSuccess.opacity(0.18) : AppTheme.statusError.opacity(0.18))
+                        .frame(width: 32, height: 32)
+                    Image(systemName: isStep2Done ? "checkmark" : "2.circle.fill")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(isStep2Done ? AppTheme.statusSuccess : AppTheme.ink)
+                }
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("BƯỚC 2: GHÉP ĐÔI THIẾT BỊ (RPPAIRING)")
+                        .font(.system(size: 12, weight: .black, design: .monospaced))
+                        .foregroundColor(AppTheme.ink)
+                    Text("Xác thực chứng chỉ ghép đôi để patch file")
+                        .font(.system(size: 10))
+                        .foregroundColor(AppTheme.grey500)
+                }
+                Spacer()
+
+                Text(pairingManager.status.rawValue)
+                    .font(.system(size: 9.5, weight: .heavy, design: .monospaced))
+                    .foregroundColor(isStep2Done ? AppTheme.statusSuccess : AppTheme.statusError)
+                    .lineLimit(1)
+            }
+
+            if pairingManager.isPairingHostActive {
+                VStack(spacing: 10) {
+                    HStack {
+                        Image(systemName: "antenna.radiowaves.left.and.right")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(AppTheme.statusInfo)
+                        Text("ĐANG PHÁT SÓNG BONJOUR GHÉP NỐI...")
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .foregroundColor(AppTheme.statusInfo)
+                        Spacer()
+                    }
+
+                    if !pairingManager.pairingPIN.isEmpty {
+                        VStack(spacing: 4) {
+                            Text("MÃ PIN GHÉP ĐÔI")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .foregroundColor(AppTheme.grey500)
+                            Text(pairingManager.pairingPIN)
+                                .font(.system(size: 32, weight: .black, design: .monospaced))
+                                .foregroundColor(AppTheme.gamingBlueBright)
+                                .tracking(6)
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 8)
+                                .background(AppTheme.grey50)
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(AppTheme.gamingBlueBright.opacity(0.4), lineWidth: 1.5))
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("1. Mở Cài đặt iPhone › Quyền riêng tư & Bảo mật › Chế độ nhà phát triển.")
+                        Text("2. Trong danh sách thiết bị ghép đôi, chọn \"Astra\".")
+                        Text("3. Nhập mã PIN hiển thị ở trên.")
+                    }
+                    .font(.system(size: 11))
+                    .foregroundColor(AppTheme.grey700)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                    .background(AppTheme.grey50)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+                .padding(12)
+                .background(AppTheme.statusInfo.opacity(0.06))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(AppTheme.statusInfo.opacity(0.2), lineWidth: 1))
+            }
+
+            HStack(spacing: 10) {
+                if ExploitSupportPolicy.currentPairingMode == .onDeviceOrImportedFile {
+                    Button {
+                        Haptics.medium()
+                        if pairingManager.isPairingHostActive {
+                            pairingManager.retryBonjourAdvertisement(userInitiated: true)
+                        } else {
+                            showPairingStartAlert = true
+                        }
+                    } label: {
+                        Label(
+                            pairingManager.isPairingHostActive ? "Phát lại Astra" : "Pair trên máy",
+                            systemImage: "iphone.and.arrow.forward"
+                        )
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(AppTheme.gamingBlue)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
+                }
+
+                Button {
+                    Haptics.light()
+                    showDocumentPicker = true
+                } label: {
+                    Label("Nhập .plist", systemImage: "square.and.arrow.down")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(AppTheme.ink)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(AppTheme.paperMuted)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(AppTheme.grey200, lineWidth: 1))
+                }
+
+                if isStep2Done {
+                    Button {
+                        Haptics.light()
+                        pairingManager.deletePairingFile()
+                    } label: {
+                        Image(systemName: "trash.fill")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(AppTheme.statusError)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .background(AppTheme.statusError.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(AppTheme.statusError.opacity(0.3), lineWidth: 1))
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .background(AppTheme.paperRaised)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(isStep2Done ? AppTheme.statusSuccess.opacity(0.35) : AppTheme.grey200, lineWidth: 1))
+    }
+
+    // MARK: - Step 3: AirTraffic & Canary
+    private var airTrafficStepCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                ZStack {
+                    Circle()
+                        .fill(isStep3Done ? AppTheme.statusSuccess.opacity(0.18) : AppTheme.statusError.opacity(0.18))
+                        .frame(width: 32, height: 32)
+                    Image(systemName: isStep3Done ? "checkmark" : "3.circle.fill")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(isStep3Done ? AppTheme.statusSuccess : AppTheme.ink)
+                }
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("BƯỚC 3: AIRTRAFFIC ENGINE & CANARY")
+                        .font(.system(size: 12, weight: .black, design: .monospaced))
+                        .foregroundColor(AppTheme.ink)
+                    Text("Kiểm tra quyền ghi đè tệp an toàn trước khi patch")
+                        .font(.system(size: 10))
+                        .foregroundColor(AppTheme.grey500)
+                }
+                Spacer()
+
+                Text(isStep3Done ? "SẴN SÀNG" : "CHƯA SẴN SÀNG")
+                    .font(.system(size: 9.5, weight: .heavy, design: .monospaced))
+                    .foregroundColor(isStep3Done ? AppTheme.statusSuccess : AppTheme.statusError)
+            }
+
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(isStep3Done ? AppTheme.statusSuccess : AppTheme.statusError)
+                    .frame(width: 7, height: 7)
+                Text(airTrafficClient.engineHealthState.message)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(AppTheme.grey700)
+                    .lineLimit(2)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppTheme.grey50)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+            Button {
+                Haptics.medium()
+                Task { await runComprehensiveCheck() }
+            } label: {
+                HStack(spacing: 6) {
+                    if isComprehensiveChecking {
+                        ProgressView()
+                            .tint(.white)
+                            .scaleEffect(0.8)
+                    } else {
+                        Image(systemName: "checkmark.shield.fill")
+                    }
+                    Text(isComprehensiveChecking ? "Đang chạy kiểm tra..." : "Kiểm tra thực tế (Canary Test)")
+                }
+                .font(.system(size: 12, weight: .bold))
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(AppTheme.gamingBlue)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            .disabled(isComprehensiveChecking)
+        }
+        .padding(16)
+        .background(AppTheme.paperRaised)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(isStep3Done ? AppTheme.statusSuccess.opacity(0.35) : AppTheme.grey200, lineWidth: 1))
+    }
+
+    // MARK: - Action Buttons
+    private var actionButtonsSection: some View {
+        VStack(spacing: 12) {
+            Button {
+                Haptics.success()
+                gatekeeper.markSetupCompleted()
+                onComplete()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: isReadyToProceed ? "arrow.right.circle.fill" : "lock.fill")
+                        .font(.system(size: 16, weight: .bold))
+                    Text(isReadyToProceed ? "XÁC NHẬN & TIẾP TỤC VÀO APP" : "HOÀN TẤT ĐỦ 3 BƯỚC ĐỂ TIẾP TỤC")
+                        .font(.system(size: 14, weight: .bold))
+                        .tracking(0.3)
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .background(
+                    isReadyToProceed
+                    ? AnyView(AppTheme.gamingAccentGradient)
+                    : AnyView(AppTheme.grey200)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .shadow(color: isReadyToProceed ? AppTheme.gamingBlue.opacity(0.35) : Color.clear, radius: 12, y: 5)
+            }
+            .disabled(!isReadyToProceed)
+
+            Button {
+                Haptics.light()
+                auth.logout()
+            } label: {
+                Text("Đăng xuất key")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(AppTheme.grey500)
+                    .padding(.vertical, 6)
+            }
+        }
+    }
+
+    private func runComprehensiveCheck() async {
+        isComprehensiveChecking = true
+        defer { isComprehensiveChecking = false }
+        await tunnelManager.verifyLoopbackService()
+        await pairingManager.verifyPairingWithDevice(silent: true)
+        if tunnelManager.isOperational && pairingManager.status.isPaired {
+            _ = await airTrafficClient.checkRealAirLiftHealth()
         }
     }
 }

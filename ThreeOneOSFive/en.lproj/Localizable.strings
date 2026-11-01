@@ -79,6 +79,7 @@
 "tab.features" = "Features";
 "tab.cleaner" = "Cleaner";
 "tab.system" = "System";
+"tab.settings" = "Settings";
 "tab.guides" = "Guides";
 
 "cleaner.title" = "Cleaner";

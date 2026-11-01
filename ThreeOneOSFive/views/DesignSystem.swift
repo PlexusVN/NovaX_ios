@@ -19,33 +19,33 @@ extension Color {
 
 enum AppTheme {
     // MARK: Monochrome palette
-    static let ink          = Color(hex: 0x0A0A0A) // primary text & buttons
-    static let inkSecondary = Color(hex: 0x1C1C1E) // dark surfaces (license card)
-    static let paper        = Color(hex: 0xFFFFFF) // main background
-    static let paperMuted   = Color(hex: 0xF5F5F7) // soft fills (cells)
-    static let paperRaised  = Color(hex: 0xFAFAFA) // cards
-    static let grey900      = Color(hex: 0x1C1C1E)
-    static let grey700      = Color(hex: 0x3A3A3C)
-    static let grey600      = Color(hex: 0x636366)
-    static let grey500      = Color(hex: 0x6E6E73)
-    static let grey400      = Color(hex: 0x8E8E93)
-    static let grey300      = Color(hex: 0xC7C7CC)
-    static let grey200      = Color(hex: 0xD1D1D6)
-    static let grey100      = Color(hex: 0xE5E5EA)
-    static let grey50       = Color(hex: 0xF2F2F7)
+    static let ink          = Color(hex: 0x38BDF8) // shared accent & primary action
+    static let inkSecondary = Color(hex: 0x0B1628)
+    static let paper        = Color(hex: 0x030712)
+    static let paperMuted   = Color(hex: 0x071122)
+    static let paperRaised  = Color(hex: 0x0B1628)
+    static let grey900      = Color(hex: 0xF4F8FF)
+    static let grey700      = Color(hex: 0xD6E5FF)
+    static let grey600      = Color(hex: 0xB6C6DF)
+    static let grey500      = Color(hex: 0x91A4C0)
+    static let grey400      = Color(hex: 0x7185A3)
+    static let grey300      = Color(hex: 0x315078)
+    static let grey200      = Color(hex: 0x1E3A5F)
+    static let grey100      = Color(hex: 0x12243F)
+    static let grey50       = Color(hex: 0x0B1628)
 
     // Semantic status palette: chỉ dùng để truyền đạt trạng thái.
-    static let statusSuccess = Color(hex: 0x15803D)
-    static let statusInfo    = Color(hex: 0x2563EB)
-    static let statusWarning = Color(hex: 0xD97706)
-    static let statusError   = Color(hex: 0xDC2626)
+    static let statusSuccess = Color(hex: 0x22C55E)
+    static let statusInfo    = Color(hex: 0x38BDF8)
+    static let statusWarning = Color(hex: 0xF59E0B)
+    static let statusError   = Color(hex: 0xFB7185)
 
     static let positive     = statusSuccess
     static let negative     = statusError
 
     // MARK: Borders
-    static let borderHairline = Color(hex: 0xD1D1D6)
-    static let borderStrong   = Color(hex: 0x111111)
+    static let borderHairline = Color(hex: 0x1E3A5F)
+    static let borderStrong   = Color(hex: 0x38BDF8)
 
     // MARK: Spacings / sizes
     static let pageInset: CGFloat = 16
@@ -59,7 +59,7 @@ enum AppTheme {
     static let selectionIconSize: CGFloat = 18
 
     // Background helpers - light, paper-like
-    static let pageBackground: Color = .white
+    static let pageBackground: Color = paper
     static let consoleBackground: Color = paperMuted
 
     /// Legacy colors kept for backward compatibility with existing helpers
@@ -69,30 +69,57 @@ enum AppTheme {
     static let accentLight = ink
 
     /// Aliases cho các tên cũ - trỏ về palette trắng-đen 2026
-    static let cyberCyan  = ink
-    static let cyberBlue  = ink
-    static let cyberPurple = ink
-    static let cyberViolet = ink
-    static let cyberPink   = ink
-    static let cyberGreen  = ink
-    static let cyberOLED   = Color.white
+    static let cyberCyan  = Color(hex: 0x38BDF8)
+    static let cyberBlue  = Color(hex: 0x147DFF)
+    static let cyberPurple = Color(hex: 0x8B5CF6)
+    static let cyberViolet = Color(hex: 0x6D5DFB)
+    static let cyberPink   = Color(hex: 0xEC4899)
+    static let cyberGreen  = Color(hex: 0x22C55E)
+    static let cyberOLED   = paper
     static let cyberSurface = paperMuted
 
     static let cyberGradient = LinearGradient(
-        colors: [ink, ink],
+        colors: [cyberCyan, cyberViolet, cyberPink],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
     static let cyberBorderGradient = LinearGradient(
-        colors: [ink.opacity(0.5), ink.opacity(0.1)],
+        colors: [cyberCyan.opacity(0.70), cyberViolet.opacity(0.48), cyberPink.opacity(0.34)],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
     static let cyberSubtleBorder = LinearGradient(
-        colors: [Color.black.opacity(0.12), Color.black.opacity(0.02)],
+        colors: [cyberCyan.opacity(0.28), cyberPink.opacity(0.12)],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
+
+    // MARK: Gaming blue / black palette
+    // Kept separate from the legacy monochrome aliases so older screens and
+    // transport diagnostics retain their existing contrast and behavior.
+    static let gamingBackground = Color(hex: 0x030712)
+    static let gamingBackgroundRaised = Color(hex: 0x071122)
+    static let gamingSurface = Color(hex: 0x0B1628)
+    static let gamingSurfaceRaised = Color(hex: 0x10213B)
+    static let gamingBlue = Color(hex: 0x147DFF)
+    static let gamingBlueBright = Color(hex: 0x38BDF8)
+    static let gamingViolet = Color(hex: 0x5865F2)
+    static let gamingPink = Color(hex: 0xEC4899)
+    static let gamingText = Color(hex: 0xF4F8FF)
+    static let gamingTextSecondary = Color(hex: 0x91A4C0)
+    static let gamingBorder = Color(hex: 0x1E3A5F)
+
+    static let gamingAccentGradient = LinearGradient(
+        colors: [gamingBlueBright, gamingBlue, gamingViolet, gamingPink],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+    static let gamingBorderGradient = LinearGradient(
+        colors: [gamingBlueBright.opacity(0.72), gamingViolet.opacity(0.48), gamingPink.opacity(0.30)],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+    static let gamingTabSpring = Animation.spring(response: 0.42, dampingFraction: 0.78, blendDuration: 0.12)
 
     // MARK: Surfaces / Materials
     /// Floating capsule material for tabbar (iOS 16-25 fallback)
@@ -109,7 +136,7 @@ enum AppTheme {
     @ViewBuilder
     static func cardSurface(cornerRadius: CGFloat = 22) -> some View {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .fill(Color.white)
+            .fill(paperRaised)
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .stroke(borderHairline, lineWidth: 1)
@@ -124,6 +151,55 @@ enum AppTheme {
             .overlay(
                 shape.stroke(borderHairline, lineWidth: 1)
             )
+    }
+}
+
+// MARK: - Gaming surfaces
+
+struct GamingBackdrop: View {
+    var body: some View {
+        ZStack {
+            AppTheme.gamingBackground
+
+            RadialGradient(
+                colors: [AppTheme.gamingBlue.opacity(0.22), Color.clear],
+                center: .init(x: 0.12, y: 0.02),
+                startRadius: 0,
+                endRadius: 430
+            )
+
+            RadialGradient(
+                colors: [AppTheme.gamingViolet.opacity(0.13), Color.clear],
+                center: .init(x: 0.92, y: 0.42),
+                startRadius: 0,
+                endRadius: 360
+            )
+
+            RadialGradient(
+                colors: [AppTheme.gamingPink.opacity(0.11), Color.clear],
+                center: .init(x: 0.08, y: 0.82),
+                startRadius: 0,
+                endRadius: 330
+            )
+
+            LinearGradient(
+                colors: [Color.white.opacity(0.025), Color.clear, AppTheme.gamingBlue.opacity(0.04)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        }
+        .ignoresSafeArea()
+    }
+}
+
+struct GamingPressButtonStyle: ButtonStyle {
+    var scale: CGFloat = 0.975
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? scale : 1)
+            .brightness(configuration.isPressed ? 0.06 : 0)
+            .animation(.spring(response: 0.22, dampingFraction: 0.76), value: configuration.isPressed)
     }
 }
 
@@ -234,7 +310,7 @@ struct OutlineButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .frame(maxWidth: .infinity, minHeight: 48)
-            .background(Color.white)
+            .background(AppTheme.paperRaised)
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -367,26 +443,50 @@ struct GlassToastModifier: ViewModifier {
                         HStack(spacing: 12) {
                             Image(systemName: t.isSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
                                 .font(.system(size: 22))
-                                .foregroundColor(AppTheme.ink)
+                                .foregroundColor(t.isSuccess ? AppTheme.gamingBlueBright : AppTheme.statusError)
+                                .shadow(
+                                    color: (t.isSuccess ? AppTheme.gamingBlue : AppTheme.statusError).opacity(0.45),
+                                    radius: 8
+                                )
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(t.title)
-                                    .font(.system(size: 14, weight: .bold))
-                                    .foregroundColor(AppTheme.ink)
+                                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                                    .foregroundColor(AppTheme.gamingText)
                                 Text(t.message)
                                     .font(.system(size: 12))
-                                    .foregroundColor(AppTheme.grey600)
+                                    .foregroundColor(AppTheme.gamingTextSecondary)
                             }
                             Spacer()
                         }
                         .padding(16)
-                        .background(Color.white)
+                        .background(
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .fill(.ultraThinMaterial)
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .fill(AppTheme.gamingSurface.opacity(0.93))
+                            }
+                        )
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .stroke(AppTheme.ink, lineWidth: 1)
+                                .stroke(
+                                    t.isSuccess
+                                        ? AppTheme.gamingBorderGradient
+                                        : LinearGradient(
+                                            colors: [AppTheme.statusError.opacity(0.72), Color.white.opacity(0.08)],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        ),
+                                    lineWidth: 1
+                                )
                         )
-                        .shadow(color: Color.black.opacity(0.18), radius: 25, y: 15)
+                        .shadow(
+                            color: (t.isSuccess ? AppTheme.gamingBlue : AppTheme.statusError).opacity(0.22),
+                            radius: 22,
+                            y: 10
+                        )
                         .padding(.horizontal, 24)
                         .padding(.top, 60)
                         .offset(y: dragOffset < 0 ? dragOffset : 0)
@@ -447,7 +547,11 @@ enum Haptics {
     static func light()  { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
     static func medium() { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
     static func heavy()  { UIImpactFeedbackGenerator(style: .heavy).impactOccurred() }
+    static func soft()   { UIImpactFeedbackGenerator(style: .soft).impactOccurred(intensity: 0.72) }
+    static func rigid()  { UIImpactFeedbackGenerator(style: .rigid).impactOccurred(intensity: 0.82) }
+    static func selection() { UISelectionFeedbackGenerator().selectionChanged() }
     static func success(){ UINotificationFeedbackGenerator().notificationOccurred(.success) }
+    static func warning(){ UINotificationFeedbackGenerator().notificationOccurred(.warning) }
     static func error()  { UINotificationFeedbackGenerator().notificationOccurred(.error) }
 }
 
@@ -456,10 +560,10 @@ enum Haptics {
 struct MeshBackground: View {
     var body: some View {
         ZStack {
-            Color.white.ignoresSafeArea()
+            AppTheme.gamingBackground.ignoresSafeArea()
             // Soft radial glow nhẹ để có "tầng" rất nhẹ
             RadialGradient(
-                colors: [Color.white, AppTheme.grey50, AppTheme.grey100],
+                colors: [AppTheme.gamingBlue.opacity(0.18), AppTheme.gamingViolet.opacity(0.10), Color.clear],
                 center: .init(x: 0.5, y: 0.15),
                 startRadius: 0,
                 endRadius: 600
@@ -475,9 +579,9 @@ struct MeshBackground: View {
 struct SplashBackdrop: View {
     var body: some View {
         ZStack {
-            Color.white.ignoresSafeArea()
+            GamingBackdrop()
             RadialGradient(
-                colors: [Color.white, AppTheme.grey50],
+                colors: [AppTheme.gamingViolet.opacity(0.20), AppTheme.gamingPink.opacity(0.08), Color.clear],
                 center: .init(x: 0.5, y: 0.4),
                 startRadius: 0,
                 endRadius: 500
@@ -485,7 +589,7 @@ struct SplashBackdrop: View {
             .ignoresSafeArea()
             Rectangle()
                 .fill(
-                    LinearGradient(colors: [Color.clear, Color.black.opacity(0.05), Color.clear],
+                    LinearGradient(colors: [Color.clear, AppTheme.gamingBlueBright.opacity(0.22), Color.clear],
                                    startPoint: .top, endPoint: .bottom)
                 )
                 .frame(width: 1)

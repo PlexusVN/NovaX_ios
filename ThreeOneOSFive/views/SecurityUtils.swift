@@ -11,6 +11,14 @@ enum KeychainUtils {
     static func save(key: String, value: String) -> Bool {
         guard let data = value.data(using: .utf8) else { return false }
 
+        let identityQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: key
+        ]
+        // Delete by identity only. Including kSecValueData in the delete query
+        // would fail whenever an existing item is being updated to new data.
+        SecItemDelete(identityQuery as CFDictionary)
+
         // Try with access group first (works for sideload with matching entitlements)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -18,7 +26,6 @@ enum KeychainUtils {
             kSecValueData as String: data,
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         ]
-        SecItemDelete(query as CFDictionary)
         let status = SecItemAdd(query as CFDictionary, nil)
         if status == errSecSuccess { return true }
 
@@ -29,7 +36,7 @@ enum KeychainUtils {
             kSecValueData as String: data,
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         ]
-        SecItemDelete(fallback as CFDictionary)
+        SecItemDelete(identityQuery as CFDictionary)
         return SecItemAdd(fallback as CFDictionary, nil) == errSecSuccess
     }
 
@@ -269,22 +276,21 @@ var expectedServerPin: String { "oof/q3Ysxpom1IIDft9wH2U86JkCXGKn5cuIu5tBnLs=" }
 
 struct DeviceUtils {
 
-    /// HWID = hardware-derived (identifierForVendor + model + bundleID)
-    /// Each device produces a unique, non-spoofable HWID.
-    /// Cracker cannot predict HWID of other devices.
+    /// HWID: Sử dụng trực tiếp UID định danh của thiết bị (identifierForVendor), không băm hay lấy phần khác.
     static var hwid: String {
-        if let cached = KeychainUtils.read(key: "deviceHwid") {
+        // Lấy trực tiếp UID định danh của máy
+        if let vendorID = UIDevice.current.identifierForVendor?.uuidString, !vendorID.isEmpty {
+            _ = KeychainUtils.save(key: "deviceHwid", value: vendorID)
+            return vendorID
+        }
+        // Fallback đọc từ Keychain nếu đã lưu UID trước đó (dạng UUID hợp lệ có dấu gạch ngang)
+        if let cached = KeychainUtils.read(key: "deviceHwid"), !cached.isEmpty, cached.contains("-") {
             return cached
         }
-        let vendorID = UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
-        let model = deviceModel
-        let bundleID = Bundle.main.bundleIdentifier ?? "com.novax"
-        let combined = "\(vendorID)|\(model)|\(bundleID)"
-        let newHwid = sha256Hex(combined).prefix(16).lowercased()
-        if KeychainUtils.save(key: "deviceHwid", value: newHwid) {
-            return newHwid
-        }
-        return sha256Hex(combined).prefix(16).lowercased()
+        // Fallback tạo UID mới bền vững nếu hệ thống không trả về vendorID
+        let freshUID = UUID().uuidString
+        _ = KeychainUtils.save(key: "deviceHwid", value: freshUID)
+        return freshUID
     }
 
     static var deviceModel: String {
@@ -294,6 +300,97 @@ struct DeviceUtils {
         let bytes = mirror.children.compactMap { $0.value as? Int8 }
         guard !bytes.isEmpty else { return "Unknown" }
         return String(cString: bytes).trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Tên thương mại thân thiện của thiết bị (vd: iPhone 18 Pro Max, iPhone 16 Pro, iPad Pro,...)
+    static var deviceMarketingName: String {
+        #if targetEnvironment(simulator)
+        if let simModel = ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"], !simModel.isEmpty {
+            return friendlyModelName(for: simModel)
+        }
+        return "iPhone 18 Pro Max"
+        #else
+        let model = deviceModel
+        let friendly = friendlyModelName(for: model)
+        if friendly != model && !friendly.isEmpty {
+            return friendly
+        }
+        let devName = UIDevice.current.name
+        if !devName.isEmpty && devName != "iPhone" && devName != "iPad" {
+            return devName
+        }
+        return friendly.isEmpty ? "iPhone" : friendly
+        #endif
+    }
+
+    /// Bản đồ tra cứu mã phần cứng utsname sang tên thương mại
+    static func friendlyModelName(for identifier: String) -> String {
+        switch identifier {
+        // iPhone 18 & 17 Series
+        case "iPhone18,1": return "iPhone 17 Pro"
+        case "iPhone18,2": return "iPhone 17 Pro Max"
+        case "iPhone18,3": return "iPhone 17"
+        case "iPhone18,4": return "iPhone 17 Air"
+        case "iPhone18,5": return "iPhone 18"
+        case "iPhone18,6": return "iPhone 18 Pro"
+        case "iPhone18,7": return "iPhone 18 Pro Max"
+
+        // iPhone 16 Series
+        case "iPhone17,1": return "iPhone 16 Pro"
+        case "iPhone17,2": return "iPhone 16 Pro Max"
+        case "iPhone17,3": return "iPhone 16"
+        case "iPhone17,4": return "iPhone 16 Plus"
+        case "iPhone17,5": return "iPhone 16e"
+
+        // iPhone 15 Series
+        case "iPhone16,1": return "iPhone 15 Pro"
+        case "iPhone16,2": return "iPhone 15 Pro Max"
+        case "iPhone15,4": return "iPhone 15"
+        case "iPhone15,5": return "iPhone 15 Plus"
+
+        // iPhone 14 Series
+        case "iPhone15,2": return "iPhone 14 Pro"
+        case "iPhone15,3": return "iPhone 14 Pro Max"
+        case "iPhone14,7": return "iPhone 14"
+        case "iPhone14,8": return "iPhone 14 Plus"
+
+        // iPhone 13 Series
+        case "iPhone14,2": return "iPhone 13 Pro"
+        case "iPhone14,3": return "iPhone 13 Pro Max"
+        case "iPhone14,4": return "iPhone 13 mini"
+        case "iPhone14,5": return "iPhone 13"
+
+        // iPhone 12 Series
+        case "iPhone13,1": return "iPhone 12 mini"
+        case "iPhone13,2": return "iPhone 12"
+        case "iPhone13,3": return "iPhone 12 Pro"
+        case "iPhone13,4": return "iPhone 12 Pro Max"
+
+        // iPhone 11 Series
+        case "iPhone12,1": return "iPhone 11"
+        case "iPhone12,3": return "iPhone 11 Pro"
+        case "iPhone12,5": return "iPhone 11 Pro Max"
+
+        // iPhone SE
+        case "iPhone12,8": return "iPhone SE (2nd gen)"
+        case "iPhone14,6": return "iPhone SE (3rd gen)"
+
+        // iPhone XS / XR / X
+        case "iPhone11,2": return "iPhone XS"
+        case "iPhone11,4", "iPhone11,6": return "iPhone XS Max"
+        case "iPhone11,8": return "iPhone XR"
+        case "iPhone10,3", "iPhone10,6": return "iPhone X"
+
+        // iPad Models
+        case let s where s.hasPrefix("iPad"):
+            return "iPad"
+
+        default:
+            if identifier.hasPrefix("iPhone") {
+                return "iPhone (\(identifier))"
+            }
+            return identifier
+        }
     }
 
     static var osVersion: String { UIDevice.current.systemVersion }

@@ -79,6 +79,7 @@
 "tab.features" = "功能";
 "tab.cleaner" = "清理";
 "tab.system" = "系统";
+"tab.settings" = "设置";
 "tab.guides" = "使用指南";
 
 "cleaner.title" = "清理";

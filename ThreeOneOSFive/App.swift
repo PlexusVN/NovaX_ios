@@ -9,6 +9,7 @@ struct ThreeOneOSFiveApp: App {
     @StateObject private var authManager = AuthManager()
     @StateObject private var featurePatchService = FeaturePatchService()
     @StateObject private var updateManager = UpdateManager.shared
+    @StateObject private var gatekeeper = AirLiftGatekeeperManager.shared
     @AppStorage(AppLanguage.storageKey) private var languageCode = AppLanguage.vietnamese.rawValue
     @State private var showMainInterface = false
     @Environment(\.scenePhase) private var scenePhase
@@ -27,19 +28,19 @@ struct ThreeOneOSFiveApp: App {
         // Trắng hoàn toàn theo design.md doanh nghiệp 2026
         let navAppearance = UINavigationBarAppearance()
         navAppearance.configureWithOpaqueBackground()
-        navAppearance.backgroundColor = UIColor.white
-        navAppearance.titleTextAttributes = [.foregroundColor: UIColor.black]
-        navAppearance.largeTitleTextAttributes = [.foregroundColor: UIColor.black]
+        navAppearance.backgroundColor = UIColor(red: 0.012, green: 0.027, blue: 0.071, alpha: 0.96)
+        navAppearance.titleTextAttributes = [.foregroundColor: UIColor.white]
+        navAppearance.largeTitleTextAttributes = [.foregroundColor: UIColor.white]
         UINavigationBar.appearance().standardAppearance = navAppearance
         UINavigationBar.appearance().scrollEdgeAppearance = navAppearance
-        UINavigationBar.appearance().tintColor = UIColor.black
+        UINavigationBar.appearance().tintColor = UIColor(red: 0.22, green: 0.74, blue: 0.97, alpha: 1)
 
         let tabAppearance = UITabBarAppearance()
         tabAppearance.configureWithOpaqueBackground()
-        tabAppearance.backgroundColor = UIColor.white
+        tabAppearance.backgroundColor = UIColor(red: 0.012, green: 0.027, blue: 0.071, alpha: 0.96)
         UITabBar.appearance().standardAppearance = tabAppearance
         UITabBar.appearance().scrollEdgeAppearance = tabAppearance
-        UITabBar.appearance().tintColor = UIColor.black
+        UITabBar.appearance().tintColor = UIColor(red: 0.22, green: 0.74, blue: 0.97, alpha: 1)
     }
 
     private var language: AppLanguage {
@@ -52,7 +53,18 @@ struct ThreeOneOSFiveApp: App {
                 // Một màn hình duy nhất: SplashLoginView gộp loading + login
                 // → liền mạch, không có "chuyển cảnh" giữa 2 view (giống HTML)
                 Group {
-                    if showMainInterface {
+                    if authManager.authState == .verified && gatekeeper.requiresPairingForCurrentDevice && !gatekeeper.canBypassGatekeeper {
+                        IOS27PairingSetupView(auth: authManager) {
+                            withAnimation(.easeInOut(duration: 0.32)) {
+                                showMainInterface = true
+                            }
+                        }
+                        .environmentObject(appState)
+                        .environmentObject(authManager)
+                        .environmentObject(updateManager)
+                        .transition(.opacity.combined(with: .scale(scale: 1.01)))
+                        .zIndex(2)
+                    } else if showMainInterface {
                         ContentView()
                             .environmentObject(appState)
                             .environmentObject(patchDraftCoordinator)
@@ -99,7 +111,8 @@ struct ThreeOneOSFiveApp: App {
                 }
             }
             .animation(.easeInOut(duration: 0.32), value: showMainInterface)
-            .preferredColorScheme(.light)
+            .animation(.easeInOut(duration: 0.32), value: gatekeeper.canBypassGatekeeper)
+            .preferredColorScheme(.dark)
             .task(id: authManager.authState == .verified) {
                 guard authManager.authState == .verified else {
                     showMainInterface = false
@@ -312,7 +325,7 @@ struct UpdateRequiredView: View {
 
     var body: some View {
         ZStack {
-            Color.white.ignoresSafeArea()
+            GamingBackdrop()
 
             VStack(spacing: 24) {
                 Image(systemName: "icloud.and.arrow.down.fill")
@@ -362,7 +375,7 @@ struct UpdateRequiredView: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .stroke(AppTheme.ink, lineWidth: 1)
-                        .background(Color.white)
+                        .background(AppTheme.paperRaised)
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .frame(width: 42, height: 42)
                     Image(systemName: "person.fill")
@@ -386,7 +399,7 @@ struct UpdateRequiredView: View {
             DeveloperContactsList()
         }
         .padding(16)
-        .background(Color.white)
+        .background(AppTheme.paperRaised)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
