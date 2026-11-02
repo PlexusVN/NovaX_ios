@@ -1223,7 +1223,7 @@ final class AirLiftGatekeeperManager: ObservableObject {
     }
 
     var requiresPairingForCurrentDevice: Bool {
-        ExploitSupportPolicy.currentStorageMode == .airLift
+        AppInfo.versionTuple.major >= 27
     }
 
     var isAirLiftFullyReady: Bool {
@@ -1234,20 +1234,37 @@ final class AirLiftGatekeeperManager: ObservableObject {
     }
 
     var canBypassGatekeeper: Bool {
+        // Chỉ iOS 27 trở lên mới yêu cầu Gatekeeper
         guard requiresPairingForCurrentDevice else { return true }
-        let hasCompleted = isSetupCompleted
-        let isPaired = AirLiftPairingManager.shared.status.isPaired && AirLiftPairingManager.shared.status != .revoked
-        return hasCompleted && isPaired && !requiresRePair
+
+        // Nếu đã hoàn tất thiết lập trước đó (lưu trong Keychain & UserDefaults)
+        // và không có cờ huỷ ghép đôi bắt buộc -> Bỏ qua, vào app ngay, không bắt pair lại
+        if isSetupCompleted && !requiresRePair {
+            return true
+        }
+
+        // Kiểm tra xem thiết bị đã có sẵn pairing record hợp lệ chưa
+        let hasPairing = (AirLiftPairingManager.shared.status.isPaired && AirLiftPairingManager.shared.status != .revoked)
+            || AirLiftPairingManager.shared.getPairingData() != nil
+            || KeychainUtils.read(key: "novax.airlift.pairingRecord.v1") != nil
+
+        if hasPairing && !requiresRePair {
+            isSetupCompleted = true
+            return true
+        }
+
+        return false
     }
 
     private init() {
         let persistedCompletion = UserDefaults.standard.bool(forKey: setupCompletedKey)
             || KeychainUtils.read(key: setupCompletedKeychainKey) == "1"
         self.isSetupCompleted = persistedCompletion
-        self.requiresRePair = UserDefaults.standard.bool(forKey: requireRePairKey)
-        self.rePairReason = UserDefaults.standard.string(forKey: rePairReasonKey)
+        self.requiresRePair = false
+        self.rePairReason = nil
         if persistedCompletion {
             UserDefaults.standard.set(true, forKey: setupCompletedKey)
+            _ = KeychainUtils.save(key: setupCompletedKeychainKey, value: "1")
         }
     }
 
@@ -1255,18 +1272,32 @@ final class AirLiftGatekeeperManager: ObservableObject {
         isSetupCompleted = true
         requiresRePair = false
         rePairReason = nil
+        UserDefaults.standard.set(true, forKey: setupCompletedKey)
+        UserDefaults.standard.set(false, forKey: requireRePairKey)
+        UserDefaults.standard.removeObject(forKey: rePairReasonKey)
+        _ = KeychainUtils.save(key: setupCompletedKeychainKey, value: "1")
+        AirLiftPairingManager.shared.backupPairingFileToKeychainIfValid()
     }
 
     func triggerRePair(reason: String) {
-        isSetupCompleted = false
-        requiresRePair = true
-        rePairReason = reason
+        // Chỉ trigger re-pair nếu người dùng thực sự xóa hoặc huỷ pairing file
+        if !AirLiftPairingManager.shared.status.isPaired && AirLiftPairingManager.shared.getPairingData() == nil {
+            isSetupCompleted = false
+            requiresRePair = true
+            rePairReason = reason
+            UserDefaults.standard.set(true, forKey: requireRePairKey)
+            UserDefaults.standard.set(reason, forKey: rePairReasonKey)
+        }
     }
 
     func resetGatekeeper() {
         isSetupCompleted = false
         requiresRePair = false
         rePairReason = nil
+        UserDefaults.standard.removeObject(forKey: setupCompletedKey)
+        UserDefaults.standard.removeObject(forKey: requireRePairKey)
+        UserDefaults.standard.removeObject(forKey: rePairReasonKey)
+        KeychainUtils.delete(key: setupCompletedKeychainKey)
     }
 }
 

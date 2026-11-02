@@ -11,7 +11,7 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Namespace private var tabAnimationNamespace
     @State private var showLoginSuccessPopup = false
-    @State private var showSystemDashboard = false
+    @State private var showSettings = false
 
     init() {
 #if targetEnvironment(simulator)
@@ -40,8 +40,10 @@ struct ContentView: View {
         }
         .tint(AppTheme.gamingBlue)
         .imageScale(.small)
-        .sheet(isPresented: $showSystemDashboard) {
-            DashboardView(showCloseButton: true, onClose: { showSystemDashboard = false })
+        .sheet(isPresented: $showSettings) {
+            SettingsView()
+                .environmentObject(appState)
+                .environmentObject(updateManager)
         }
         .onChange(of: patchDraftCoordinator.request?.id) { requestID in
             // Patches tab đã bị ẩn - không làm gì
@@ -129,25 +131,6 @@ struct ContentView: View {
                 }
                 .buttonStyle(GamingPressButtonStyle(scale: 0.96))
             }
-
-            Button {
-                Haptics.selection()
-                showSystemDashboard = true
-            } label: {
-                VStack(spacing: 3) {
-                    Image(systemName: "gearshape.fill")
-                        .font(.system(size: 19, weight: .medium))
-                        .foregroundColor(AppTheme.gamingTextSecondary)
-                    Text(language.text("tab.settings"))
-                        .font(.system(size: 10, weight: .semibold, design: .rounded))
-                        .foregroundColor(AppTheme.gamingTextSecondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-            }
-            .buttonStyle(GamingPressButtonStyle(scale: 0.96))
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 5)
@@ -225,9 +208,9 @@ struct ContentView: View {
         case .patches:
             PatchProjectsView()
         case .features:
-            FeaturesView(showSystemDashboard: $showSystemDashboard)
+            FeaturesView(showSystemDashboard: $showSettings)
         case .guides:
-            GuidesView(showSystemDashboard: $showSystemDashboard)
+            GuidesView(showSystemDashboard: $showSettings)
         case .cleaner:
             EmptyView()
         case .wallpapers:
@@ -236,7 +219,7 @@ struct ContentView: View {
             // DNS đã bỏ - fallback trống
             EmptyView()
         case .profile:
-            ProfileView(showSystemDashboard: $showSystemDashboard)
+            ProfileView(showSystemDashboard: $showSettings)
                 .environmentObject(authManager)
         }
     }
