@@ -677,17 +677,32 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
         try? FileManager.default.moveItem(at: legacyPairingFileURL, to: pairingFileURL)
     }
 
-    private func backupPairingFileToKeychainIfValid() {
+    /// Persists the validated pairing record in Keychain as a recovery copy.
+    /// Internal visibility is intentional: the gatekeeper commits its setup
+    /// flag only after asking the pairing owner to persist the same record.
+    @discardableResult
+    func backupPairingFileToKeychainIfValid() -> Bool {
         guard let data = try? Data(contentsOf: pairingFileURL),
               let object = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
               let record = object as? [String: Any],
-              Self.isSupportedPairingRecord(record) else { return }
-        backupPairingDataToKeychain(data)
+              Self.isSupportedPairingRecord(record) else { return false }
+        return backupPairingDataToKeychain(data)
     }
 
-    private func backupPairingDataToKeychain(_ data: Data) {
-        guard !data.isEmpty else { return }
-        _ = KeychainUtils.save(key: pairingKeychainKey, value: data.base64EncodedString())
+    @discardableResult
+    private func backupPairingDataToKeychain(_ data: Data) -> Bool {
+        guard !data.isEmpty else { return false }
+        return KeychainUtils.save(key: pairingKeychainKey, value: data.base64EncodedString())
+    }
+
+    /// Structural validation used by the startup gate. A `.ready` state alone
+    /// is not enough if the underlying file was removed or corrupted later.
+    var hasUsablePersistedPairingRecord: Bool {
+        guard status != .revoked,
+              let record = loadPairingRecord(at: pairingFileURL) else {
+            return false
+        }
+        return Self.isSupportedPairingRecord(record)
     }
 
     @discardableResult

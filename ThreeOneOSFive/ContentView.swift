@@ -38,7 +38,7 @@ struct ContentView: View {
                 compactLayout
             }
         }
-        .tint(AppTheme.gamingBlue)
+        .tint(AppTheme.ink)
         .imageScale(.small)
         .sheet(isPresented: $showSettings) {
             SettingsView()
@@ -77,15 +77,14 @@ struct ContentView: View {
 
                     sectionContent(section)
                         .opacity(isSelected ? 1 : 0)
-                        .scaleEffect(isSelected ? 1 : 0.978)
-                        .offset(x: isSelected ? 0 : (section.rawValue < tabNavigation.selectedTab ? -24 : 24))
-                        .blur(radius: isSelected ? 0 : 3.5)
                         .allowsHitTesting(isSelected)
                         .accessibilityHidden(!isSelected)
                         .zIndex(isSelected ? 1 : 0)
                 }
             }
-            .animation(AppTheme.gamingTabSpring, value: tabNavigation.selectedTab)
+            // Chỉ cross-fade opacity. Blur/scale/offset trên toàn bộ ScrollView
+            // buộc GPU render lại nhiều lớp lớn và gây khựng khi đổi tab.
+            .animation(AppTheme.gamingContentFade, value: tabNavigation.selectedTab)
 
             customFloatingTabBar
                 .zIndex(10)
@@ -123,7 +122,7 @@ struct ContentView: View {
                                         Capsule()
                                             .stroke(Color.white.opacity(0.2), lineWidth: 0.8)
                                     )
-                                    .shadow(color: AppTheme.gamingBlue.opacity(0.58), radius: 12, x: 0, y: 5)
+                                    .shadow(color: AppTheme.gamingViolet.opacity(0.38), radius: 10, x: 0, y: 4)
                                     .matchedGeometryEffect(id: "TAB_BG", in: tabAnimationNamespace)
                             }
                         }
@@ -134,6 +133,7 @@ struct ContentView: View {
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 5)
+        .animation(AppTheme.gamingTabSpring, value: tabNavigation.selectedTab)
         .background(
             ZStack {
                 Capsule().fill(.ultraThinMaterial)
@@ -144,7 +144,7 @@ struct ContentView: View {
             Capsule()
                 .stroke(AppTheme.gamingBorderGradient, lineWidth: 1)
         )
-        .shadow(color: AppTheme.gamingBlue.opacity(0.22), radius: 24, x: 0, y: 10)
+        .shadow(color: AppTheme.gamingViolet.opacity(0.18), radius: 22, x: 0, y: 9)
         .shadow(color: Color.black.opacity(0.5), radius: 18, x: 0, y: 12)
         .padding(.horizontal, 20)
         .padding(.bottom, 18)
@@ -267,9 +267,9 @@ struct ContentView: View {
 
         Haptics.selection()
 
-        withAnimation(AppTheme.gamingTabSpring) {
-            tabNavigation.select(target)
-        }
+        // Hai animation đã được scope riêng cho content và indicator ở trên.
+        // Không dùng withAnimation toàn cục vì nó làm mọi ScrollView con cùng animate.
+        tabNavigation.select(target)
     }
 }
 

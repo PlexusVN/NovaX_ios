@@ -133,17 +133,17 @@ struct SplashLoginView: View {
                         .foregroundStyle(
                             LinearGradient(
                                 colors: [
-                                    Color(hex: 0x38BDF8),
-                                    Color(hex: 0x147DFF),
+                                    AppTheme.gamingBlueBright,
+                                    AppTheme.gamingBlue,
                                     Color(hex: 0x8B5CF6),
-                                    Color(hex: 0xEC4899)
+                                    AppTheme.gamingPink
                                 ],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
                         )
                         .kerning(-1.35)
-                        .shadow(color: Color(hex: 0x147DFF).opacity(0.35), radius: 8, x: 0, y: 0)
+                        .shadow(color: AppTheme.gamingBlue.opacity(0.35), radius: 8, x: 0, y: 0)
 
                     Text("KHAI PHÁ HỆ THỐNG")
                         .font(.system(size: 9, weight: .bold))
@@ -167,10 +167,10 @@ struct SplashLoginView: View {
                             .fill(
                                 LinearGradient(
                                     colors: [
-                                        Color(hex: 0x147DFF),
-                                        Color(hex: 0x38BDF8),
-                                        Color(hex: 0x5865F2),
-                                        Color(hex: 0xEC4899)
+                                        AppTheme.gamingBlue,
+                                        AppTheme.gamingBlueBright,
+                                        AppTheme.gamingViolet,
+                                        AppTheme.gamingPink
                                     ],
                                     startPoint: .leading,
                                     endPoint: .trailing
@@ -183,7 +183,7 @@ struct SplashLoginView: View {
 
                 HStack(spacing: 8) {
                     Circle()
-                        .fill(Color(hex: 0x38BDF8))
+                        .fill(AppTheme.gamingBlueBright)
                         .frame(width: 5, height: 5)
                         .opacity(pulseOpacity)
 
@@ -212,7 +212,7 @@ struct SplashLoginView: View {
                     } label: {
                         Image(systemName: "slider.horizontal.3")
                             .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(Color(hex: 0x38BDF8))
+                            .foregroundStyle(AppTheme.gamingBlueBright)
                             .frame(width: 40, height: 40)
                             .background(Color(hex: 0x0B1628))
                             .clipShape(Circle())
@@ -221,7 +221,7 @@ struct SplashLoginView: View {
                                     .stroke(Color(hex: 0x1E3A5F), lineWidth: 1)
                             )
                             .shadow(color: Color.black.opacity(0.45), radius: 10, x: 0, y: 4)
-                            .shadow(color: Color(hex: 0x147DFF).opacity(0.22), radius: 8, x: 0, y: 0)
+                            .shadow(color: AppTheme.gamingBlue.opacity(0.22), radius: 8, x: 0, y: 0)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Cài đặt nhanh")
@@ -247,8 +247,8 @@ struct SplashLoginView: View {
                 LinearGradient(
                     colors: [
                         Color.clear,
-                        Color(hex: 0x38BDF8).opacity(0.50),
-                        Color(hex: 0xEC4899).opacity(0.40),
+                        AppTheme.gamingBlueBright.opacity(0.50),
+                        AppTheme.gamingPink.opacity(0.40),
                         Color.clear
                     ],
                     startPoint: .leading,
@@ -310,18 +310,18 @@ struct SplashLoginView: View {
             } else {
                 Image(systemName: "bolt.fill")
                     .font(.system(size: size * 0.45, weight: .bold))
-                    .foregroundStyle(Color(hex: 0x38BDF8))
+                    .foregroundStyle(AppTheme.gamingBlueBright)
             }
         }
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .stroke(Color(hex: 0x38BDF8).opacity(0.40), lineWidth: 1)
+                .stroke(AppTheme.gamingBlueBright.opacity(0.40), lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(0.55), radius: 15, x: 0, y: 10)
-        .shadow(color: Color(hex: 0x147DFF).opacity(0.25), radius: 10, x: 0, y: 0)
-        .shadow(color: Color(hex: 0xEC4899).opacity(0.12), radius: 15, x: 0, y: 0)
+        .shadow(color: AppTheme.gamingBlue.opacity(0.25), radius: 10, x: 0, y: 0)
+        .shadow(color: AppTheme.gamingPink.opacity(0.12), radius: 15, x: 0, y: 0)
     }
 
     // MARK: - Brand title (Gradient chuẩn Preview)
@@ -333,17 +333,17 @@ struct SplashLoginView: View {
                 .foregroundStyle(
                     LinearGradient(
                         colors: [
-                            Color(hex: 0x38BDF8),
-                            Color(hex: 0x147DFF),
+                            AppTheme.gamingBlueBright,
+                            AppTheme.gamingBlue,
                             Color(hex: 0x8B5CF6),
-                            Color(hex: 0xEC4899)
+                            AppTheme.gamingPink
                         ],
                         startPoint: .leading,
                         endPoint: .trailing
                     )
                 )
                 .kerning(-1.5)
-                .shadow(color: Color(hex: 0x147DFF).opacity(0.35), radius: 9, x: 0, y: 0)
+                .shadow(color: AppTheme.gamingBlue.opacity(0.35), radius: 9, x: 0, y: 0)
 
             Text("KHAI PHÁ HỆ THỐNG")
                 .font(.system(size: 12, weight: .semibold))
@@ -359,30 +359,30 @@ struct SplashLoginView: View {
             HStack(spacing: 13) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Color(hex: 0x38BDF8).opacity(0.45), lineWidth: 1)
+                        .stroke(AppTheme.gamingBlueBright.opacity(0.45), lineWidth: 1)
                         .background(
                             LinearGradient(
                                 colors: [
-                                    Color(hex: 0x147DFF).opacity(0.18),
-                                    Color(hex: 0x5865F2).opacity(0.12)
+                                    AppTheme.gamingBlue.opacity(0.18),
+                                    AppTheme.gamingViolet.opacity(0.12)
                                 ],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
                         )
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .shadow(color: Color(hex: 0x147DFF).opacity(0.20), radius: 6, x: 0, y: 0)
+                        .shadow(color: AppTheme.gamingBlue.opacity(0.20), radius: 6, x: 0, y: 0)
                         .frame(width: 42, height: 42)
 
                     Image(systemName: "key.fill")
                         .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(Color(hex: 0x38BDF8))
+                        .foregroundStyle(AppTheme.gamingBlueBright)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("KÍCH HOẠT HỆ THỐNG")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Color(hex: 0x38BDF8))
+                        .foregroundStyle(AppTheme.gamingBlueBright)
                     Text("Nhập license key để bắt đầu")
                         .font(.system(size: 12))
                         .foregroundStyle(Color(hex: 0x91A4C0))
@@ -406,7 +406,7 @@ struct SplashLoginView: View {
             HStack(spacing: 11) {
                 Image(systemName: "key.fill")
                     .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(Color(hex: 0x147DFF))
+                    .foregroundStyle(AppTheme.gamingBlue)
                     .frame(width: 22)
 
                 Group {
@@ -427,7 +427,7 @@ struct SplashLoginView: View {
                 } label: {
                     Image(systemName: showKey ? "eye.slash.fill" : "eye.fill")
                         .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(Color(hex: 0x147DFF))
+                        .foregroundStyle(AppTheme.gamingBlue)
                         .frame(width: 40, height: 40)
                 }
                 .buttonStyle(.plain)
@@ -478,13 +478,13 @@ struct SplashLoginView: View {
                 } label: {
                     Image(systemName: "doc.on.doc.fill")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Color(hex: 0x38BDF8))
+                        .foregroundStyle(AppTheme.gamingBlueBright)
                         .frame(width: 36, height: 36)
                         .background(Color(hex: 0x0B1628))
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .stroke(Color(hex: 0x38BDF8).opacity(0.30), lineWidth: 1)
+                                .stroke(AppTheme.gamingBlueBright.opacity(0.30), lineWidth: 1)
                         )
                 }
                 .buttonStyle(.plain)
@@ -504,8 +504,8 @@ struct SplashLoginView: View {
             LinearGradient(
                 colors: [
                     Color(hex: 0x0B1628).opacity(0.95),
-                    Color(hex: 0x5865F2).opacity(0.08),
-                    Color(hex: 0xEC4899).opacity(0.05)
+                    AppTheme.gamingViolet.opacity(0.08),
+                    AppTheme.gamingPink.opacity(0.05)
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -514,11 +514,11 @@ struct SplashLoginView: View {
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Color(hex: 0x38BDF8).opacity(0.25), lineWidth: 1)
+                .stroke(AppTheme.gamingBlueBright.opacity(0.25), lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(0.45), radius: 18, x: 0, y: 12)
-        .shadow(color: Color(hex: 0x147DFF).opacity(0.12), radius: 12, x: 0, y: 0)
-        .shadow(color: Color(hex: 0xEC4899).opacity(0.06), radius: 15, x: 0, y: 0)
+        .shadow(color: AppTheme.gamingBlue.opacity(0.12), radius: 12, x: 0, y: 0)
+        .shadow(color: AppTheme.gamingPink.opacity(0.06), radius: 15, x: 0, y: 0)
     }
 
     private var authErrorMessage: String? {
@@ -529,7 +529,7 @@ struct SplashLoginView: View {
     private var activationInputBorderColor: Color {
         switch auth.authState {
         case .verified: return Color(hex: 0x22C55E)
-        case .loading:  return Color(hex: 0x38BDF8)
+        case .loading:  return AppTheme.gamingBlueBright
         case .error:    return Color(hex: 0xFB7185)
         case .idle:     return Color(hex: 0x1E3A5F)
         }
@@ -540,7 +540,7 @@ struct SplashLoginView: View {
         case .verified:
             return ("ON", Color(hex: 0x22C55E), Color(hex: 0x22C55E), Color(hex: 0x22C55E).opacity(0.40))
         case .loading:
-            return ("WAIT", Color(hex: 0x38BDF8), Color(hex: 0x38BDF8), Color(hex: 0x38BDF8).opacity(0.40))
+            return ("WAIT", AppTheme.gamingBlueBright, AppTheme.gamingBlueBright, AppTheme.gamingBlueBright.opacity(0.40))
         case .error:
             return ("ERROR", Color(hex: 0xFB7185), Color(hex: 0xFB7185), Color(hex: 0x1E3A5F))
         case .idle:
@@ -668,10 +668,10 @@ struct SplashLoginView: View {
                     } else {
                         LinearGradient(
                             colors: [
-                                Color(hex: 0x147DFF),
-                                Color(hex: 0x2563EB),
-                                Color(hex: 0x5865F2),
-                                Color(hex: 0xEC4899)
+                                AppTheme.gamingBlue,
+                                AppTheme.gamingViolet,
+                                AppTheme.gamingViolet,
+                                AppTheme.gamingPink
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
@@ -685,11 +685,11 @@ struct SplashLoginView: View {
                     .stroke(isLicenseEmpty ? Color(hex: 0x1E3A5F) : Color.white.opacity(0.20), lineWidth: 1)
             )
             .shadow(
-                color: isLicenseEmpty ? Color.clear : Color(hex: 0x147DFF).opacity(0.38),
+                color: isLicenseEmpty ? Color.clear : AppTheme.gamingBlue.opacity(0.38),
                 radius: 12, x: 0, y: 6
             )
             .shadow(
-                color: isLicenseEmpty ? Color.clear : Color(hex: 0xEC4899).opacity(0.18),
+                color: isLicenseEmpty ? Color.clear : AppTheme.gamingPink.opacity(0.18),
                 radius: 10, x: 0, y: 0
             )
         }
@@ -706,14 +706,14 @@ struct SplashLoginView: View {
                     .font(.system(size: 12, weight: .semibold))
                     .tracking(0.4)
             }
-            .foregroundStyle(Color(hex: 0x38BDF8))
+            .foregroundStyle(AppTheme.gamingBlueBright)
 
             Rectangle()
                 .fill(Color(hex: 0x1E3A5F).opacity(0.80))
                 .frame(height: 1)
 
             deviceRow("Phiên bản iOS:", value: "iOS \(AppInfo.osVersion)",
-                      isMonoValue: true, valueColor: Color(hex: 0x38BDF8))
+                      isMonoValue: true, valueColor: AppTheme.gamingBlueBright)
             deviceRow("Trạng thái hỗ trợ:",
                       value: appState.accessLevelDescription.uppercased(),
                       isMonoValue: true,
@@ -724,8 +724,8 @@ struct SplashLoginView: View {
             LinearGradient(
                 colors: [
                     Color(hex: 0x0B1628).opacity(0.95),
-                    Color(hex: 0x5865F2).opacity(0.08),
-                    Color(hex: 0xEC4899).opacity(0.05)
+                    AppTheme.gamingViolet.opacity(0.08),
+                    AppTheme.gamingPink.opacity(0.05)
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -734,12 +734,12 @@ struct SplashLoginView: View {
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color(hex: 0x38BDF8).opacity(0.25), lineWidth: 1)
+                .stroke(AppTheme.gamingBlueBright.opacity(0.25), lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(0.45), radius: 18, x: 0, y: 10)
     }
 
-    private func deviceRow(_ label: String, value: String, isMonoValue: Bool = false, valueColor: Color = Color(hex: 0x38BDF8)) -> some View {
+    private func deviceRow(_ label: String, value: String, isMonoValue: Bool = false, valueColor: Color = AppTheme.gamingBlueBright) -> some View {
         HStack {
             Text(label)
                 .font(.system(size: 14))
@@ -757,30 +757,30 @@ struct SplashLoginView: View {
             HStack(spacing: 13) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Color(hex: 0x38BDF8).opacity(0.45), lineWidth: 1)
+                        .stroke(AppTheme.gamingBlueBright.opacity(0.45), lineWidth: 1)
                         .background(
                             LinearGradient(
                                 colors: [
-                                    Color(hex: 0x147DFF).opacity(0.18),
-                                    Color(hex: 0x5865F2).opacity(0.12)
+                                    AppTheme.gamingBlue.opacity(0.18),
+                                    AppTheme.gamingViolet.opacity(0.12)
                                 ],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
                         )
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .shadow(color: Color(hex: 0x147DFF).opacity(0.20), radius: 6, x: 0, y: 0)
+                        .shadow(color: AppTheme.gamingBlue.opacity(0.20), radius: 6, x: 0, y: 0)
                         .frame(width: 42, height: 42)
 
                     Image(systemName: "person.fill")
                         .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(Color(hex: 0x38BDF8))
+                        .foregroundStyle(AppTheme.gamingBlueBright)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("NHÀ PHÁT TRIỂN")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color(hex: 0x38BDF8))
+                        .foregroundStyle(AppTheme.gamingBlueBright)
                     Text("Liên hệ hỗ trợ trực tiếp")
                         .font(.system(size: 11))
                         .foregroundStyle(Color(hex: 0x91A4C0))
@@ -821,8 +821,8 @@ struct SplashLoginView: View {
             LinearGradient(
                 colors: [
                     Color(hex: 0x0B1628).opacity(0.95),
-                    Color(hex: 0x5865F2).opacity(0.08),
-                    Color(hex: 0xEC4899).opacity(0.05)
+                    AppTheme.gamingViolet.opacity(0.08),
+                    AppTheme.gamingPink.opacity(0.05)
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -831,7 +831,7 @@ struct SplashLoginView: View {
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color(hex: 0x38BDF8).opacity(0.25), lineWidth: 1)
+                .stroke(AppTheme.gamingBlueBright.opacity(0.25), lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(0.45), radius: 18, x: 0, y: 10)
     }
@@ -852,7 +852,7 @@ struct SplashLoginView: View {
                 VStack(spacing: 8) {
                     Image(systemName: "person.3.fill")
                         .font(.system(size: 28))
-                        .foregroundStyle(Color(hex: 0x38BDF8))
+                        .foregroundStyle(AppTheme.gamingBlueBright)
                         .padding(.top, 8)
                     Text("Tham gia cộng đồng")
                         .font(.system(size: 18, weight: .bold))

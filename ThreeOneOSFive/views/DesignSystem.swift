@@ -13,13 +13,12 @@ extension Color {
     }
 }
 
-// MARK: - 2026 Enterprise Monochrome Theme
-// Theo design.md: Trắng đen, tối giản, doanh nghiệp 2026.
-// Nền trắng, chữ/icon/viền là đen hoặc thang xám.
+// MARK: - 2026 Astra Gaming Theme
+// Một palette xanh chàm - tím - hồng dùng thống nhất toàn ứng dụng.
 
 enum AppTheme {
     // MARK: Monochrome palette
-    static let ink          = Color(hex: 0x38BDF8) // shared accent & primary action
+    static let ink          = Color(hex: 0x8B8CF8) // soft periwinkle accent
     static let inkSecondary = Color(hex: 0x0B1628)
     static let paper        = Color(hex: 0x030712)
     static let paperMuted   = Color(hex: 0x071122)
@@ -36,7 +35,7 @@ enum AppTheme {
 
     // Semantic status palette: chỉ dùng để truyền đạt trạng thái.
     static let statusSuccess = Color(hex: 0x22C55E)
-    static let statusInfo    = Color(hex: 0x38BDF8)
+    static let statusInfo    = Color(hex: 0x7C83F6)
     static let statusWarning = Color(hex: 0xF59E0B)
     static let statusError   = Color(hex: 0xFB7185)
 
@@ -45,7 +44,7 @@ enum AppTheme {
 
     // MARK: Borders
     static let borderHairline = Color(hex: 0x1E3A5F)
-    static let borderStrong   = Color(hex: 0x38BDF8)
+    static let borderStrong   = Color(hex: 0x6675E8)
 
     // MARK: Spacings / sizes
     static let pageInset: CGFloat = 16
@@ -69,11 +68,11 @@ enum AppTheme {
     static let accentLight = ink
 
     /// Aliases cho các tên cũ - trỏ về palette trắng-đen 2026
-    static let cyberCyan  = Color(hex: 0x38BDF8)
-    static let cyberBlue  = Color(hex: 0x147DFF)
+    static let cyberCyan  = Color(hex: 0x8B8CF8)
+    static let cyberBlue  = Color(hex: 0x4E6CE8)
     static let cyberPurple = Color(hex: 0x8B5CF6)
-    static let cyberViolet = Color(hex: 0x6D5DFB)
-    static let cyberPink   = Color(hex: 0xEC4899)
+    static let cyberViolet = Color(hex: 0x8B5CF6)
+    static let cyberPink   = Color(hex: 0xD946EF)
     static let cyberGreen  = Color(hex: 0x22C55E)
     static let cyberOLED   = paper
     static let cyberSurface = paperMuted
@@ -101,25 +100,26 @@ enum AppTheme {
     static let gamingBackgroundRaised = Color(hex: 0x071122)
     static let gamingSurface = Color(hex: 0x0B1628)
     static let gamingSurfaceRaised = Color(hex: 0x10213B)
-    static let gamingBlue = Color(hex: 0x147DFF)
-    static let gamingBlueBright = Color(hex: 0x38BDF8)
-    static let gamingViolet = Color(hex: 0x5865F2)
-    static let gamingPink = Color(hex: 0xEC4899)
+    static let gamingBlue = Color(hex: 0x4E6CE8)
+    static let gamingBlueBright = Color(hex: 0x8B8CF8)
+    static let gamingViolet = Color(hex: 0x8B5CF6)
+    static let gamingPink = Color(hex: 0xD946EF)
     static let gamingText = Color(hex: 0xF4F8FF)
     static let gamingTextSecondary = Color(hex: 0x91A4C0)
     static let gamingBorder = Color(hex: 0x1E3A5F)
 
     static let gamingAccentGradient = LinearGradient(
-        colors: [gamingBlueBright, gamingBlue, gamingViolet, gamingPink],
+        colors: [gamingBlue, gamingViolet, gamingPink],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
     static let gamingBorderGradient = LinearGradient(
-        colors: [gamingBlueBright.opacity(0.72), gamingViolet.opacity(0.48), gamingPink.opacity(0.30)],
+        colors: [gamingBlue.opacity(0.60), gamingViolet.opacity(0.48), gamingPink.opacity(0.30)],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
-    static let gamingTabSpring = Animation.spring(response: 0.42, dampingFraction: 0.78, blendDuration: 0.12)
+    static let gamingTabSpring = Animation.spring(response: 0.30, dampingFraction: 0.88, blendDuration: 0.06)
+    static let gamingContentFade = Animation.easeOut(duration: 0.16)
 
     // MARK: Surfaces / Materials
     /// Floating capsule material for tabbar (iOS 16-25 fallback)
@@ -332,10 +332,10 @@ struct PrimaryButtonStyle: ButtonStyle {
             .background(
                 LinearGradient(
                     colors: [
-                        Color(hex: 0x147DFF),
-                        Color(hex: 0x2563EB),
-                        Color(hex: 0x5865F2),
-                        Color(hex: 0xEC4899)
+                        AppTheme.gamingBlue,
+                        AppTheme.gamingViolet,
+                        AppTheme.gamingViolet,
+                        AppTheme.gamingPink
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
@@ -348,12 +348,12 @@ struct PrimaryButtonStyle: ButtonStyle {
             )
             .foregroundStyle(Color.white)
             .shadow(
-                color: Color(hex: 0x147DFF).opacity(configuration.isPressed ? 0.20 : 0.38),
+                color: AppTheme.gamingBlue.opacity(configuration.isPressed ? 0.20 : 0.38),
                 radius: configuration.isPressed ? 6 : 12,
                 y: configuration.isPressed ? 2 : 6
             )
             .shadow(
-                color: Color(hex: 0xEC4899).opacity(configuration.isPressed ? 0.08 : 0.18),
+                color: AppTheme.gamingPink.opacity(configuration.isPressed ? 0.08 : 0.18),
                 radius: configuration.isPressed ? 5 : 10,
                 y: 0
             )
@@ -666,13 +666,13 @@ struct DeveloperContactsList: View {
                             Circle()
                                 .fill(
                                     LinearGradient(
-                                        colors: [Color(hex: 0x147DFF), Color(hex: 0x6D5DFB)],
+                                        colors: [AppTheme.gamingBlue, AppTheme.gamingViolet],
                                         startPoint: .topLeading,
                                         endPoint: .bottomTrailing
                                     )
                                 )
                                 .frame(width: 44, height: 44)
-                                .shadow(color: Color(hex: 0x147DFF).opacity(0.35), radius: 6, x: 0, y: 0)
+                                .shadow(color: AppTheme.gamingBlue.opacity(0.35), radius: 6, x: 0, y: 0)
 
                             Text(developer.initials)
                                 .font(.system(size: 14, weight: .heavy, design: .monospaced))
@@ -682,7 +682,7 @@ struct DeveloperContactsList: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(developer.name)
                                 .font(.system(size: 15, weight: .semibold))
-                                .foregroundStyle(Color(hex: 0x38BDF8))
+                                .foregroundStyle(AppTheme.gamingBlueBright)
                             Text("Telegram: \(developer.telegram)")
                                 .font(.system(size: 11, design: .monospaced))
                                 .foregroundStyle(Color(hex: 0x91A4C0))
@@ -700,7 +700,7 @@ struct DeveloperContactsList: View {
                             .frame(maxWidth: .infinity, minHeight: 42)
                             .background(
                                 LinearGradient(
-                                    colors: [Color(hex: 0x147DFF), Color(hex: 0x5865F2), Color(hex: 0xEC4899)],
+                                    colors: [AppTheme.gamingBlue, AppTheme.gamingViolet, AppTheme.gamingPink],
                                     startPoint: .leading,
                                     endPoint: .trailing
                                 )
@@ -710,7 +710,7 @@ struct DeveloperContactsList: View {
                                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                                     .stroke(Color.white.opacity(0.15), lineWidth: 1)
                             )
-                            .shadow(color: Color(hex: 0x147DFF).opacity(0.28), radius: 6, x: 0, y: 2)
+                            .shadow(color: AppTheme.gamingBlue.opacity(0.28), radius: 6, x: 0, y: 2)
                     }
                     .buttonStyle(GamingPressButtonStyle(scale: 0.985))
                 }

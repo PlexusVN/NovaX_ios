@@ -1223,7 +1223,10 @@ final class AirLiftGatekeeperManager: ObservableObject {
     }
 
     var requiresPairingForCurrentDevice: Bool {
-        AppInfo.versionTuple.major >= 27
+        // Chỉ các build iOS 27 nằm trong allowlist mới được phép chạy
+        // RPPairing trực tiếp. Không chặn nhầm iOS 27.2 beta 3+ hoặc iOS mới
+        // chưa được xác minh bằng một màn hình thiết lập không thể hoàn tất.
+        ExploitSupportPolicy.currentPairingMode == .onDeviceOrImportedFile
     }
 
     var isAirLiftFullyReady: Bool {
@@ -1234,41 +1237,51 @@ final class AirLiftGatekeeperManager: ObservableObject {
     }
 
     var canBypassGatekeeper: Bool {
-        // Chỉ iOS 27 trở lên mới yêu cầu Gatekeeper
+        // Chỉ các build hỗ trợ ghép đôi trực tiếp mới yêu cầu Gatekeeper.
         guard requiresPairingForCurrentDevice else { return true }
 
-        // Nếu đã hoàn tất thiết lập trước đó (lưu trong Keychain & UserDefaults)
-        // và không có cờ huỷ ghép đôi bắt buộc -> Bỏ qua, vào app ngay, không bắt pair lại
-        if isSetupCompleted && !requiresRePair {
-            return true
-        }
-
-        // Kiểm tra xem thiết bị đã có sẵn pairing record hợp lệ chưa
-        let hasPairing = (AirLiftPairingManager.shared.status.isPaired && AirLiftPairingManager.shared.status != .revoked)
-            || AirLiftPairingManager.shared.getPairingData() != nil
-            || KeychainUtils.read(key: "novax.airlift.pairingRecord.v1") != nil
-
-        if hasPairing && !requiresRePair {
-            isSetupCompleted = true
-            return true
-        }
-
-        return false
+        // Cờ hoàn tất không được phép đứng một mình: pairing file bên dưới
+        // cũng phải còn tồn tại, đúng cấu trúc và chưa bị thu hồi.
+        return isSetupCompleted &&
+            !requiresRePair &&
+            AirLiftPairingManager.shared.hasUsablePersistedPairingRecord
     }
 
     private init() {
-        let persistedCompletion = UserDefaults.standard.bool(forKey: setupCompletedKey)
+        let persistedRequiresRePair = UserDefaults.standard.bool(forKey: requireRePairKey)
+        let persistedReason = UserDefaults.standard.string(forKey: rePairReasonKey)
+        let persistedCompletion = (UserDefaults.standard.bool(forKey: setupCompletedKey)
             || KeychainUtils.read(key: setupCompletedKeychainKey) == "1"
+        ) && !persistedRequiresRePair
+
         self.isSetupCompleted = persistedCompletion
-        self.requiresRePair = false
-        self.rePairReason = nil
-        if persistedCompletion {
+        self.requiresRePair = persistedRequiresRePair
+        self.rePairReason = persistedRequiresRePair ? persistedReason : nil
+
+        if persistedRequiresRePair {
+            UserDefaults.standard.set(false, forKey: setupCompletedKey)
+            KeychainUtils.delete(key: setupCompletedKeychainKey)
+        } else if persistedCompletion {
             UserDefaults.standard.set(true, forKey: setupCompletedKey)
             _ = KeychainUtils.save(key: setupCompletedKeychainKey, value: "1")
         }
     }
 
-    func markSetupCompleted() {
+    @discardableResult
+    func markSetupCompleted() -> Bool {
+        guard isAirLiftFullyReady,
+              AirLiftPairingManager.shared.hasUsablePersistedPairingRecord else {
+            log("airlift gatekeeper: refused setup completion because readiness or pairing persistence is missing")
+            return false
+        }
+
+        let backupSaved = AirLiftPairingManager.shared.backupPairingFileToKeychainIfValid()
+        if !backupSaved {
+            // The protected Application Support copy is still authoritative
+            // for this installation; Keychain is a recovery layer for relaunch.
+            log("airlift gatekeeper: pairing record is valid but Keychain recovery backup could not be refreshed")
+        }
+
         isSetupCompleted = true
         requiresRePair = false
         rePairReason = nil
@@ -1276,7 +1289,7 @@ final class AirLiftGatekeeperManager: ObservableObject {
         UserDefaults.standard.set(false, forKey: requireRePairKey)
         UserDefaults.standard.removeObject(forKey: rePairReasonKey)
         _ = KeychainUtils.save(key: setupCompletedKeychainKey, value: "1")
-        AirLiftPairingManager.shared.backupPairingFileToKeychainIfValid()
+        return true
     }
 
     func triggerRePair(reason: String) {
@@ -1331,9 +1344,9 @@ struct IOS27PairingSetupView: View {
             GamingBackdrop()
 
             ScrollView {
-                VStack(spacing: 16) {
+                VStack(spacing: 14) {
                     headerSection
-                        .padding(.top, 24)
+                        .padding(.top, 14)
 
                     if gatekeeper.requiresRePair, let reason = gatekeeper.rePairReason, !reason.isEmpty {
                         rePairNoticeCard(reason: reason)
@@ -1348,8 +1361,8 @@ struct IOS27PairingSetupView: View {
                     airTrafficStepCard
 
                     actionButtonsSection
-                        .padding(.top, 10)
-                        .padding(.bottom, 48)
+                        .padding(.top, 4)
+                        .padding(.bottom, 36)
                 }
                 .padding(.horizontal, 16)
             }
@@ -1372,7 +1385,7 @@ struct IOS27PairingSetupView: View {
                 Task { await pairingManager.pairDirectlyOnDevice() }
             }
         } message: {
-            Text("Astra sẽ chạy RPPairing host thật và phát Bonjour. Sau đó mở Cài đặt › Quyền riêng tư & Bảo mật › Chế độ nhà phát triển, chọn Pair with Astra và nhập PIN hiển thị.")
+            Text("Mở Cài đặt › Quyền riêng tư & Bảo mật › Chế độ nhà phát triển, chọn ghép đôi với Astra rồi nhập mã PIN hiển thị.")
         }
         .task {
             await runComprehensiveCheck()
@@ -1381,55 +1394,57 @@ struct IOS27PairingSetupView: View {
 
     // MARK: - Header
     private var headerSection: some View {
-        VStack(spacing: 10) {
-            AppLogo(size: 64)
+        HStack(spacing: 14) {
+            AppLogo(size: 54)
 
-            VStack(spacing: 6) {
-                Text("Astra")
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
-                    .foregroundStyle(AppTheme.ink)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Thiết lập AirLift")
+                    .font(.system(size: 21, weight: .bold, design: .rounded))
+                    .foregroundStyle(AppTheme.gamingText)
 
-                HStack(spacing: 6) {
-                    Image(systemName: "shield.lefthalf.filled.badge.checkmark")
-                        .font(.system(size: 11, weight: .semibold))
-                    Text("CẤU HÌNH AIRLIFT · BẮT BUỘC CHO IOS 27")
-                        .font(.system(size: 10.5, weight: .bold, design: .monospaced))
-                        .tracking(0.6)
+                HStack(spacing: 5) {
+                    Image(systemName: "shield.checkered")
+                        .font(.system(size: 10, weight: .semibold))
+                    Text("BẮT BUỘC TRÊN IOS 27")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .tracking(0.45)
                 }
-                .foregroundColor(AppTheme.statusInfo)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .background(AppTheme.statusInfo.opacity(0.12))
-                .clipShape(Capsule())
-                .overlay(Capsule().stroke(AppTheme.statusInfo.opacity(0.3), lineWidth: 1))
+                .foregroundColor(AppTheme.gamingBlueBright)
 
-                Text("Thiết bị của bạn yêu cầu hoàn thành đủ 3 bước dưới đây để có quyền patch file vào hệ thống. Trạng thái sẽ được lưu tự động cho các lần khởi động sau.")
-                    .font(.system(size: 12))
-                    .multilineTextAlignment(.center)
-                    .foregroundColor(AppTheme.grey500)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 2)
+                Text("Hoàn thành một lần để Astra có thể sử dụng kết nối an toàn khi áp dụng chức năng.")
+                    .font(.system(size: 11.5))
+                    .foregroundColor(AppTheme.gamingTextSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+
+            Spacer(minLength: 0)
         }
+        .padding(16)
+        .background(AppTheme.gamingSurface.opacity(0.94))
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(AppTheme.gamingBorderGradient, lineWidth: 1)
+        )
     }
 
     // MARK: - Re-Pair Notice
-    private func rePairNoticeCard(reason: String) -> some View {
+    private func rePairNoticeCard(reason _: String) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "exclamationmark.octagon.fill")
                 .font(.system(size: 20, weight: .bold))
                 .foregroundColor(AppTheme.statusError)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("PHÁT HIỆN LỖI PATCH FILE")
+                Text("CẦN THIẾT LẬP LẠI")
                     .font(.system(size: 12, weight: .bold, design: .monospaced))
                     .foregroundColor(AppTheme.statusError)
-                Text(reason)
+                Text("Quyền ghép đôi không còn hợp lệ.")
                     .font(.system(size: 11.5, weight: .medium))
-                    .foregroundColor(AppTheme.grey700)
-                Text("Vui lòng hoàn thành lại các bước bên dưới để tiếp tục.")
+                    .foregroundColor(AppTheme.gamingText)
+                Text("Hoàn thành lại ba bước bên dưới để tiếp tục.")
                     .font(.system(size: 10.5))
-                    .foregroundColor(AppTheme.grey500)
+                    .foregroundColor(AppTheme.gamingTextSecondary)
             }
             Spacer()
         }
@@ -1448,7 +1463,7 @@ struct IOS27PairingSetupView: View {
             HStack {
                 Text("TIẾN ĐỘ THIẾT LẬP")
                     .font(.system(size: 11, weight: .black, design: .monospaced))
-                    .foregroundColor(AppTheme.grey500)
+                    .foregroundColor(AppTheme.gamingTextSecondary)
                 Spacer()
                 Text("\(completedStepsCount)/3 BƯỚC SẴN SÀNG")
                     .font(.system(size: 11, weight: .bold, design: .monospaced))
@@ -1458,7 +1473,7 @@ struct IOS27PairingSetupView: View {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule()
-                        .fill(AppTheme.grey200)
+                        .fill(AppTheme.gamingSurfaceRaised)
                         .frame(height: 6)
 
                     Capsule()
@@ -1470,9 +1485,9 @@ struct IOS27PairingSetupView: View {
             .frame(height: 6)
         }
         .padding(14)
-        .background(AppTheme.paperRaised)
+        .background(AppTheme.gamingSurface.opacity(0.94))
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(AppTheme.grey200, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(AppTheme.gamingBorder.opacity(0.85), lineWidth: 1))
     }
 
     // MARK: - Step 1: LocalDevVPN
@@ -1489,26 +1504,27 @@ struct IOS27PairingSetupView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("BƯỚC 1: LOCALDEVVPN (10.7.0.1)")
+                    Text("BƯỚC 1 · KẾT NỐI LOCALDEVVPN")
                         .font(.system(size: 12, weight: .black, design: .monospaced))
-                        .foregroundColor(AppTheme.ink)
-                    Text("Kênh loopback nội bộ để giao tiếp với hệ thống")
+                        .foregroundColor(AppTheme.gamingText)
+                    Text("Bật đường truyền cục bộ trên thiết bị")
                         .font(.system(size: 10))
-                        .foregroundColor(AppTheme.grey500)
+                        .foregroundColor(AppTheme.gamingTextSecondary)
                 }
                 Spacer()
 
                 Text(isStep1Done ? "ONLINE" : "OFFLINE")
                     .font(.system(size: 9.5, weight: .heavy, design: .monospaced))
-                    .foregroundColor(.white)
+                    .foregroundColor(isStep1Done ? AppTheme.statusSuccess : AppTheme.statusError)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
-                    .background(Capsule().fill(isStep1Done ? AppTheme.statusSuccess : AppTheme.statusError))
+                    .background(Capsule().fill((isStep1Done ? AppTheme.statusSuccess : AppTheme.statusError).opacity(0.13)))
+                    .overlay(Capsule().stroke((isStep1Done ? AppTheme.statusSuccess : AppTheme.statusError).opacity(0.3), lineWidth: 1))
             }
 
-            Text("LocalDevVPN định tuyến IP thiết bị tới 10.7.0.1. Mở ứng dụng LocalDevVPN và bấm bật tunnel.")
+            Text("Mở LocalDevVPN, bật kết nối rồi quay lại Astra để kiểm tra trạng thái.")
                 .font(.system(size: 11))
-                .foregroundColor(AppTheme.grey700)
+                .foregroundColor(AppTheme.gamingTextSecondary)
 
             HStack(spacing: 10) {
                 Button {
@@ -1520,7 +1536,7 @@ struct IOS27PairingSetupView: View {
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
-                        .background(AppTheme.gamingBlue)
+                        .background(AppTheme.gamingAccentGradient)
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
 
@@ -1530,19 +1546,19 @@ struct IOS27PairingSetupView: View {
                 } label: {
                     Label("Kiểm tra lại", systemImage: "arrow.triangle.2.circlepath")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(AppTheme.ink)
-                        .padding(.horizontal, 14)
+                        .foregroundColor(AppTheme.gamingText)
+                        .frame(width: 126)
                         .padding(.vertical, 10)
-                        .background(AppTheme.paperMuted)
+                        .background(AppTheme.gamingSurfaceRaised)
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(AppTheme.grey200, lineWidth: 1))
+                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(AppTheme.gamingViolet.opacity(0.28), lineWidth: 1))
                 }
             }
         }
         .padding(16)
-        .background(AppTheme.paperRaised)
+        .background(AppTheme.gamingSurface.opacity(0.94))
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(isStep1Done ? AppTheme.statusSuccess.opacity(0.35) : AppTheme.grey200, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(isStep1Done ? AppTheme.statusSuccess.opacity(0.4) : AppTheme.gamingBorder.opacity(0.9), lineWidth: 1))
     }
 
     // MARK: - Step 2: Pairing
@@ -1559,12 +1575,12 @@ struct IOS27PairingSetupView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("BƯỚC 2: GHÉP ĐÔI THIẾT BỊ (RPPAIRING)")
+                    Text("BƯỚC 2 · GHÉP ĐÔI THIẾT BỊ")
                         .font(.system(size: 12, weight: .black, design: .monospaced))
-                        .foregroundColor(AppTheme.ink)
-                    Text("Xác thực chứng chỉ ghép đôi để patch file")
+                        .foregroundColor(AppTheme.gamingText)
+                    Text("Lưu quyền truy cập an toàn trên thiết bị")
                         .font(.system(size: 10))
-                        .foregroundColor(AppTheme.grey500)
+                        .foregroundColor(AppTheme.gamingTextSecondary)
                 }
                 Spacer()
 
@@ -1580,7 +1596,7 @@ struct IOS27PairingSetupView: View {
                         Image(systemName: "antenna.radiowaves.left.and.right")
                             .font(.system(size: 14, weight: .bold))
                             .foregroundColor(AppTheme.statusInfo)
-                        Text("ĐANG PHÁT SÓNG BONJOUR GHÉP NỐI...")
+                        Text("ĐANG CHỜ GHÉP ĐÔI...")
                             .font(.system(size: 11, weight: .bold, design: .monospaced))
                             .foregroundColor(AppTheme.statusInfo)
                         Spacer()
@@ -1597,22 +1613,22 @@ struct IOS27PairingSetupView: View {
                                 .tracking(6)
                                 .padding(.horizontal, 20)
                                 .padding(.vertical, 8)
-                                .background(AppTheme.grey50)
+                                .background(AppTheme.gamingBackgroundRaised)
                                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(AppTheme.gamingBlueBright.opacity(0.4), lineWidth: 1.5))
                         }
                     }
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("1. Mở Cài đặt iPhone › Quyền riêng tư & Bảo mật › Chế độ nhà phát triển.")
-                        Text("2. Trong danh sách thiết bị ghép đôi, chọn \"Astra\".")
-                        Text("3. Nhập mã PIN hiển thị ở trên.")
+                        Text("1. Mở Cài đặt › Quyền riêng tư & Bảo mật › Chế độ nhà phát triển.")
+                        Text("2. Chọn Astra trong danh sách ghép đôi.")
+                        Text("3. Nhập mã PIN đang hiển thị.")
                     }
                     .font(.system(size: 11))
-                    .foregroundColor(AppTheme.grey700)
+                    .foregroundColor(AppTheme.gamingTextSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(10)
-                    .background(AppTheme.grey50)
+                    .background(AppTheme.gamingBackgroundRaised)
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
                 .padding(12)
@@ -1639,7 +1655,7 @@ struct IOS27PairingSetupView: View {
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
-                        .background(AppTheme.gamingBlue)
+                        .background(AppTheme.gamingAccentGradient)
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     }
                 }
@@ -1648,14 +1664,14 @@ struct IOS27PairingSetupView: View {
                     Haptics.light()
                     showDocumentPicker = true
                 } label: {
-                    Label("Nhập .plist", systemImage: "square.and.arrow.down")
+                    Label("Nhập file pair", systemImage: "square.and.arrow.down")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(AppTheme.ink)
-                        .frame(maxWidth: .infinity)
+                        .foregroundColor(AppTheme.gamingText)
+                        .frame(width: 126)
                         .padding(.vertical, 10)
-                        .background(AppTheme.paperMuted)
+                        .background(AppTheme.gamingSurfaceRaised)
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(AppTheme.grey200, lineWidth: 1))
+                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(AppTheme.gamingViolet.opacity(0.28), lineWidth: 1))
                 }
 
                 if isStep2Done {
@@ -1676,9 +1692,9 @@ struct IOS27PairingSetupView: View {
             }
         }
         .padding(16)
-        .background(AppTheme.paperRaised)
+        .background(AppTheme.gamingSurface.opacity(0.94))
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(isStep2Done ? AppTheme.statusSuccess.opacity(0.35) : AppTheme.grey200, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(isStep2Done ? AppTheme.statusSuccess.opacity(0.4) : AppTheme.gamingBorder.opacity(0.9), lineWidth: 1))
     }
 
     // MARK: - Step 3: AirTraffic & Canary
@@ -1695,12 +1711,12 @@ struct IOS27PairingSetupView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("BƯỚC 3: AIRTRAFFIC ENGINE & CANARY")
+                    Text("BƯỚC 3 · XÁC MINH KẾT NỐI")
                         .font(.system(size: 12, weight: .black, design: .monospaced))
-                        .foregroundColor(AppTheme.ink)
-                    Text("Kiểm tra quyền ghi đè tệp an toàn trước khi patch")
+                        .foregroundColor(AppTheme.gamingText)
+                    Text("Kiểm tra trạng thái trước khi sử dụng")
                         .font(.system(size: 10))
-                        .foregroundColor(AppTheme.grey500)
+                        .foregroundColor(AppTheme.gamingTextSecondary)
                 }
                 Spacer()
 
@@ -1713,14 +1729,14 @@ struct IOS27PairingSetupView: View {
                 Circle()
                     .fill(isStep3Done ? AppTheme.statusSuccess : AppTheme.statusError)
                     .frame(width: 7, height: 7)
-                Text(airTrafficClient.engineHealthState.message)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(AppTheme.grey700)
+                Text(step3StatusMessage)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(AppTheme.gamingTextSecondary)
                     .lineLimit(2)
             }
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(AppTheme.grey50)
+            .background(AppTheme.gamingBackgroundRaised)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
 
             Button {
@@ -1735,35 +1751,45 @@ struct IOS27PairingSetupView: View {
                     } else {
                         Image(systemName: "checkmark.shield.fill")
                     }
-                    Text(isComprehensiveChecking ? "Đang chạy kiểm tra..." : "Kiểm tra thực tế (Canary Test)")
+                    Text(isComprehensiveChecking ? "Đang kiểm tra..." : "Kiểm tra kết nối")
                 }
                 .font(.system(size: 12, weight: .bold))
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
-                .background(AppTheme.gamingBlue)
+                .background(AppTheme.gamingAccentGradient)
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
             .disabled(isComprehensiveChecking)
         }
         .padding(16)
-        .background(AppTheme.paperRaised)
+        .background(AppTheme.gamingSurface.opacity(0.94))
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(isStep3Done ? AppTheme.statusSuccess.opacity(0.35) : AppTheme.grey200, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(isStep3Done ? AppTheme.statusSuccess.opacity(0.4) : AppTheme.gamingBorder.opacity(0.9), lineWidth: 1))
+    }
+
+    private var step3StatusMessage: String {
+        if isStep3Done { return "Kết nối đã sẵn sàng để sử dụng." }
+        if isComprehensiveChecking { return "Astra đang xác minh kết nối an toàn..." }
+        if !isStep1Done || !isStep2Done { return "Hoàn thành hai bước đầu trước khi kiểm tra." }
+        return "Nhấn kiểm tra để hoàn tất thiết lập."
     }
 
     // MARK: - Action Buttons
     private var actionButtonsSection: some View {
         VStack(spacing: 12) {
             Button {
+                guard gatekeeper.markSetupCompleted() else {
+                    Haptics.medium()
+                    return
+                }
                 Haptics.success()
-                gatekeeper.markSetupCompleted()
                 onComplete()
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: isReadyToProceed ? "arrow.right.circle.fill" : "lock.fill")
                         .font(.system(size: 16, weight: .bold))
-                    Text(isReadyToProceed ? "XÁC NHẬN & TIẾP TỤC VÀO APP" : "HOÀN TẤT ĐỦ 3 BƯỚC ĐỂ TIẾP TỤC")
+                    Text(isReadyToProceed ? "TIẾP TỤC VÀO ASTRA" : "HOÀN THÀNH 3 BƯỚC ĐỂ TIẾP TỤC")
                         .font(.system(size: 14, weight: .bold))
                         .tracking(0.3)
                 }
@@ -1772,10 +1798,14 @@ struct IOS27PairingSetupView: View {
                 .background(
                     isReadyToProceed
                     ? AnyView(AppTheme.gamingAccentGradient)
-                    : AnyView(AppTheme.grey200)
+                    : AnyView(AppTheme.gamingSurfaceRaised)
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .shadow(color: isReadyToProceed ? AppTheme.gamingBlue.opacity(0.35) : Color.clear, radius: 12, y: 5)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(isReadyToProceed ? Color.white.opacity(0.12) : AppTheme.gamingBorder.opacity(0.8), lineWidth: 1)
+                )
+                .shadow(color: isReadyToProceed ? AppTheme.gamingViolet.opacity(0.25) : Color.clear, radius: 12, y: 5)
             }
             .disabled(!isReadyToProceed)
 

@@ -33,14 +33,14 @@ struct ThreeOneOSFiveApp: App {
         navAppearance.largeTitleTextAttributes = [.foregroundColor: UIColor.white]
         UINavigationBar.appearance().standardAppearance = navAppearance
         UINavigationBar.appearance().scrollEdgeAppearance = navAppearance
-        UINavigationBar.appearance().tintColor = UIColor(red: 0.22, green: 0.74, blue: 0.97, alpha: 1)
+        UINavigationBar.appearance().tintColor = UIColor(red: 0.55, green: 0.55, blue: 0.97, alpha: 1)
 
         let tabAppearance = UITabBarAppearance()
         tabAppearance.configureWithOpaqueBackground()
         tabAppearance.backgroundColor = UIColor(red: 0.012, green: 0.027, blue: 0.071, alpha: 0.96)
         UITabBar.appearance().standardAppearance = tabAppearance
         UITabBar.appearance().scrollEdgeAppearance = tabAppearance
-        UITabBar.appearance().tintColor = UIColor(red: 0.22, green: 0.74, blue: 0.97, alpha: 1)
+        UITabBar.appearance().tintColor = UIColor(red: 0.55, green: 0.55, blue: 0.97, alpha: 1)
     }
 
     private var language: AppLanguage {

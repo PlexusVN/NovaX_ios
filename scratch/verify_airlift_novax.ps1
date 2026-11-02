@@ -81,6 +81,27 @@ Assert-Condition "Policy tach pairing none/imported/on-device" (
 )
 Assert-Condition "iOS 18 va 26 AirLift dung pairing file nhap" ($kernelSwift -match 'major >= 27 \? \.onDeviceOrImportedFile : \.importedFile')
 Assert-Condition "Pair truc tiep phai qua policy build iOS" ($pairingSwift -match 'currentPairingMode == \.onDeviceOrImportedFile')
+$airLiftUI = Get-Content -Path "c:\Users\Khai\Desktop\Nova IOS 27\NovaX\ThreeOneOSFive\views\AirLiftSettingsSection.swift" -Raw
+Assert-Condition "Gatekeeper chi chan cac build ho tro pair truc tiep" (
+    $airLiftUI -match 'var requiresPairingForCurrentDevice: Bool\s*\{[\s\S]*?currentPairingMode == \.onDeviceOrImportedFile'
+)
+Assert-Condition "Pairing backup co the duoc Gatekeeper goi hop le" (
+    ($pairingSwift -match '(?m)^\s*func backupPairingFileToKeychainIfValid\(\) -> Bool') -and
+    ($pairingSwift -notmatch '(?m)^\s*private func backupPairingFileToKeychainIfValid')
+)
+Assert-Condition "Gatekeeper chi hoan tat khi AirLift va pairing that san sang" (
+    ($airLiftUI -match 'func markSetupCompleted\(\) -> Bool\s*\{[\s\S]*?guard isAirLiftFullyReady') -and
+    ($airLiftUI -match 'hasUsablePersistedPairingRecord') -and
+    ($airLiftUI -match 'guard gatekeeper\.markSetupCompleted\(\) else')
+)
+Assert-Condition "Gatekeeper khong bypass chi bang co hoan tat" (
+    $airLiftUI -match 'return isSetupCompleted &&[\s\S]*?!requiresRePair &&[\s\S]*?hasUsablePersistedPairingRecord'
+)
+Assert-Condition "Trang thai bat buoc pair lai duoc khoi phuc sau relaunch" (
+    ($airLiftUI -match 'persistedRequiresRePair = UserDefaults\.standard\.bool\(forKey: requireRePairKey\)') -and
+    ($airLiftUI -match 'self\.requiresRePair = persistedRequiresRePair') -and
+    ($airLiftUI -match 'self\.rePairReason = persistedRequiresRePair \? persistedReason : nil')
+)
 $appSwift = Get-Content -Path "c:\Users\Khai\Desktop\Nova IOS 27\NovaX\ThreeOneOSFive\App.swift" -Raw
 Assert-Condition "Trang thai ho tro chi dua tren ma tran OS/build" (
     ($appSwift -match 'var isSupported: Bool\s*\{[\s\S]*?ExploitSupportPolicy\.isSupported') -and

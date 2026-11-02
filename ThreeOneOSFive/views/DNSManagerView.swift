@@ -154,7 +154,7 @@ struct DNSManagerView: View {
                         .fill(
                             !dnsManager.isEnabled
                                 ? (dnsManager.needsManualActivation ? Color(hex: 0xFF9500) : Color.white.opacity(0.25))
-                                : (dnsManager.isActivelyProtected ? AppTheme.cyberCyan : (dnsManager.isVerifying ? Color(hex: 0x00D4FF) : Color(hex: 0xFF9500)))
+                                : (dnsManager.isActivelyProtected ? AppTheme.cyberCyan : (dnsManager.isVerifying ? AppTheme.gamingBlueBright : Color(hex: 0xFF9500)))
                         )
                         .frame(width: 8, height: 8)
                         .shadow(
@@ -175,7 +175,7 @@ struct DNSManagerView: View {
                     .foregroundColor(
                         !dnsManager.isEnabled
                             ? (dnsManager.needsManualActivation ? Color(hex: 0xFF9500) : .white.opacity(0.5))
-                            : (dnsManager.isActivelyProtected ? AppTheme.cyberCyan : (dnsManager.isVerifying ? Color(hex: 0x00D4FF) : Color(hex: 0xFF9500)))
+                            : (dnsManager.isActivelyProtected ? AppTheme.cyberCyan : (dnsManager.isVerifying ? AppTheme.gamingBlueBright : Color(hex: 0xFF9500)))
                     )
                 }
                 
@@ -525,14 +525,14 @@ struct DNSManagerView: View {
                     .frame(height: 42)
                     .background(
                         LinearGradient(
-                            colors: [Color(hex: 0x0A84FF), Color(hex: 0x0055D4)],
+                            colors: [AppTheme.gamingBlue, AppTheme.gamingViolet],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
                     )
                     .foregroundColor(.white)
                     .cornerRadius(10)
-                    .shadow(color: Color(hex: 0x0A84FF).opacity(0.35), radius: 8, y: 3)
+                    .shadow(color: AppTheme.gamingViolet.opacity(0.28), radius: 8, y: 3)
                 }
                 .buttonStyle(PressableButtonStyle())
                 
@@ -625,7 +625,7 @@ struct DNSManagerView: View {
                 HStack(spacing: 12) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(Color(hex: 0x00D4FF).opacity(0.15))
+                            .fill(AppTheme.gamingBlueBright.opacity(0.15))
                             .frame(width: 38, height: 38)
                         ProgressView()
                             .tint(AppTheme.cyberCyan)
