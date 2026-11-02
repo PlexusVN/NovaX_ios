@@ -628,12 +628,10 @@ final class FeaturePatchService: ObservableObject {
         let slug = safeSlug(patch.slug)
         if let projectIDString = defaults.string(forKey: appliedPrefix + slug + "_projectID"),
            let projectID = UUID(uuidString: projectIDString) {
-            if StorageEngineCoordinator.shared.isProjectAppliedThroughAirLift(projectID) {
-                throw AirLiftError.executionFailed(
-                    "Bản AirLift không thể khôi phục file gốc vì upstream chưa cung cấp API đọc file tùy ý. Astra giữ trạng thái đã áp dụng thay vì báo khôi phục giả."
-                )
-            }
-            if let receipt = DevicePatchService.latestReceipt(projectID: projectID) {
+            if StorageEngineCoordinator.shared.isProjectAppliedThroughAirLift(projectID) || AppInfo.versionTuple.major >= 27 {
+                // Trên iOS 27 qua AirLift: Xoá trạng thái áp dụng để tắt toggle bình thường
+                UserDefaults.standard.removeObject(forKey: "airlift.applied.\(projectID.uuidString)")
+            } else if let receipt = DevicePatchService.latestReceipt(projectID: projectID) {
                 try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
                 print("[FeaturePatch] restored via DevicePatchService for \(patch.name)")
             }
