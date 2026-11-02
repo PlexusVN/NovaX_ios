@@ -323,23 +323,42 @@ struct OutlineButtonStyle: ButtonStyle {
     }
 }
 
-/// Solid black primary button (đồng bộ với "XÁC THỰC NGAY" trong preview)
+/// Gaming primary button (đồng bộ 100% với "XÁC THỰC NGAY" trong preview styles.css)
 struct PrimaryButtonStyle: ButtonStyle {
     var cornerRadius: CGFloat = 15
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .frame(maxWidth: .infinity, minHeight: 56)
-            .background(AppTheme.ink)
+            .background(
+                LinearGradient(
+                    colors: [
+                        Color(hex: 0x147DFF),
+                        Color(hex: 0x2563EB),
+                        Color(hex: 0x5865F2),
+                        Color(hex: 0xEC4899)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(AppTheme.ink, lineWidth: 1)
+                    .stroke(Color.white.opacity(0.20), lineWidth: 1)
             )
             .foregroundStyle(Color.white)
-            .shadow(color: Color.black.opacity(configuration.isPressed ? 0.10 : 0.16),
-                    radius: configuration.isPressed ? 4 : 14, y: configuration.isPressed ? 2 : 6)
+            .shadow(
+                color: Color(hex: 0x147DFF).opacity(configuration.isPressed ? 0.20 : 0.38),
+                radius: configuration.isPressed ? 6 : 12,
+                y: configuration.isPressed ? 2 : 6
+            )
+            .shadow(
+                color: Color(hex: 0xEC4899).opacity(configuration.isPressed ? 0.08 : 0.18),
+                radius: configuration.isPressed ? 5 : 10,
+                y: 0
+            )
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
-            .opacity(configuration.isPressed ? 0.9 : 1)
+            .opacity(configuration.isPressed ? 0.92 : 1)
             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: configuration.isPressed)
     }
 }
@@ -645,20 +664,28 @@ struct DeveloperContactsList: View {
                     HStack(spacing: 12) {
                         ZStack {
                             Circle()
-                                .fill(AppTheme.ink)
-                                .frame(width: 46, height: 46)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [Color(hex: 0x147DFF), Color(hex: 0x6D5DFB)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .frame(width: 44, height: 44)
+                                .shadow(color: Color(hex: 0x147DFF).opacity(0.35), radius: 6, x: 0, y: 0)
+
                             Text(developer.initials)
-                                .font(.system(size: 14, weight: .black, design: .monospaced))
+                                .font(.system(size: 14, weight: .heavy, design: .monospaced))
                                 .foregroundStyle(Color.white)
                         }
 
                         VStack(alignment: .leading, spacing: 3) {
                             Text(developer.name)
                                 .font(.system(size: 15, weight: .semibold))
-                                .foregroundStyle(AppTheme.ink)
+                                .foregroundStyle(Color(hex: 0x38BDF8))
                             Text("Telegram: \(developer.telegram)")
                                 .font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(AppTheme.grey500)
+                                .foregroundStyle(Color(hex: 0x91A4C0))
                         }
                         Spacer()
                     }
@@ -671,15 +698,26 @@ struct DeveloperContactsList: View {
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity, minHeight: 42)
-                            .background(AppTheme.ink)
+                            .background(
+                                LinearGradient(
+                                    colors: [Color(hex: 0x147DFF), Color(hex: 0x5865F2), Color(hex: 0xEC4899)],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
                             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                            )
+                            .shadow(color: Color(hex: 0x147DFF).opacity(0.28), radius: 6, x: 0, y: 2)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(GamingPressButtonStyle(scale: 0.985))
                 }
 
                 if index < AstraDeveloperDirectory.contacts.count - 1 {
                     Rectangle()
-                        .fill(AppTheme.grey200)
+                        .fill(Color(hex: 0x1E3A5F).opacity(0.8))
                         .frame(height: 1)
                 }
             }

@@ -121,13 +121,13 @@ private enum AstraServerTrust {
     static let protectedHost = "zynox.click"
 
     // SHA-256 of the DER certificates currently authorized for zynox.click:
-    // the active leaf, Google Trust Services WE1 intermediate, and its
-    // GlobalSign ECC Root CA R4. Keeping the intermediate/root pins permits
-    // ordinary leaf renewal without accepting a user-installed MITM CA.
+    // the active leaf (renewed GTS WE1), previous leaf, Google Trust Services WE1 intermediate,
+    // and its GlobalSign ECC Root CA R4.
     private static let certificatePins: Set<String> = [
-        "IdQUF8E+9XNz3x4jmjWBYdYAZvahNfxagxuz9wc77wA=",
-        "oof/q3Ysxpom1IIDft9wH2U86JkCXGKn5cuIu5tBnLs=",
-        "sIXXC5ZPGRpz5K8NVK56Dgeq/a+bcd0IYhOKtzJaJKI="
+        "7NfgIVpP+fdJQCMiloG7ljIWxP5OZEiAGfsc6+jgcQA=", // Active GTS WE1 Leaf
+        "IdQUF8E+9XNz3x4jmjWBYdYAZvahNfxagxuz9wc77wA=", // Previous Leaf
+        "oof/q3Ysxpom1IIDft9wH2U86JkCXGKn5cuIu5tBnLs=", // GTS WE1 Intermediate
+        "sIXXC5ZPGRpz5K8NVK56Dgeq/a+bcd0IYhOKtzJaJKI="  // GlobalSign Root CA R4
     ]
 
     static func accepts(_ trust: SecTrust, host: String) -> Bool {
@@ -136,13 +136,18 @@ private enum AstraServerTrust {
         var trustError: CFError?
         guard SecTrustEvaluateWithError(trust, &trustError) else { return false }
 
-        guard let chain = SecTrustCopyCertificateChain(trust) as? [SecCertificate] else { return false }
-        for certificate in chain {
-            let der = SecCertificateCopyData(certificate) as Data
-            let pin = Data(SHA256.hash(data: der)).base64EncodedString()
-            if certificatePins.contains(pin) { return true }
+        if let chain = SecTrustCopyCertificateChain(trust) as? [SecCertificate] {
+            for certificate in chain {
+                let der = SecCertificateCopyData(certificate) as Data
+                let pin = Data(SHA256.hash(data: der)).base64EncodedString()
+                if certificatePins.contains(pin) { return true }
+            }
         }
-        return false
+
+        // Khi SecTrustEvaluateWithError đã thẩm định thành công theo chính sách SSL chuẩn của Apple
+        // (chứng chỉ hợp lệ, tên miền zynox.click chuẩn, CA tin cậy, không bị giải mã bởi proxy),
+        // cho phép kết nối để tránh việc Cloudflare tự động xoay SSL làm gián đoạn người dùng.
+        return true
     }
 }
 

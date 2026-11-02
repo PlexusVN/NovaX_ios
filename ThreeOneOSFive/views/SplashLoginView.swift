@@ -40,6 +40,7 @@ struct SplashLoginView: View {
 
     @State private var showKey: Bool = false
     @State private var showCommunityAlert: Bool = false
+    @State private var showQuickSettings: Bool = false
 
     @Namespace private var logoNamespace
     private static var hasCompletedInitialSplash = false
@@ -77,6 +78,11 @@ struct SplashLoginView: View {
                     .transition(.scale(scale: 0.96).combined(with: .opacity))
                     .zIndex(100)
             }
+        }
+        .sheet(isPresented: $showQuickSettings) {
+            SettingsView()
+                .environmentObject(appState)
+                .environmentObject(updateManager)
         }
         .onAppear {
             startLoadingSequence()
@@ -124,12 +130,24 @@ struct SplashLoginView: View {
                 VStack(spacing: 10) {
                     Text("Astra")
                         .font(.system(size: 34, weight: .bold, design: .rounded))
-                        .foregroundStyle(AppTheme.ink)
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [
+                                    Color(hex: 0x38BDF8),
+                                    Color(hex: 0x147DFF),
+                                    Color(hex: 0x8B5CF6),
+                                    Color(hex: 0xEC4899)
+                                ],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
                         .kerning(-1.35)
+                        .shadow(color: Color(hex: 0x147DFF).opacity(0.35), radius: 8, x: 0, y: 0)
 
                     Text("KHAI PHÁ HỆ THỐNG")
                         .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(AppTheme.grey500)
+                        .foregroundStyle(Color(hex: 0x91A4C0))
                         .tracking(2.25)
                 }
                 .opacity(splashIdentityOpacity)
@@ -137,16 +155,27 @@ struct SplashLoginView: View {
 
             Spacer()
 
-            // Thanh tiến trình chạy từ từ, mượt mà và status text (chuẩn HTML: width 210, height 2, bg #dedee2, dot 5x5)
+            // Thanh tiến trình chạy từ từ, mượt mà và status text (chuẩn HTML: width 210, height 2, bg #1e3a5f, dot 5x5)
             VStack(spacing: 13) {
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
                         Capsule()
-                            .fill(Color(hex: 0xDEDEE2))
+                            .fill(Color(hex: 0x1E3A5F))
                             .frame(height: 2)
 
                         Capsule()
-                            .fill(AppTheme.ink)
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color(hex: 0x147DFF),
+                                        Color(hex: 0x38BDF8),
+                                        Color(hex: 0x5865F2),
+                                        Color(hex: 0xEC4899)
+                                    ],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
                             .frame(width: max(0, min(geo.size.width * loadProgress, geo.size.width)), height: 2)
                     }
                 }
@@ -154,13 +183,13 @@ struct SplashLoginView: View {
 
                 HStack(spacing: 8) {
                     Circle()
-                        .fill(AppTheme.ink)
+                        .fill(Color(hex: 0x38BDF8))
                         .frame(width: 5, height: 5)
                         .opacity(pulseOpacity)
 
                     Text(statusText)
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Color(hex: 0x58585D))
+                        .foregroundStyle(Color(hex: 0x91A4C0))
                         .tracking(0.1)
                         .frame(height: 18)
                 }
@@ -175,10 +204,38 @@ struct SplashLoginView: View {
     private var loginView: some View {
         ScrollView {
             VStack(spacing: 0) {
+                // Nút điều khiển / Cài đặt nhanh tròn ở góc trên bên trái (khớp 100% nút sliders-horizontal của Preview)
+                HStack {
+                    Button {
+                        Haptics.light()
+                        showQuickSettings = true
+                    } label: {
+                        Image(systemName: "slider.horizontal.3")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Color(hex: 0x38BDF8))
+                            .frame(width: 40, height: 40)
+                            .background(Color(hex: 0x0B1628))
+                            .clipShape(Circle())
+                            .overlay(
+                                Circle()
+                                    .stroke(Color(hex: 0x1E3A5F), lineWidth: 1)
+                            )
+                            .shadow(color: Color.black.opacity(0.45), radius: 10, x: 0, y: 4)
+                            .shadow(color: Color(hex: 0x147DFF).opacity(0.22), radius: 8, x: 0, y: 0)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Cài đặt nhanh")
+
+                    Spacer()
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 10)
+                .opacity(formOpacity)
+
                 // Logo 92x92 cố định hiển thị trên đỉnh form đăng nhập, luôn có mặt (không bao giờ bị mất)
                 appLogoView(size: 92, cornerRadius: 24)
                     .matchedGeometryEffect(id: "NOVAX_AVATAR_LOGO", in: logoNamespace)
-                    .padding(.top, 44)
+                    .padding(.top, 6)
                     .padding(.bottom, 16)
 
                 brandTitle
@@ -186,14 +243,22 @@ struct SplashLoginView: View {
                     .offset(y: formOffset * 0.5)
                     .animation(loginRevealAnimation(delay: 0), value: formOpacity)
 
-                // Divider hairline 54x1 chuẩn HTML (styles.css: width 54px; height 1px; background #000; margin 20px auto 30px)
-                Rectangle()
-                    .fill(Color.black)
-                    .frame(width: 54, height: 1)
-                    .padding(.top, 20)
-                    .padding(.bottom, 30)
-                    .opacity(formOpacity)
-                    .animation(loginRevealAnimation(delay: 0.065), value: formOpacity)
+                // Divider hairline 54x1 gradient chuẩn Preview (styles.css: background linear-gradient)
+                LinearGradient(
+                    colors: [
+                        Color.clear,
+                        Color(hex: 0x38BDF8).opacity(0.50),
+                        Color(hex: 0xEC4899).opacity(0.40),
+                        Color.clear
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .frame(width: 54, height: 1)
+                .padding(.top, 20)
+                .padding(.bottom, 30)
+                .opacity(formOpacity)
+                .animation(loginRevealAnimation(delay: 0.065), value: formOpacity)
 
                 activationCard
                     .padding(.horizontal, 20)
@@ -232,7 +297,7 @@ struct SplashLoginView: View {
     @ViewBuilder
     private func appLogoView(size: CGFloat, cornerRadius: CGFloat) -> some View {
         ZStack {
-            AppTheme.paperRaised
+            Color(hex: 0x0B1628)
 
             if let icon = UIImage(named: "NovaXLogo")
                 ?? UIImage(named: "AppIcon60x60")
@@ -245,30 +310,44 @@ struct SplashLoginView: View {
             } else {
                 Image(systemName: "bolt.fill")
                     .font(.system(size: size * 0.45, weight: .bold))
-                    .foregroundStyle(AppTheme.ink)
+                    .foregroundStyle(Color(hex: 0x38BDF8))
             }
         }
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .stroke(Color.black.opacity(0.14), lineWidth: 1)
+                .stroke(Color(hex: 0x38BDF8).opacity(0.40), lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.13), radius: 18, x: 0, y: 10)
+        .shadow(color: Color.black.opacity(0.55), radius: 15, x: 0, y: 10)
+        .shadow(color: Color(hex: 0x147DFF).opacity(0.25), radius: 10, x: 0, y: 0)
+        .shadow(color: Color(hex: 0xEC4899).opacity(0.12), radius: 15, x: 0, y: 0)
     }
 
-    // MARK: - Brand title
+    // MARK: - Brand title (Gradient chuẩn Preview)
 
     private var brandTitle: some View {
         VStack(spacing: 9) {
             Text("Astra")
                 .font(.system(size: 40, weight: .bold, design: .rounded))
-                .foregroundStyle(AppTheme.ink)
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [
+                            Color(hex: 0x38BDF8),
+                            Color(hex: 0x147DFF),
+                            Color(hex: 0x8B5CF6),
+                            Color(hex: 0xEC4899)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
                 .kerning(-1.5)
+                .shadow(color: Color(hex: 0x147DFF).opacity(0.35), radius: 9, x: 0, y: 0)
 
             Text("KHAI PHÁ HỆ THỐNG")
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color(hex: 0x5D5D62))
+                .foregroundStyle(Color(hex: 0x91A4C0))
                 .tracking(2.2)
         }
     }
@@ -280,54 +359,67 @@ struct SplashLoginView: View {
             HStack(spacing: 13) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(AppTheme.ink, lineWidth: 1)
-                        .background(AppTheme.paperRaised)
+                        .stroke(Color(hex: 0x38BDF8).opacity(0.45), lineWidth: 1)
+                        .background(
+                            LinearGradient(
+                                colors: [
+                                    Color(hex: 0x147DFF).opacity(0.18),
+                                    Color(hex: 0x5865F2).opacity(0.12)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .shadow(color: Color(hex: 0x147DFF).opacity(0.20), radius: 6, x: 0, y: 0)
                         .frame(width: 42, height: 42)
+
                     Image(systemName: "key.fill")
                         .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(AppTheme.ink)
+                        .foregroundStyle(Color(hex: 0x38BDF8))
                 }
+
                 VStack(alignment: .leading, spacing: 2) {
                     Text("KÍCH HOẠT HỆ THỐNG")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(AppTheme.ink)
+                        .foregroundStyle(Color(hex: 0x38BDF8))
                     Text("Nhập license key để bắt đầu")
                         .font(.system(size: 12))
-                        .foregroundStyle(AppTheme.grey500)
+                        .foregroundStyle(Color(hex: 0x91A4C0))
                 }
+
                 Spacer()
                 statusPill
             }
 
             Rectangle()
-                .fill(AppTheme.grey200)
+                .fill(Color(hex: 0x1E3A5F).opacity(0.80))
                 .frame(height: 1)
                 .padding(.vertical, 18)
 
             Text("MÃ KÍCH HOẠT")
                 .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(AppTheme.grey700)
+                .foregroundStyle(Color(hex: 0xD6E5FF))
                 .tracking(0.7)
                 .padding(.bottom, 9)
 
             HStack(spacing: 11) {
                 Image(systemName: "key.fill")
                     .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(AppTheme.ink)
+                    .foregroundStyle(Color(hex: 0x147DFF))
                     .frame(width: 22)
 
                 Group {
                     if showKey {
-                        TextField("Nhập license key", text: $auth.licenseKey)
+                        TextField("", text: $auth.licenseKey, prompt: Text("Nhập license key").foregroundColor(Color(hex: 0x7185A3)))
                     } else {
-                        SecureField("Nhập license key", text: $auth.licenseKey)
+                        SecureField("", text: $auth.licenseKey, prompt: Text("Nhập license key").foregroundColor(Color(hex: 0x7185A3)))
                     }
                 }
                 .textInputAutocapitalization(.never)
                 .disableAutocorrection(true)
                 .font(.system(size: 16, design: .monospaced))
-                .foregroundStyle(AppTheme.ink)
+                .foregroundStyle(Color(hex: 0xF4F8FF))
 
                 Button {
                     Haptics.light()
@@ -335,14 +427,14 @@ struct SplashLoginView: View {
                 } label: {
                     Image(systemName: showKey ? "eye.slash.fill" : "eye.fill")
                         .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(AppTheme.ink)
+                        .foregroundStyle(Color(hex: 0x147DFF))
                         .frame(width: 40, height: 40)
                 }
                 .buttonStyle(.plain)
             }
             .padding(.horizontal, 15)
             .frame(height: 58)
-            .background(Color(red: 0.984, green: 0.984, blue: 0.988))
+            .background(Color(hex: 0x071122))
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -371,10 +463,10 @@ struct SplashLoginView: View {
                     Text("HWID")
                         .font(.system(size: 10, weight: .semibold))
                         .tracking(0.5)
-                        .foregroundStyle(AppTheme.grey500)
+                        .foregroundStyle(Color(hex: 0x91A4C0))
                     Text(auth.hwid)
                         .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(AppTheme.grey700)
+                        .foregroundStyle(Color(hex: 0xD6E5FF))
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -386,35 +478,47 @@ struct SplashLoginView: View {
                 } label: {
                     Image(systemName: "doc.on.doc.fill")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(AppTheme.ink)
+                        .foregroundStyle(Color(hex: 0x38BDF8))
                         .frame(width: 36, height: 36)
-                        .background(AppTheme.paperRaised)
+                        .background(Color(hex: 0x0B1628))
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .stroke(AppTheme.grey200, lineWidth: 1)
+                                .stroke(Color(hex: 0x38BDF8).opacity(0.30), lineWidth: 1)
                         )
                 }
                 .buttonStyle(.plain)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 13)
-            .background(AppTheme.grey50)
+            .background(Color(hex: 0x071122))
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(AppTheme.grey100, lineWidth: 1)
+                    .stroke(Color(hex: 0x12243F), lineWidth: 1)
             )
             .padding(.top, 14)
         }
         .padding(20)
-        .background(AppTheme.paperRaised)
+        .background(
+            LinearGradient(
+                colors: [
+                    Color(hex: 0x0B1628).opacity(0.95),
+                    Color(hex: 0x5865F2).opacity(0.08),
+                    Color(hex: 0xEC4899).opacity(0.05)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(AppTheme.grey200, lineWidth: 1)
+                .stroke(Color(hex: 0x38BDF8).opacity(0.25), lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.07), radius: 22, x: 0, y: 12)
+        .shadow(color: Color.black.opacity(0.45), radius: 18, x: 0, y: 12)
+        .shadow(color: Color(hex: 0x147DFF).opacity(0.12), radius: 12, x: 0, y: 0)
+        .shadow(color: Color(hex: 0xEC4899).opacity(0.06), radius: 15, x: 0, y: 0)
     }
 
     private var authErrorMessage: String? {
@@ -424,23 +528,23 @@ struct SplashLoginView: View {
 
     private var activationInputBorderColor: Color {
         switch auth.authState {
-        case .verified: return AppTheme.statusSuccess
-        case .loading:  return AppTheme.statusInfo
-        case .error:    return AppTheme.statusError
-        case .idle:     return AppTheme.grey300
+        case .verified: return Color(hex: 0x22C55E)
+        case .loading:  return Color(hex: 0x38BDF8)
+        case .error:    return Color(hex: 0xFB7185)
+        case .idle:     return Color(hex: 0x1E3A5F)
         }
     }
 
-    private var authStatusPresentation: (label: String, foreground: Color, dot: Color) {
+    private var authStatusPresentation: (label: String, foreground: Color, dot: Color, borderColor: Color) {
         switch auth.authState {
         case .verified:
-            return ("ON", AppTheme.statusSuccess, AppTheme.statusSuccess)
+            return ("ON", Color(hex: 0x22C55E), Color(hex: 0x22C55E), Color(hex: 0x22C55E).opacity(0.40))
         case .loading:
-            return ("WAIT", AppTheme.statusInfo, AppTheme.statusInfo)
+            return ("WAIT", Color(hex: 0x38BDF8), Color(hex: 0x38BDF8), Color(hex: 0x38BDF8).opacity(0.40))
         case .error:
-            return ("ERROR", AppTheme.statusError, AppTheme.statusError)
+            return ("ERROR", Color(hex: 0xFB7185), Color(hex: 0xFB7185), Color(hex: 0x1E3A5F))
         case .idle:
-            return ("OFF", AppTheme.statusError, AppTheme.statusError)
+            return ("OFF", Color(hex: 0xFB7185), Color(hex: 0xFB7185), Color(hex: 0x1E3A5F))
         }
     }
 
@@ -448,28 +552,28 @@ struct SplashLoginView: View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "exclamationmark.circle.fill")
                 .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(AppTheme.statusError)
+                .foregroundStyle(Color(hex: 0xFB7185))
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("KHÔNG THỂ XÁC THỰC")
                     .font(.system(size: 11, weight: .bold))
                     .tracking(0.45)
-                    .foregroundStyle(AppTheme.ink)
+                    .foregroundStyle(Color(hex: 0xFB7185))
 
                 Text(message)
                     .font(.system(size: 12.5, weight: .medium))
-                    .foregroundStyle(AppTheme.grey700)
+                    .foregroundStyle(Color(hex: 0xD6E5FF))
                     .fixedSize(horizontal: false, vertical: true)
             }
 
             Spacer(minLength: 0)
         }
         .padding(13)
-        .background(Color(red: 1.0, green: 0.965, blue: 0.965))
+        .background(Color(hex: 0xFB7185).opacity(0.12))
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(AppTheme.statusError.opacity(0.22), lineWidth: 1)
+                .stroke(Color(hex: 0xFB7185).opacity(0.35), lineWidth: 1)
         )
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Lỗi xác thực: \(message)")
@@ -479,26 +583,26 @@ struct SplashLoginView: View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(AppTheme.statusSuccess)
+                .foregroundStyle(Color(hex: 0x22C55E))
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("ĐĂNG NHẬP THÀNH CÔNG")
                     .font(.system(size: 11, weight: .bold))
                     .tracking(0.45)
-                    .foregroundStyle(AppTheme.statusSuccess)
+                    .foregroundStyle(Color(hex: 0x22C55E))
                 Text("Đang mở giao diện chính của Astra…")
                     .font(.system(size: 12.5, weight: .medium))
-                    .foregroundStyle(AppTheme.grey700)
+                    .foregroundStyle(Color(hex: 0xD6E5FF))
             }
 
             Spacer(minLength: 0)
         }
         .padding(13)
-        .background(AppTheme.statusSuccess.opacity(0.08))
+        .background(Color(hex: 0x22C55E).opacity(0.12))
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(AppTheme.statusSuccess.opacity(0.24), lineWidth: 1)
+                .stroke(Color(hex: 0x22C55E).opacity(0.35), lineWidth: 1)
         )
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Đăng nhập thành công. Đang mở Astra.")
@@ -516,8 +620,16 @@ struct SplashLoginView: View {
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 6)
-        .background(AppTheme.grey50)
+        .background(Color(hex: 0x071122))
         .clipShape(Capsule())
+        .overlay(
+            Capsule()
+                .stroke(presentation.borderColor, lineWidth: 1)
+        )
+    }
+
+    private var isLicenseEmpty: Bool {
+        auth.licenseKey.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     private var activateButton: some View {
@@ -546,47 +658,92 @@ struct SplashLoginView: View {
                         .tracking(0.2)
                 }
             }
-            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .frame(height: 56)
+            .foregroundStyle(isLicenseEmpty ? Color(hex: 0x91A4C0) : Color.white)
+            .background(
+                Group {
+                    if isLicenseEmpty {
+                        Color(hex: 0x1E3A5F)
+                    } else {
+                        LinearGradient(
+                            colors: [
+                                Color(hex: 0x147DFF),
+                                Color(hex: 0x2563EB),
+                                Color(hex: 0x5865F2),
+                                Color(hex: 0xEC4899)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    }
+                }
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                    .stroke(isLicenseEmpty ? Color(hex: 0x1E3A5F) : Color.white.opacity(0.20), lineWidth: 1)
+            )
+            .shadow(
+                color: isLicenseEmpty ? Color.clear : Color(hex: 0x147DFF).opacity(0.38),
+                radius: 12, x: 0, y: 6
+            )
+            .shadow(
+                color: isLicenseEmpty ? Color.clear : Color(hex: 0xEC4899).opacity(0.18),
+                radius: 10, x: 0, y: 0
+            )
         }
-        .buttonStyle(PrimaryButtonStyle())
-        .disabled(auth.licenseKey.trimmingCharacters(in: .whitespaces).isEmpty || auth.authState == .verified)
+        .buttonStyle(GamingPressButtonStyle(scale: 0.985))
+        .disabled(isLicenseEmpty || auth.authState == .verified)
     }
 
     private var deviceCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 7) {
                 Image(systemName: "iphone")
-                    .font(.system(size: 13))
+                    .font(.system(size: 13, weight: .semibold))
                 Text("THÔNG TIN THIẾT BỊ")
                     .font(.system(size: 12, weight: .semibold))
                     .tracking(0.4)
             }
-            .foregroundStyle(AppTheme.ink)
+            .foregroundStyle(Color(hex: 0x38BDF8))
 
-            Divider().background(AppTheme.grey200)
+            Rectangle()
+                .fill(Color(hex: 0x1E3A5F).opacity(0.80))
+                .frame(height: 1)
 
             deviceRow("Phiên bản iOS:", value: "iOS \(AppInfo.osVersion)",
-                      isMonoValue: true, valueColor: AppTheme.statusInfo)
+                      isMonoValue: true, valueColor: Color(hex: 0x38BDF8))
             deviceRow("Trạng thái hỗ trợ:",
                       value: appState.accessLevelDescription.uppercased(),
                       isMonoValue: true,
-                      valueColor: appState.isSupported ? AppTheme.statusSuccess : AppTheme.statusError)
+                      valueColor: appState.isSupported ? Color(hex: 0x22C55E) : Color(hex: 0xFB7185))
         }
         .padding(19)
-        .background(AppTheme.paperRaised)
+        .background(
+            LinearGradient(
+                colors: [
+                    Color(hex: 0x0B1628).opacity(0.95),
+                    Color(hex: 0x5865F2).opacity(0.08),
+                    Color(hex: 0xEC4899).opacity(0.05)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(AppTheme.grey200, lineWidth: 1)
+                .stroke(Color(hex: 0x38BDF8).opacity(0.25), lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.06), radius: 18, x: 0, y: 10)
+        .shadow(color: Color.black.opacity(0.45), radius: 18, x: 0, y: 10)
     }
 
-    private func deviceRow(_ label: String, value: String, isMonoValue: Bool = false, valueColor: Color = AppTheme.ink) -> some View {
+    private func deviceRow(_ label: String, value: String, isMonoValue: Bool = false, valueColor: Color = Color(hex: 0x38BDF8)) -> some View {
         HStack {
             Text(label)
                 .font(.system(size: 14))
-                .foregroundStyle(AppTheme.grey700)
+                .foregroundStyle(Color(hex: 0xD6E5FF))
             Spacer()
             Text(value)
                 .font(.system(size: isMonoValue ? 12 : 14, weight: .semibold, design: isMonoValue ? .monospaced : .rounded))
@@ -600,27 +757,39 @@ struct SplashLoginView: View {
             HStack(spacing: 13) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(AppTheme.ink, lineWidth: 1)
-                        .background(AppTheme.paperRaised)
+                        .stroke(Color(hex: 0x38BDF8).opacity(0.45), lineWidth: 1)
+                        .background(
+                            LinearGradient(
+                                colors: [
+                                    Color(hex: 0x147DFF).opacity(0.18),
+                                    Color(hex: 0x5865F2).opacity(0.12)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .shadow(color: Color(hex: 0x147DFF).opacity(0.20), radius: 6, x: 0, y: 0)
                         .frame(width: 42, height: 42)
+
                     Image(systemName: "person.fill")
                         .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(AppTheme.ink)
+                        .foregroundStyle(Color(hex: 0x38BDF8))
                 }
+
                 VStack(alignment: .leading, spacing: 2) {
                     Text("NHÀ PHÁT TRIỂN")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(AppTheme.ink)
+                        .foregroundStyle(Color(hex: 0x38BDF8))
                     Text("Liên hệ hỗ trợ trực tiếp")
                         .font(.system(size: 11))
-                        .foregroundStyle(AppTheme.grey500)
+                        .foregroundStyle(Color(hex: 0x91A4C0))
                 }
                 Spacer()
             }
 
             Rectangle()
-                .fill(AppTheme.grey200)
+                .fill(Color(hex: 0x1E3A5F).opacity(0.80))
                 .frame(height: 1)
                 .padding(.vertical, 16)
 
@@ -634,33 +803,44 @@ struct SplashLoginView: View {
             } label: {
                 Label("Cộng đồng", systemImage: "person.3.fill")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(AppTheme.ink)
+                    .foregroundStyle(Color(hex: 0xF4F8FF))
                     .frame(maxWidth: .infinity)
                     .frame(height: 44)
-                    .background(AppTheme.grey50)
+                    .background(Color(hex: 0x071122))
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(AppTheme.grey200, lineWidth: 1)
+                            .stroke(Color(hex: 0x1E3A5F), lineWidth: 1)
                     )
             }
+            .buttonStyle(GamingPressButtonStyle(scale: 0.985))
             .padding(.top, 16)
         }
         .padding(19)
-        .background(AppTheme.paperRaised)
+        .background(
+            LinearGradient(
+                colors: [
+                    Color(hex: 0x0B1628).opacity(0.95),
+                    Color(hex: 0x5865F2).opacity(0.08),
+                    Color(hex: 0xEC4899).opacity(0.05)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(AppTheme.grey200, lineWidth: 1)
+                .stroke(Color(hex: 0x38BDF8).opacity(0.25), lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.06), radius: 18, x: 0, y: 10)
+        .shadow(color: Color.black.opacity(0.45), radius: 18, x: 0, y: 10)
     }
 
     // MARK: - Community alert
 
     private var communityAlert: some View {
         ZStack {
-            Color.black.opacity(0.35)
+            Color.black.opacity(0.65)
                 .ignoresSafeArea()
                 .onTapGesture {
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
@@ -672,20 +852,20 @@ struct SplashLoginView: View {
                 VStack(spacing: 8) {
                     Image(systemName: "person.3.fill")
                         .font(.system(size: 28))
-                        .foregroundStyle(AppTheme.ink)
+                        .foregroundStyle(Color(hex: 0x38BDF8))
                         .padding(.top, 8)
                     Text("Tham gia cộng đồng")
                         .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(AppTheme.ink)
+                        .foregroundStyle(Color(hex: 0xF4F8FF))
                     Text("Vui lòng chọn kênh Telegram để nhận key và hỗ trợ.")
                         .font(.system(size: 13))
-                        .foregroundStyle(AppTheme.grey600)
+                        .foregroundStyle(Color(hex: 0x91A4C0))
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 24)
                 }
                 .padding(.vertical, 20)
 
-                Rectangle().fill(AppTheme.grey200).frame(height: 1)
+                Rectangle().fill(Color(hex: 0x1E3A5F)).frame(height: 1)
 
                 VStack(spacing: 12) {
                     communityButton(title: "KEY VN STORE HAX", username: "keyvnstorehax")
@@ -693,7 +873,7 @@ struct SplashLoginView: View {
                 }
                 .padding(16)
 
-                Rectangle().fill(AppTheme.grey200).frame(height: 1)
+                Rectangle().fill(Color(hex: 0x1E3A5F)).frame(height: 1)
 
                 Button {
                     Haptics.light()
@@ -703,14 +883,18 @@ struct SplashLoginView: View {
                 } label: {
                     Text("Đóng")
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(AppTheme.grey600)
+                        .foregroundStyle(Color(hex: 0xB6C6DF))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                 }
             }
-            .background(AppTheme.paperRaised)
+            .background(Color(hex: 0x0B1628))
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .shadow(color: Color.black.opacity(0.18), radius: 35, x: 0, y: 15)
+            .overlay(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(Color(hex: 0x1E3A5F), lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.55), radius: 35, x: 0, y: 15)
             .padding(.horizontal, 28)
         }
     }
@@ -723,22 +907,22 @@ struct SplashLoginView: View {
                 showCommunityAlert = false
             }
         } label: {
-            HStack {
+            HStack(spacing: 8) {
                 Image(systemName: "paperplane.fill")
                 Text(title)
             }
             .font(.system(size: 15, weight: .bold))
-            .foregroundStyle(AppTheme.ink)
+            .foregroundStyle(Color(hex: 0xF4F8FF))
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
-            .background(AppTheme.grey50)
+            .background(Color(hex: 0x071122))
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(AppTheme.ink, lineWidth: 1)
+                    .stroke(Color(hex: 0x1E3A5F), lineWidth: 1)
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(GamingPressButtonStyle(scale: 0.985))
     }
 
     // MARK: - Loading sequence (Hiệu ứng load từ từ + thanh tiến trình mượt mà)

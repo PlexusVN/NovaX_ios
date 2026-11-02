@@ -177,6 +177,8 @@ final class AuthManager: ObservableObject {
                 authState = .error("Mất kết nối mạng trong quá trình xác thực")
             case .secureConnectionFailed:
                 authState = .error("Kết nối bảo mật thất bại")
+            case .cancelled:
+                authState = .error("Yêu cầu xác thực bị gián đoạn, vui lòng thử lại")
             default:
                 authState = .error("Lỗi mạng: \(error.localizedDescription)")
             }
