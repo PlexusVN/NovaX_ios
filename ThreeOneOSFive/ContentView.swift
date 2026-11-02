@@ -6,6 +6,8 @@ struct ContentView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @EnvironmentObject private var patchDraftCoordinator: PatchDraftCoordinator
     @EnvironmentObject private var authManager: AuthManager
+    @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var updateManager: UpdateManager
     @State private var tabNavigation: AppTabNavigationState
     @State private var heartbeatTimer: Timer?
     @Environment(\.scenePhase) private var scenePhase
@@ -41,9 +43,7 @@ struct ContentView: View {
         .tint(AppTheme.ink)
         .imageScale(.small)
         .sheet(isPresented: $showSettings) {
-            SettingsView()
-                .environmentObject(appState)
-                .environmentObject(updateManager)
+            settingsSheet
         }
         .onChange(of: patchDraftCoordinator.request?.id) { requestID in
             // Patches tab đã bị ẩn - không làm gì
@@ -63,6 +63,12 @@ struct ContentView: View {
         .onChange(of: scenePhase) { phase in
             if phase == .active { startHeartbeat() }
         }
+    }
+
+    private var settingsSheet: some View {
+        SettingsView()
+            .environmentObject(appState)
+            .environmentObject(updateManager)
     }
 
     // MARK: - Layouts
