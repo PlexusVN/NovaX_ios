@@ -75,7 +75,7 @@ final class GuideService: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var likedGuideIDs: Set<Int> = []
 
-    private let baseURL = "https://zynox.click"
+    private let baseURL = AstraServerTrust.protectedOrigin
     private let likedStorageKey = "novax_liked_guide_ids_v1"
 
     init() {
@@ -113,7 +113,7 @@ final class GuideService: ObservableObject {
         request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
 
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await SecureAPIClient.shared.data(for: request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
                 return
             }
@@ -161,7 +161,7 @@ final class GuideService: ObservableObject {
         request.timeoutInterval = 10
 
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await SecureAPIClient.shared.data(for: request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return }
             let decoded = try JSONDecoder().decode(GuideLikeResponse.self, from: data)
             if decoded.success, let newCount = decoded.likes_count {

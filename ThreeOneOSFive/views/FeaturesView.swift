@@ -15,6 +15,7 @@ struct FeaturesView: View {
     var showSystemDashboard: Binding<Bool>? = nil
     @EnvironmentObject private var service: FeaturePatchService
     @EnvironmentObject private var authManager: AuthManager
+    @ObservedObject private var protectedDownloads = ProtectedDownloadService.shared
     @State private var selectedCategoryID: Int?
     @State private var showCategoryPicker = false
     @State private var activeToast: ToastInfo?
@@ -116,11 +117,14 @@ struct FeaturesView: View {
                 HStack {
                     Spacer()
                     VStack(spacing: 8) {
-                        ProgressView()
-                            .tint(AppTheme.gamingBlueBright)
-                        Text("Đang chuẩn bị...")
+                        if protectedDownloads.accessNotice == nil {
+                            ProgressView()
+                                .tint(AppTheme.gamingBlueBright)
+                        }
+                        Text(protectedDownloads.accessNotice ?? "Đang chuẩn bị...")
                             .font(.system(size: 12, design: .monospaced))
-                            .foregroundColor(AppTheme.gamingText.opacity(0.3))
+                            .foregroundColor(AppTheme.gamingText.opacity(protectedDownloads.accessNotice == nil ? 0.3 : 0.8))
+                            .multilineTextAlignment(.center)
                     }
                     .padding(.vertical, 16)
                     Spacer()
@@ -413,7 +417,7 @@ struct FeaturesView: View {
                 emptyState
             } else {
                 LazyVStack(spacing: 10) {
-                    ForEach(filteredPatches) { patch in
+                    ForEach(filteredPatches, id: \.downloadIdentity) { patch in
                         PatchCardView(patch: patch, service: service, auth: authManager, activeToast: $activeToast)
                     }
                 }
@@ -437,12 +441,13 @@ struct FeaturesView: View {
             Image(systemName: "wand.and.stars")
                 .font(.system(size: 36, weight: .medium))
                 .foregroundColor(AppTheme.gamingBlueBright.opacity(0.3))
-            Text("Chưa có chức năng nào")
+            Text(service.catalogError == nil ? "Chưa có chức năng nào" : "Không thể tải danh sách chức năng")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundColor(AppTheme.gamingText.opacity(0.5))
-            Text("Đang chuẩn bị chức năng...")
+            Text(service.catalogError ?? "Đang chuẩn bị chức năng...")
                 .font(.system(size: 12, design: .monospaced))
                 .foregroundColor(AppTheme.gamingText.opacity(0.25))
+                .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 40)
@@ -647,24 +652,20 @@ struct PatchCardView: View {
                     isApplied = false
                     Haptics.success()
 
-                    if AppInfo.versionTuple.major >= 27 {
-                        activeToast = ToastInfo(
-                            title: "Đã tắt chức năng",
-                            message: "iOS 27 không thể khôi phục file gốc, hãy xoá game tải lại để đảm bảo an toàn.",
-                            isSuccess: true
-                        )
-                    } else {
-                        activeToast = ToastInfo(
-                            title: "Tắt chức năng thành công",
-                            message: "Chức năng đã được tắt.",
-                            isSuccess: true
-                        )
-                    }
+                    activeToast = ToastInfo(
+                        title: "Tắt chức năng thành công",
+                        message: "Đã khôi phục dữ liệu gốc từ bản sao lưu.",
+                        isSuccess: true
+                    )
                 } catch {
                     Haptics.error()
                     activeToast = ToastInfo(
                         title: "Không thể tắt chức năng",
-                        message: "Vui lòng thử lại sau.",
+                        message: (error as? PatchRestoreError)?.errorDescription
+                            ?? (error as? ProtectedDownloadError)?.errorDescription
+                            ?? (error as? NetworkAccessError)?.errorDescription
+                            ?? (error as? AirLiftError)?.errorDescription
+                            ?? "Vui lòng thử lại sau.",
                         isSuccess: false
                     )
                 }
@@ -682,7 +683,11 @@ struct PatchCardView: View {
                     Haptics.error()
                     activeToast = ToastInfo(
                         title: "Không thể bật chức năng",
-                        message: "Vui lòng thử lại sau.",
+                        message: (error as? PatchRestoreError)?.errorDescription
+                            ?? (error as? ProtectedDownloadError)?.errorDescription
+                            ?? (error as? NetworkAccessError)?.errorDescription
+                            ?? (error as? AirLiftError)?.errorDescription
+                            ?? "Vui lòng thử lại sau.",
                         isSuccess: false
                     )
                 }

@@ -4,9 +4,12 @@ import Combine
 
 @MainActor
 final class AuthManager: ObservableObject {
+    private(set) var authenticationRevision: UInt64 = 0
 
     @Published var authState: AuthState = .idle
-    @Published var licenseKey: String = ""
+    @Published var licenseKey: String = "" {
+        didSet { if oldValue != licenseKey { authenticationRevision &+= 1 } }
+    }
     @Published var hwid: String = DeviceUtils.hwid
     @Published var deviceName: String = DeviceUtils.deviceMarketingName
     @Published var keyType: KeyType = .basic
@@ -23,15 +26,6 @@ final class AuthManager: ObservableObject {
     enum KeyType: String, Codable {
         case basic, pro, vip, admin
     }
-
-    private let pinnedSession: URLSession = {
-        let config = URLSessionConfiguration.ephemeral
-        config.httpShouldSetCookies = false
-        config.httpCookieAcceptPolicy = .never
-        return URLSession(configuration: config,
-                          delegate: CertPinningDelegate.shared,
-                          delegateQueue: nil)
-    }()
 
     private let defaults = UserDefaults.standard
     private let keyKey = "saved_license_key"
@@ -55,6 +49,8 @@ final class AuthManager: ObservableObject {
     }
 
     func login() async {
+        authenticationRevision &+= 1
+        let revision = authenticationRevision
         let _ = DecoyAuth.verifyKey(licenseKey, device: hwid)
         let _ = DecoyAuth.buildAuthRequest(key: licenseKey, hwid: hwid, secret: "x")
 
@@ -89,7 +85,10 @@ final class AuthManager: ObservableObject {
         request.setValue(devName, forHTTPHeaderField: "X-Device-Name")
 
         do {
-            let (data, response) = try await pinnedSession.data(for: request)
+            let (data, response) = try await SecureAPIClient.shared.data(for: request)
+            guard authenticationRevision == revision,
+                  DeviceIdentityService.canonicalLicense(licenseKey) == DeviceIdentityService.canonicalLicense(key),
+                  hwid == hw else { return }
             guard let httpResp = response as? HTTPURLResponse else {
                 authState = .error("Không nhận được phản hồi từ máy chủ")
                 return
@@ -157,15 +156,16 @@ final class AuthManager: ObservableObject {
                 expiresAt = df.date(from: expires)
             }
 
+            licenseKey = key
             _ = KeychainUtils.save(key: "novax_saved_license_key", value: key)
             defaults.removeObject(forKey: keyKey)
             authState = .verified
             errorMessage = nil
             startMonitor()
-            Task { [weak self] in
-                await self?.enrollDeviceIfNeeded(key: key, hwid: hw)
-            }
+            // ProtectedDownloadService enrolls with the recipient-bound contract
+            // and verifies server signatures before accepting any device ID.
         } catch let error as URLError {
+            guard authenticationRevision == revision else { return }
             switch error.code {
             case .notConnectedToInternet:
                 authState = .error("Không có kết nối Internet")
@@ -183,23 +183,28 @@ final class AuthManager: ObservableObject {
                 authState = .error("Lỗi mạng: \(error.localizedDescription)")
             }
         } catch {
+            guard authenticationRevision == revision else { return }
             authState = .error("Lỗi không xác định: \(error.localizedDescription)")
         }
     }
 
     func restoreSessionIfNeeded() async {
         guard !licenseKey.isEmpty else { return }
+        let revision = authenticationRevision
         authState = .loading("Đang phục hồi phiên...")
-        try? await Task.sleep(nanoseconds: 600_000_000)
+        do { try await Task.sleep(nanoseconds: 600_000_000) } catch { return }
+        guard authenticationRevision == revision else { return }
         await login()
     }
 
     func logout() {
+        ProtectedDownloadService.shared.requestLogout()
         clearSession()
         authState = .idle
     }
 
     private func clearSession() {
+        authenticationRevision &+= 1
         licenseKey = ""
         keyType = .basic
         expiresAt = nil
@@ -208,72 +213,6 @@ final class AuthManager: ObservableObject {
         KeychainUtils.delete(key: "novax_saved_license_key")
         monitorTask?.cancel()
         monitorTask = nil
-    }
-
-    // MARK: - Astra Anti-Crack v2 Device Enrollment
-
-    private func enrollDeviceIfNeeded(key: String, hwid: String) async {
-        guard DeviceIdentityService.shared.enrolledDeviceKeyId == nil else { return }
-        do {
-            let (pubKeyX963, assurance) = try DeviceIdentityService.shared.getOrCreateKey()
-            let installId = DeviceIdentityService.shared.installId
-
-            guard let challengeUrl = URL(string: "https://zynox.click/api/v2/device/challenge") else { return }
-            var challengeReq = URLRequest(url: challengeUrl)
-            challengeReq.httpMethod = "POST"
-            challengeReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            challengeReq.timeoutInterval = 10
-            let cBody: [String: Any] = [
-                "key": key,
-                "hwid": hwid,
-                "install_id": installId
-            ]
-            challengeReq.httpBody = try JSONSerialization.data(withJSONObject: cBody)
-
-            let (cData, cResp) = try await pinnedSession.data(for: challengeReq)
-            guard (cResp as? HTTPURLResponse)?.statusCode == 200,
-                  let cJson = try JSONSerialization.jsonObject(with: cData) as? [String: Any],
-                  let challengeId = cJson["challenge_id"] as? String,
-                  let challenge = cJson["challenge"] as? String else {
-                return
-            }
-
-            let signature = try DeviceIdentityService.shared.signEnrollment(
-                challengeId: challengeId,
-                challenge: challenge,
-                key: key,
-                hwid: hwid,
-                installId: installId,
-                publicKeyX963: pubKeyX963,
-                assurance: assurance
-            )
-
-            guard let enrollUrl = URL(string: "https://zynox.click/api/v2/device/enroll") else { return }
-            var enrollReq = URLRequest(url: enrollUrl)
-            enrollReq.httpMethod = "POST"
-            enrollReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            enrollReq.timeoutInterval = 10
-            let eBody: [String: Any] = [
-                "challenge_id": challengeId,
-                "challenge": challenge,
-                "key": key,
-                "hwid": hwid,
-                "install_id": installId,
-                "public_key_x963": pubKeyX963,
-                "assurance_level": assurance.rawValue,
-                "signature": signature
-            ]
-            enrollReq.httpBody = try JSONSerialization.data(withJSONObject: eBody)
-
-            let (eData, eResp) = try await pinnedSession.data(for: enrollReq)
-            if (eResp as? HTTPURLResponse)?.statusCode == 200,
-               let eJson = try JSONSerialization.jsonObject(with: eData) as? [String: Any],
-               let deviceKeyId = eJson["device_key_id"] as? String {
-                DeviceIdentityService.shared.enrolledDeviceKeyId = deviceKeyId
-            }
-        } catch {
-            // Shadow mode: enrollment failure does not block login in early phases
-        }
     }
 
     // MARK: - Re-verify monitor
@@ -306,6 +245,7 @@ final class AuthManager: ObservableObject {
     @discardableResult
     private func reVerify() async -> ReVerifyResult {
         guard !licenseKey.isEmpty else { return .authFailed }
+        let revision = authenticationRevision
 
         let key = licenseKey.trimmingCharacters(in: .whitespaces)
         let hw = hwid
@@ -324,7 +264,8 @@ final class AuthManager: ObservableObject {
         request.timeoutInterval = 15
 
         do {
-            let (data, response) = try await pinnedSession.data(for: request)
+            let (data, response) = try await SecureAPIClient.shared.data(for: request)
+            guard authenticationRevision == revision, authState == .verified else { return .authFailed }
             guard let httpResp = response as? HTTPURLResponse else { return .authFailed }
             guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { return .authFailed }
 
@@ -376,6 +317,10 @@ final class AuthManager: ObservableObject {
                 return .authFailed
             }
         } catch {
+            guard authenticationRevision == revision, authState == .verified, !Task.isCancelled else { return .authFailed }
+            // A foreground/security gate denial is not evidence that the server
+            // stopped recognizing this license. Resume verification after recovery.
+            if error is NetworkAccessError || error is CancellationError { return .networkError }
             reVerifyFailCount += 1
             if authState == .verified, reVerifyFailCount >= maxReVerifyRetries {
                 authState = .error(reVerifyFailCount > 3

@@ -15,10 +15,13 @@ DerivedData/
 *.dSYM
 *.dSYM.zip
 *.app
+*.release.json
 
 # Swift Package Manager
 .build/
 .swiftpm/
+__pycache__/
+*.pyc
 
 # Signing material and local configuration
 *.cer
@@ -33,7 +36,15 @@ DerivedData/
 # Local QA artifacts and internal working notes
 /*.png
 /tasks/
-/Tests/
+/Tests/*
+!/Tests/ProtectedArtifactSelfCheck.swift
+!/Tests/DeviceIdentitySelfCheck.swift
+!/Tests/test_embed_integrity_hash.py
+!/Tests/test_seal_release.py
+!/Tests/ProtectedOperationSelfCheck.swift
+!/Tests/Fixtures/
+/Tests/Fixtures/*
+!/Tests/Fixtures/artifact_crypto_v1.json
 /CONTRIBUTING.md
 /SECURITY.md
 

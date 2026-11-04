@@ -130,7 +130,7 @@ enum AppPaths {
 }
 
 enum AppUpdateChecker {
-    static let apiURL = URL(string: "https://zynox.click/api/client/config")!
+    static let apiURL = URL(string: AstraServerTrust.protectedOrigin + "/api/client/config")!
     
     struct Offer: Identifiable {
         let id = UUID()
@@ -150,7 +150,7 @@ enum AppUpdateChecker {
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await SecureAPIClient.shared.data(for: request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
                 return nil
             }

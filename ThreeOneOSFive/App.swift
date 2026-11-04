@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import Darwin
 
 @main
 struct ThreeOneOSFiveApp: App {
@@ -10,16 +11,36 @@ struct ThreeOneOSFiveApp: App {
     @StateObject private var featurePatchService = FeaturePatchService()
     @StateObject private var updateManager = UpdateManager.shared
     @StateObject private var gatekeeper = AirLiftGatekeeperManager.shared
+    @StateObject private var networkAccess = NetworkAccessGate.shared
     @AppStorage(AppLanguage.storageKey) private var languageCode = AppLanguage.vietnamese.rawValue
     @State private var showMainInterface = false
+    @State private var runtimeSecurityEvidence: [String] = []
     @Environment(\.scenePhase) private var scenePhase
+    private let launchSecurityEvidence: [String]
 
     init() {
+        let securityResult = AntiTamper.checkAtLaunch()
+        let binaryIntegrity = BinaryIntegrity.evaluate()
+        let signedRelease = SignedReleaseIntegrity.check()
+        var evidence = securityResult.evidenceCodes
+        if let binaryEvidence = binaryIntegrity.evidenceCode { evidence.append(binaryEvidence) }
+        if let releaseEvidence = signedRelease.evidenceCode { evidence.append(releaseEvidence) }
+        launchSecurityEvidence = Array(Set(evidence)).sorted()
+
         setupLogCapture()
         log("app: Astra launching — iOS \(AppInfo.osVersion) (\(AppInfo.osBuild)) \(AppInfo.machineName)")
-        let securityResult = AntiTamper.checkAtLaunch()
         if securityResult.isCompromised {
             log("app: security notice — \(securityResult.compromisedReasons.joined(separator: ", "))")
+        }
+        if binaryIntegrity.isCompromised {
+            log("app: executable integrity validation failed")
+        }
+        if signedRelease.isCompromised {
+            ReleaseCommitBarrier.blockNewCommits()
+            log("app: signed release validation failed")
+        }
+        if launchSecurityEvidence.isEmpty {
+            AntiTamper.activateDebuggerDenial()
         }
         configureAppearance()
     }
@@ -47,9 +68,19 @@ struct ThreeOneOSFiveApp: App {
         AppLanguage(rawValue: languageCode) ?? .vietnamese
     }
 
+    private var securityEvidence: [String] {
+        Array(Set(launchSecurityEvidence + runtimeSecurityEvidence)).sorted()
+    }
+
+    private var isSecurityLocked: Bool { !securityEvidence.isEmpty }
+
     var body: some Scene {
         WindowGroup {
             ZStack {
+                if isSecurityLocked {
+                    SecurityLockdownView(evidenceCodes: securityEvidence, auth: authManager)
+                        .zIndex(1_000)
+                } else {
                 // Một màn hình duy nhất: SplashLoginView gộp loading + login
                 // → liền mạch, không có "chuyển cảnh" giữa 2 view (giống HTML)
                 Group {
@@ -109,11 +140,17 @@ struct ThreeOneOSFiveApp: App {
                         .transition(.opacity)
                         .zIndex(3)
                 }
+                if !networkAccess.isAllowed {
+                    NetworkAccessBlockedView(gate: networkAccess)
+                        .zIndex(100)
+                }
+                }
             }
             .animation(.easeInOut(duration: 0.32), value: showMainInterface)
             .animation(.easeInOut(duration: 0.32), value: gatekeeper.canBypassGatekeeper)
             .preferredColorScheme(.dark)
             .task(id: authManager.authState == .verified) {
+                guard !isSecurityLocked else { return }
                 guard authManager.authState == .verified else {
                     showMainInterface = false
                     return
@@ -127,25 +164,180 @@ struct ThreeOneOSFiveApp: App {
                 }
             }
             .onAppear {
+                guard !isSecurityLocked else { return }
+                networkAccess.setActive(scenePhase == .active)
                 updateManager.checkForUpdate()
                 appState.detectSupport()
             }
             .onChange(of: scenePhase) { phase in
+                guard !isSecurityLocked else { return }
+                // Switching to Settings invalidates the old network lease before
+                // any future API/apply work. Foreground always verifies again.
+                networkAccess.setActive(phase == .active)
                 guard phase == .active else { return }
                 updateManager.checkForUpdate()
                 appState.detectSupport()
                 Task { await featurePatchService.syncFromServer(auth: authManager) }
             }
-            .onChange(of: authManager.authState) { state in
-                updateManager.checkForUpdate()
-                if state == .verified {
+            .onChange(of: networkAccess.state) { state in
+                guard !isSecurityLocked else { return }
+                if state == .blocked {
+                    // Discard only the in-memory download session. A verified
+                    // recovery opens a new one; license and device keys remain.
+                    ProtectedDownloadService.shared.reset()
+                } else if state == .allowed, authManager.authState == .verified {
                     Task { await featurePatchService.syncFromServer(auth: authManager) }
                 }
             }
+            .onChange(of: authManager.authState) { state in
+                guard !isSecurityLocked else { return }
+                updateManager.checkForUpdate()
+                if state == .verified {
+                    Task { await featurePatchService.syncFromServer(auth: authManager) }
+                    if AntiTamper.hasPendingSecuritySignal {
+                        Task { await ProtectedDownloadService.shared.reportSecuritySignal(
+                            auth: authManager, signal: "local_integrity_signal") }
+                    }
+                }
+            }
             .onOpenURL { url in
+                guard !isSecurityLocked else { return }
                 patchDraftCoordinator.presentImport(url)
             }
+            .task(id: isSecurityLocked) {
+                guard !isSecurityLocked else { return }
+                var cycle = 0
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                    guard !Task.isCancelled else { return }
+                    let result = await Task.detached(priority: .utility) {
+                        AntiTamper.periodicCheck()
+                    }.value
+                    if result.isCompromised {
+                        ReleaseCommitBarrier.blockNewCommits()
+                        runtimeSecurityEvidence = result.evidenceCodes.isEmpty
+                            ? ["runtime_instrumentation"] : result.evidenceCodes
+                        return
+                    }
+                    cycle += 1
+                    if cycle % 5 == 0 {
+                        let release = await ReleaseIntegrityRuntime.verify(force: true)
+                        if release.isCompromised {
+                            ReleaseCommitBarrier.blockNewCommits()
+                            runtimeSecurityEvidence = [release.evidenceCode ?? "signed_release_integrity_failed"]
+                            return
+                        }
+                    }
+                }
+            }
         }
+    }
+}
+
+private struct SecurityLockdownView: View {
+    let evidenceCodes: [String]
+    @ObservedObject var auth: AuthManager
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            VStack(spacing: 16) {
+                Image(systemName: "lock.shield.fill")
+                    .font(.system(size: 42, weight: .semibold))
+                    .foregroundColor(.red)
+                Text("Thiết bị không an toàn")
+                    .font(.title3.weight(.bold))
+                    .foregroundColor(.white)
+                Text("Astra đã dừng để bảo vệ tài khoản và dữ liệu.")
+                    .font(.body)
+                    .foregroundColor(.white.opacity(0.72))
+                    .multilineTextAlignment(.center)
+            }
+            .padding(30)
+        }
+        .interactiveDismissDisabled()
+        .task { await enforceAndTerminate() }
+    }
+
+    @MainActor
+    private func enforceAndTerminate() async {
+        ReleaseCommitBarrier.blockNewCommits()
+        guard !auth.licenseKey.isEmpty else {
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard await waitForCommitDrain() else { return }
+            exit(EXIT_FAILURE)
+        }
+
+        // Never let an offline/auth request keep a compromised process alive.
+        let deadline = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 12_000_000_000)
+            guard !Task.isCancelled else { return }
+            guard await waitForCommitDrain() else { return }
+            exit(EXIT_FAILURE)
+        }
+
+        NetworkAccessGate.shared.setActive(true)
+        await NetworkAccessGate.shared.checkNow()
+        if NetworkAccessGate.shared.isAllowed {
+            if auth.authState != .verified {
+                await auth.restoreSessionIfNeeded()
+            }
+            if auth.authState == .verified {
+                _ = await ProtectedDownloadService.shared.quarantineForJailbreak(
+                    auth: auth, evidenceCodes: evidenceCodes)
+                await ProtectedDownloadService.shared.reportReleaseIntegrityFailure(
+                    SignedReleaseIntegrity.lastResult)
+            }
+        }
+        deadline.cancel()
+        guard await waitForCommitDrain() else { return }
+        try? await Task.sleep(nanoseconds: 180_000_000)
+        exit(EXIT_FAILURE)
+    }
+
+    @MainActor
+    private func waitForCommitDrain() async -> Bool {
+        while ReleaseCommitBarrier.activeWriterCount > 0 {
+            do { try await Task.sleep(nanoseconds: 100_000_000) }
+            catch { return false }
+        }
+        return !Task.isCancelled
+    }
+}
+
+private struct NetworkAccessBlockedView: View {
+    @ObservedObject var gate: NetworkAccessGate
+
+    var body: some View {
+        ZStack {
+            AppTheme.gamingBackground.ignoresSafeArea()
+            VStack(spacing: 18) {
+                Image(systemName: gate.state == .checking ? "lock.shield" : "wifi.exclamationmark")
+                    .font(.system(size: 38))
+                    .foregroundColor(AppTheme.gamingBlueBright)
+                Text(gate.state == .checking ? "Kiểm tra kết nối bảo mật" : "Tạm dừng sử dụng")
+                    .font(.title3.weight(.semibold))
+                    .foregroundColor(AppTheme.gamingText)
+                Text(gate.blockingMessage ?? "Cần xác minh kết nối trước khi tiếp tục.")
+                    .font(.body)
+                    .foregroundColor(AppTheme.gamingTextSecondary)
+                    .multilineTextAlignment(.center)
+                if gate.state == .checking {
+                    ProgressView().tint(AppTheme.gamingBlueBright)
+                } else {
+                    Button("Kiểm tra lại") {
+                        Task { await gate.checkNow() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(AppTheme.gamingBlue)
+                }
+            }
+            .padding(28)
+            .frame(maxWidth: 460)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isModal)
+        .interactiveDismissDisabled()
     }
 }
 

@@ -1,6 +1,7 @@
 import Foundation
 import UIKit
 import CryptoKit
+import Combine
 
 // MARK: - Feature Patch Models
 
@@ -39,6 +40,11 @@ struct PatchItem: Identifiable, Codable, Equatable {
     let fileSize: Int
     let version: Int
     let password: String?
+    let artifactID: String?
+    let manifestDigest: String?
+    let artifactVariant: String?
+    // A catalog entry may publish separate game artifacts under one patch ID.
+    var downloadIdentity: String { "\(id):\(artifactVariant ?? "legacy")" }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -53,6 +59,9 @@ struct PatchItem: Identifiable, Codable, Equatable {
         fileSize = try container.decodeIfPresent(Int.self, forKey: .fileSize) ?? 0
         version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 1
         password = try container.decodeIfPresent(String.self, forKey: .password)
+        artifactID = try container.decodeIfPresent(String.self, forKey: .artifactID)
+        manifestDigest = try container.decodeIfPresent(String.self, forKey: .manifestDigest)
+        artifactVariant = try container.decodeIfPresent(String.self, forKey: .artifactVariant)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -67,7 +76,10 @@ struct PatchItem: Identifiable, Codable, Equatable {
         try container.encode(fileHash, forKey: .fileHash)
         try container.encode(fileSize, forKey: .fileSize)
         try container.encode(version, forKey: .version)
-        try container.encodeIfPresent(password, forKey: .password)
+        // Protected catalog metadata never persists a shared password.
+        try container.encodeIfPresent(artifactID, forKey: .artifactID)
+        try container.encodeIfPresent(manifestDigest, forKey: .manifestDigest)
+        try container.encodeIfPresent(artifactVariant, forKey: .artifactVariant)
     }
 
     enum CodingKeys: String, CodingKey {
@@ -77,6 +89,9 @@ struct PatchItem: Identifiable, Codable, Equatable {
         case fileUrl = "file_url"
         case fileHash = "file_hash"
         case fileSize = "file_size"
+        case artifactID = "artifact_id"
+        case manifestDigest = "manifest_digest"
+        case artifactVariant = "artifact_variant"
     }
 }
 
@@ -332,6 +347,7 @@ final class FeaturePatchService: ObservableObject {
     @Published private(set) var nativeActualState: [String: NovaXRemoteFeatureState] = [:]
     @Published private(set) var nativeAssemblyOnline = false
     @Published private(set) var nativeStatusMessage = "Cheat đã sẵn sàng"
+    @Published private(set) var catalogError: String?
     @Published private(set) var isNativeLoading = false
     @Published private(set) var isNativeInjecting = false
 
@@ -343,8 +359,7 @@ final class FeaturePatchService: ObservableObject {
     @Published private(set) var codepatchModAvailable: [GamePatchVariant: Bool] = [:]
     @Published private(set) var codepatchOriginalAvailable: [GamePatchVariant: Bool] = [:]
 
-    private let baseURL = "https://zynox.click"
-    private static let codePatchEncryptionFormat = "aes-256-gcm-hkdf-sha256-v1"
+    private let baseURL = AstraServerTrust.protectedOrigin
 
     private let pinnedSession: URLSession = {
         let config = URLSessionConfiguration.ephemeral
@@ -374,6 +389,7 @@ final class FeaturePatchService: ObservableObject {
 
     private let defaults = UserDefaults.standard
     private let appliedPrefix = "patch_applied_"
+    private var catalogSyncRevision: UInt64 = 0
     private var nativeSessionToken = ""
     private var nativeSessionExpiresAt: Date?
     private var nativeSessionKey = ""
@@ -397,7 +413,23 @@ final class FeaturePatchService: ObservableObject {
     }()
 
     init() {
-        loadCachedMetadata()
+        // Old unsigned metadata contains passwords/URLs and must not become a
+        // fallback when the authenticated protected catalog is unavailable.
+        if let oldData = try? Data(contentsOf: metadataCacheURL),
+           let old = try? JSONSerialization.jsonObject(with: oldData) as? [String: Any],
+           let oldPatches = old["patches"] as? [[String: Any]] {
+            for item in oldPatches {
+                guard let slug = item["slug"] as? String,
+                      slug.range(of: #"^[A-Za-z0-9_-]{1,160}$"#, options: .regularExpression) != nil else { continue }
+                // Only files named by the previous catalog are removed; personal
+                // projects and rollback originals are not part of this cleanup.
+                try? FileManager.default.removeItem(at: cacheDir.appendingPathComponent(slug).appendingPathComponent("patch.3105"))
+                try? FileManager.default.removeItem(at: patchProjectsDir.appendingPathComponent(slug + ".3105"))
+            }
+        }
+        try? FileManager.default.removeItem(at: metadataCacheURL)
+        let staging = FileManager.default.temporaryDirectory.appendingPathComponent("AstraProtectedStaging", isDirectory: true)
+        try? FileManager.default.removeItem(at: staging)
     }
 
     private func loadCachedMetadata() {
@@ -437,7 +469,8 @@ final class FeaturePatchService: ObservableObject {
         ]
     }
 
-    private func authorizedRequest(_ url: URL, auth: AuthManager) -> URLRequest {
+    private func authorizedRequest(_ url: URL, auth: AuthManager) throws -> URLRequest {
+        try SecureAPIClient.validateURL(url)
         var request = URLRequest(url: url)
         for (key, value) in authHeaders(auth) {
             request.setValue(value, forHTTPHeaderField: key)
@@ -474,37 +507,31 @@ final class FeaturePatchService: ObservableObject {
             return
         }
 
+        let authRevision = auth.authenticationRevision
+        catalogSyncRevision &+= 1
+        let syncRevision = catalogSyncRevision
         isLoading = true
-        defer { isLoading = false }
+        catalogError = nil
+        defer { if catalogSyncRevision == syncRevision { isLoading = false } }
 
-        guard let url = URL(string: "\(baseURL)/api/ff/sync") else { return }
-        print("[FeaturePatch] syncing from: \(url.absoluteString)")
         do {
-            let request = authorizedRequest(url, auth: auth)
-            let (data, _) = try await pinnedSession.data(for: request)
+            let data = try await ProtectedDownloadService.shared.sync(auth: auth)
+            guard auth.authState == .verified, auth.authenticationRevision == authRevision,
+                  catalogSyncRevision == syncRevision else {
+                throw FeaturePatchError.notAuthenticated
+            }
             let response = try JSONDecoder().decode(PatchSyncResponse.self, from: data)
             guard response.success else {
                 print("[FeaturePatch] sync: server returned success=false")
                 return
             }
             
-            // HMAC Verification
-            guard let serverHmac = response.hmac, !serverHmac.isEmpty else {
-                print("[FeaturePatch] sync: missing HMAC signature")
-                return
-            }
-            
-            let expectedMessage = "\(response.success)|\(response.categories.count)|\(response.patches.count)"
-            let computedHmac = HMACUtils.compute(key: auth.licenseKey, message: expectedMessage)
-            
-            guard serverHmac == computedHmac else {
-                print("[FeaturePatch] sync: HMAC mismatch! Possible MITM attack.")
-                return
+            guard response.patches.allSatisfy({ $0.artifactID != nil && $0.password == nil && $0.fileUrl.isEmpty }) else {
+                throw ProtectedDownloadError.invalidResponse
             }
 
             categories = response.categories
             patches = response.patches
-            saveCachedMetadata()
             preloadCategoryImages()
             print("[FeaturePatch] sync OK: \(categories.count) categories, \(patches.count) patches")
 
@@ -513,7 +540,11 @@ final class FeaturePatchService: ObservableObject {
                 await downloadCategoryImageIfNeeded(category)
             }
         } catch {
-            print("[FeaturePatch] sync error: \(error)")
+            guard auth.authenticationRevision == authRevision, catalogSyncRevision == syncRevision else { return }
+            categories = []; patches = []
+            catalogError = error.localizedDescription
+            nativeStatusMessage = error.localizedDescription
+            print("[FeaturePatch] protected catalog unavailable")
         }
     }
 
@@ -524,54 +555,15 @@ final class FeaturePatchService: ObservableObject {
             throw FeaturePatchError.notAuthenticated
         }
 
-        let localURL = localPatchURL(patch)
-
-        if FileManager.default.fileExists(atPath: localURL.path) {
-            let localHash = sha256File(at: localURL)
-            if localHash == patch.fileHash { return localURL }
-        }
-
-        guard !patch.fileUrl.isEmpty else {
-            print("[FeaturePatch] fileUrl is empty for patch: \(patch.name)")
-            throw FeaturePatchError.invalidURL
-        }
-
-        guard let remoteURL = URL(string: patch.fileUrl) else {
-            print("[FeaturePatch] invalid URL: \(patch.fileUrl)")
-            throw FeaturePatchError.invalidURL
-        }
-
-        print("[FeaturePatch] downloading patch from: \(remoteURL.absoluteString)")
-
-        let request = authorizedRequest(remoteURL, auth: auth)
-        let (tempURL, response) = try await pinnedSession.download(for: request)
-        guard let httpResp = response as? HTTPURLResponse else {
-            throw FeaturePatchError.downloadFailed
-        }
-
-        print("[FeaturePatch] download response: HTTP \(httpResp.statusCode)")
-
-        guard (200..<300).contains(httpResp.statusCode) else {
-            throw FeaturePatchError.httpError(statusCode: httpResp.statusCode)
-        }
-
-        let dir = cachePath(for: patch)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        if FileManager.default.fileExists(atPath: localURL.path) {
-            try FileManager.default.removeItem(at: localURL)
-        }
-        try FileManager.default.moveItem(at: tempURL, to: localURL)
-
-        if !patch.fileHash.isEmpty {
-            let downloadedHash = sha256File(at: localURL)
-            if downloadedHash != patch.fileHash {
-                try? FileManager.default.removeItem(at: localURL)
-                print("[FeaturePatch] hash mismatch: expected \(patch.fileHash), got \(downloadedHash)")
-                throw FeaturePatchError.hashMismatch(expected: patch.fileHash, got: downloadedHash)
-            }
-        }
-
-        return localURL
+        let data = try await ProtectedDownloadService.shared.download(patch, auth: auth)
+        var dir = FileManager.default.temporaryDirectory.appendingPathComponent("AstraProtectedStaging", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true,
+            attributes: [.protectionKey: FileProtectionType.complete])
+        var values = URLResourceValues(); values.isExcludedFromBackup = true
+        try dir.setResourceValues(values)
+        let file = dir.appendingPathComponent(UUID().uuidString + ".3105")
+        try data.write(to: file, options: [.atomic, .completeFileProtection])
+        return file
     }
 
     // MARK: - Apply / Restore
@@ -581,36 +573,31 @@ final class FeaturePatchService: ObservableObject {
             throw FeaturePatchError.notAuthenticated
         }
 
+        let authRevision = auth.authenticationRevision
         print("[FeaturePatch] applying patch: \(patch.name) (slug: \(patch.slug))")
+        // Remove only this catalog item's old reusable download from pre-v2.
+        try? FileManager.default.removeItem(at: localPatchURL(patch))
         let cachedURL = try await downloadPatch(patch, auth: auth)
-        print("[FeaturePatch] download OK, cached at: \(cachedURL.path)")
+        defer { try? FileManager.default.removeItem(at: cachedURL) }
+        guard auth.authState == .verified, auth.authenticationRevision == authRevision else { throw FeaturePatchError.notAuthenticated }
 
-        let slug = safeSlug(patch.slug)
-        let destURL = patchProjectsDir.appendingPathComponent("\(slug).3105")
-        if FileManager.default.fileExists(atPath: destURL.path) {
-            try FileManager.default.removeItem(at: destURL)
-        }
-        try FileManager.default.copyItem(at: cachedURL, to: destURL)
-
+        let slug = patchStorageSlug(patch)
         let data = try Data(contentsOf: cachedURL)
-        let summary = try PatchPackageCodec.inspect(data)
-        let decoded: DecodedPatchPackage
-        if let contentKey = try? PatchKeyStore.load(for: summary),
-           let cachedDecoded = try? PatchPackageCodec.decode(data, contentKey: contentKey) {
-            decoded = cachedDecoded
-        } else if summary.isPasswordProtected {
-            guard let password = patch.password, !password.isEmpty else {
-                print("[FeaturePatch] patch '\(patch.name)' is password-protected but no password was provided by server")
-                throw PatchPackageError.invalidPasswordOrCorruptedPackage
-            }
-            decoded = try PatchPackageCodec.decode(data, password: password)
-            // Cache contentKey in iOS Keychain via PatchKeyStore so future toggles are instantaneous
-            try? PatchKeyStore.store(decoded.contentKey, for: summary)
-        } else {
-            decoded = try PatchPackageCodec.decode(data, password: nil)
+        let decoded = try PatchPackageCodec.decode(data, password: nil)
+        var project = decoded.project
+        project.isPrivate = true
+        let expectedBundleID = patch.artifactVariant == "ffth" ? "com.dts.freefireth" : "com.dts.freefiremax"
+        guard ["ffth", "ffmax"].contains(patch.artifactVariant ?? ""),
+              !project.allBundleIdentifiers.isEmpty,
+              project.allBundleIdentifiers.allSatisfy({ $0 == expectedBundleID }) else {
+            throw ProtectedDownloadError.invalidResponse
         }
-        let project = decoded.project
 
+        let networkGeneration = try await NetworkAccessGate.shared.requireAllowed()
+        try Task.checkCancellation()
+        try NetworkAccessGate.shared.validateGeneration(networkGeneration)
+        guard auth.authState == .verified, auth.authenticationRevision == authRevision else { throw FeaturePatchError.notAuthenticated }
+        try ReleaseCommitBarrier.requireAllowed()
         if StorageEngineCoordinator.shared.isAirLiftActive {
             try await StorageEngineCoordinator.shared.applyPatchProject(project)
         } else {
@@ -619,44 +606,52 @@ final class FeaturePatchService: ObservableObject {
 
         defaults.set(project.id.uuidString, forKey: appliedPrefix + slug + "_projectID")
         defaults.set(true, forKey: appliedPrefix + slug)
-        print("[FeaturePatch] applied successfully: \(destURL.path)")
+        print("[FeaturePatch] protected patch applied successfully")
     }
 
     func restorePatch(_ patch: PatchItem, auth: AuthManager) async throws {
         guard auth.authState == .verified else { throw FeaturePatchError.notAuthenticated }
-
-        let slug = safeSlug(patch.slug)
-        if let projectIDString = defaults.string(forKey: appliedPrefix + slug + "_projectID"),
-           let projectID = UUID(uuidString: projectIDString) {
-            if StorageEngineCoordinator.shared.isProjectAppliedThroughAirLift(projectID) || AppInfo.versionTuple.major >= 27 {
-                // Trên iOS 27 qua AirLift: Xoá trạng thái áp dụng để tắt toggle bình thường
-                UserDefaults.standard.removeObject(forKey: "airlift.applied.\(projectID.uuidString)")
-            } else if let receipt = DevicePatchService.latestReceipt(projectID: projectID) {
-                try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
-                print("[FeaturePatch] restored via DevicePatchService for \(patch.name)")
-            }
+        let authRevision = auth.authenticationRevision
+        let slug = patchStorageSlug(patch)
+        guard let storedID = defaults.string(forKey: appliedPrefix + slug + "_projectID"),
+              let projectID = UUID(uuidString: storedID) else { throw PatchRestoreError.missingReceipt }
+        guard !StorageEngineCoordinator.shared.isAirLiftActive,
+              !StorageEngineCoordinator.shared.isProjectAppliedThroughAirLift(projectID) else {
+            // Keep the ON state and all tracking: no original bytes were restored.
+            throw PatchRestoreError.airLiftRestoreUnsupported
         }
-
+        guard let receipt = DevicePatchService.latestReceipt(projectID: projectID) else {
+            throw PatchRestoreError.missingReceipt
+        }
+        let networkGeneration = try await NetworkAccessGate.shared.requireAllowed()
+        try Task.checkCancellation()
+        try NetworkAccessGate.shared.validateGeneration(networkGeneration)
+        guard auth.authState == .verified, auth.authenticationRevision == authRevision else { throw FeaturePatchError.notAuthenticated }
+        try ReleaseCommitBarrier.requireAllowed()
+        try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
         let destURL = patchProjectsDir.appendingPathComponent("\(slug).3105")
         try? FileManager.default.removeItem(at: destURL)
         defaults.removeObject(forKey: appliedPrefix + slug)
         defaults.removeObject(forKey: appliedPrefix + slug + "_projectID")
-        print("[FeaturePatch] restored patch: \(patch.name)")
+        print("[FeaturePatch] restored via DevicePatchService")
     }
 
     func isPatchApplied(_ patch: PatchItem) -> Bool {
-        let fileURL = patchProjectsDir.appendingPathComponent("\(safeSlug(patch.slug)).3105")
-        return FileManager.default.fileExists(atPath: fileURL.path)
+        defaults.bool(forKey: appliedPrefix + patchStorageSlug(patch))
     }
 
     func isPatchDownloaded(_ patch: PatchItem) -> Bool {
-        FileManager.default.fileExists(atPath: localPatchURL(patch).path)
+        false // protected plaintext is never retained as a reusable download
     }
 
     // MARK: - Cache Paths
 
+    private func patchStorageSlug(_ patch: PatchItem) -> String {
+        safeSlug(patch.slug + "_" + (patch.artifactVariant ?? "legacy"))
+    }
+
     private func cachePath(for patch: PatchItem) -> URL {
-        cacheDir.appendingPathComponent(safeSlug(patch.slug), isDirectory: true)
+        cacheDir.appendingPathComponent(patchStorageSlug(patch), isDirectory: true)
     }
 
     private func localPatchURL(_ patch: PatchItem) -> URL {
@@ -808,7 +803,7 @@ final class FeaturePatchService: ObservableObject {
             "hwid": auth.hwid
         ])
 
-        let (data, response) = try await pinnedSession.data(for: request)
+        let (data, response) = try await SecureAPIClient.shared.data(for: request)
         guard let http = response as? HTTPURLResponse,
               let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw NovaXControlError.message("Phản hồi đăng nhập phiên không hợp lệ")
@@ -863,11 +858,11 @@ final class FeaturePatchService: ObservableObject {
             throw NovaXControlError.message("URL menu không hợp lệ")
         }
         var request = nativeRequest(url, auth: auth)
-        var (data, response) = try await pinnedSession.data(for: request)
+        var (data, response) = try await SecureAPIClient.shared.data(for: request)
         if let http = response as? HTTPURLResponse, http.statusCode == 401 {
             try await ensureNativeSession(auth: auth, force: true)
             request = nativeRequest(url, auth: auth)
-            (data, response) = try await pinnedSession.data(for: request)
+            (data, response) = try await SecureAPIClient.shared.data(for: request)
         }
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw NovaXControlError.message(serverMessage(from: data, fallback: "Không thể đồng bộ trạng thái máy chủ"))
@@ -887,10 +882,10 @@ final class FeaturePatchService: ObservableObject {
               let url = URL(string: "\(baseURL)/api/novax/state/\(variant.rawValue)") else { return }
         do {
             try await ensureNativeSession(auth: auth)
-            var (data, response) = try await pinnedSession.data(for: nativeRequest(url, auth: auth))
+            var (data, response) = try await SecureAPIClient.shared.data(for: nativeRequest(url, auth: auth))
             if let http = response as? HTTPURLResponse, http.statusCode == 401 {
                 try await ensureNativeSession(auth: auth, force: true)
-                (data, response) = try await pinnedSession.data(for: nativeRequest(url, auth: auth))
+                (data, response) = try await SecureAPIClient.shared.data(for: nativeRequest(url, auth: auth))
             }
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return }
             let state = try JSONDecoder().decode(NovaXMenuResponse.self, from: data)
@@ -946,10 +941,10 @@ final class FeaturePatchService: ObservableObject {
         for v in [GamePatchVariant.ffth, .ffmax] {
             guard let url = URL(string: "\(baseURL)/api/novax/state/\(v.rawValue)") else { continue }
             do {
-                var (data, response) = try await pinnedSession.data(for: nativeRequest(url, auth: auth))
+                var (data, response) = try await SecureAPIClient.shared.data(for: nativeRequest(url, auth: auth))
                 if let http = response as? HTTPURLResponse, http.statusCode == 401 {
                     try await ensureNativeSession(auth: auth, force: true)
-                    (data, response) = try await pinnedSession.data(for: nativeRequest(url, auth: auth))
+                    (data, response) = try await SecureAPIClient.shared.data(for: nativeRequest(url, auth: auth))
                 }
                 guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { continue }
                 let state = try JSONDecoder().decode(NovaXMenuResponse.self, from: data)
@@ -967,40 +962,30 @@ final class FeaturePatchService: ObservableObject {
     }
 
     func loadCodePatchAvailability(auth: AuthManager) async {
-        for v in [GamePatchVariant.ffth, .ffmax] {
+        for variant in [GamePatchVariant.ffth, .ffmax] {
             for kind in [CodePatchKind.mod, .original] {
-                let key = "codepatch_avail_\(v.rawValue)_\(kind.rawValue)"
+                let available: Bool
                 do {
-                    try await ensureNativeSession(auth: auth)
-                    let route = Self.codePatchAPIBasePath + v.rawValue + "/" + kind.rawValue + Self.codePatchDownloadSuffix
-                    guard let url = URL(string: baseURL + route) else { continue }
-                    var request = nativeRequest(url, auth: auth, method: "HEAD")
-                    request.setValue(Self.codePatchEncryptionFormat, forHTTPHeaderField: "X-CodePatch-Accept")
-                    let (_, response) = try await pinnedSession.data(for: request)
-                    if let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) {
-                        defaults.set(true, forKey: key)
-                    } else {
-                        defaults.set(false, forKey: key)
-                    }
-                } catch {
-                    defaults.set(false, forKey: key)
-                }
+                    available = try await ProtectedDownloadService.shared.isCodePatchAvailable(
+                        variant: variant, kind: kind, auth: auth)
+                } catch { available = false }
+                // Availability is a fresh signed resolve result; stale defaults
+                // from HEAD-based legacy endpoints never authorize a download.
+                defaults.removeObject(forKey: "codepatch_avail_\(variant.rawValue)_\(kind.rawValue)")
+                if kind == .mod { codepatchModAvailable[variant] = available }
+                else { codepatchOriginalAvailable[variant] = available }
             }
         }
-        codepatchModAvailable[.ffth] = defaults.bool(forKey: "codepatch_avail_ffth_mod")
-        codepatchModAvailable[.ffmax] = defaults.bool(forKey: "codepatch_avail_ffmax_mod")
-        codepatchOriginalAvailable[.ffth] = defaults.bool(forKey: "codepatch_avail_ffth_original")
-        codepatchOriginalAvailable[.ffmax] = defaults.bool(forKey: "codepatch_avail_ffmax_original")
     }
 
     private func fetchNativeMenu(variant: GamePatchVariant, auth: AuthManager) async throws -> NovaXMenuResponse {
         guard let url = URL(string: "\(baseURL)/api/novax/menu/\(variant.rawValue)") else {
             throw NovaXControlError.message("URL menu không hợp lệ")
         }
-        var (data, response) = try await pinnedSession.data(for: nativeRequest(url, auth: auth))
+        var (data, response) = try await SecureAPIClient.shared.data(for: nativeRequest(url, auth: auth))
         if let http = response as? HTTPURLResponse, http.statusCode == 401 {
             try await ensureNativeSession(auth: auth, force: true)
-            (data, response) = try await pinnedSession.data(for: nativeRequest(url, auth: auth))
+            (data, response) = try await SecureAPIClient.shared.data(for: nativeRequest(url, auth: auth))
         }
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw NovaXControlError.message(serverMessage(from: data, fallback: "Không thể tải Patch Menu \(variant.title)"))
@@ -1063,7 +1048,7 @@ final class FeaturePatchService: ObservableObject {
             "value": value,
             "client_command_id": UUID().uuidString
         ])
-        let (data, response) = try await pinnedSession.data(for: request)
+        let (data, response) = try await SecureAPIClient.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw NovaXControlError.message(serverMessage(from: data, fallback: "Không thể gửi lệnh"))
         }
@@ -1086,7 +1071,7 @@ final class FeaturePatchService: ObservableObject {
         isNativeInjecting = true
         defer { isNativeInjecting = false }
 
-        let (temporaryURL, response) = try await pinnedSession.download(for: nativeRequest(url, auth: auth))
+        let (temporaryURL, response) = try await SecureAPIClient.shared.download(for: nativeRequest(url, auth: auth))
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             let body = (try? Data(contentsOf: temporaryURL)) ?? Data()
             throw NovaXControlError.message(serverMessage(from: body, fallback: "Tải cheat thất bại"))
@@ -1137,14 +1122,6 @@ final class FeaturePatchService: ObservableObject {
         Obf.s([178, 160, 160, 182, 190, 177, 191, 170, 254, 176, 160, 187, 178, 161, 163, 254, 163, 178, 167, 176, 187, 253, 162, 224, 130, 169, 158, 159, 186, 190, 154, 189, 167, 190, 157, 155, 148, 228, 173, 225, 145, 177, 178, 181, 186, 189, 132, 130, 226, 190, 134, 173, 224, 151], 0xD3)
     }
 
-    private static var codePatchAPIBasePath: String {
-        Obf.s([180, 250, 235, 242, 180, 245, 244, 237, 250, 227, 180, 248, 244, 255, 254, 235, 250, 239, 248, 243, 180], 0x9B)
-    }
-
-    private static var codePatchDownloadSuffix: String {
-        Obf.s([66, 9, 2, 26, 3, 1, 2, 12, 9], 0x6D)
-    }
-
     private static func codePatchBundleID(for variant: GamePatchVariant) -> String {
         switch variant {
         case .ffth: return "com.dts.freefireth"
@@ -1178,52 +1155,6 @@ final class FeaturePatchService: ObservableObject {
     private struct DownloadedCodePatch {
         let temporaryURL: URL
         let fileName: String
-    }
-
-    private static func decryptCodePatch(
-        at encryptedURL: URL,
-        response: HTTPURLResponse,
-        sessionToken: String,
-        variant: GamePatchVariant,
-        kind: CodePatchKind
-    ) throws -> URL {
-        guard response.value(forHTTPHeaderField: "X-CodePatch-Encryption") == codePatchEncryptionFormat,
-              let saltText = response.value(forHTTPHeaderField: "X-CodePatch-Salt"),
-              let nonceText = response.value(forHTTPHeaderField: "X-CodePatch-Nonce"),
-              let tagText = response.value(forHTTPHeaderField: "X-CodePatch-Tag"),
-              let expectedHash = response.value(forHTTPHeaderField: "X-CodePatch-SHA256"),
-              let expectedLengthText = response.value(forHTTPHeaderField: "X-CodePatch-Plaintext-Length"),
-              let expectedLength = Int(expectedLengthText), expectedLength > 0,
-              let salt = Data(base64Encoded: saltText), salt.count == 32,
-              let nonceData = Data(base64Encoded: nonceText), nonceData.count == 12,
-              let tag = Data(base64Encoded: tagText), tag.count == 16 else {
-            throw NovaXControlError.message("Dữ liệu mã hóa không hợp lệ")
-        }
-
-        let context = Data("novax-codepatch-v1|\(variant.rawValue)|\(kind.rawValue)|\(expectedHash)".utf8)
-        let inputKey = SymmetricKey(data: Data(sessionToken.utf8))
-        let key = HKDF<SHA256>.deriveKey(
-            inputKeyMaterial: inputKey,
-            salt: salt,
-            info: context,
-            outputByteCount: 32
-        )
-        let encrypted = try Data(contentsOf: encryptedURL, options: .mappedIfSafe)
-        let nonce = try AES.GCM.Nonce(data: nonceData)
-        let sealedBox = try AES.GCM.SealedBox(nonce: nonce, ciphertext: encrypted, tag: tag)
-        let plaintext = try AES.GCM.open(sealedBox, using: key, authenticating: context)
-        guard plaintext.count == expectedLength else {
-            throw NovaXControlError.message("Kích thước dữ liệu không hợp lệ")
-        }
-        let actualHash = SHA256.hash(data: plaintext).map { String(format: "%02x", $0) }.joined()
-        guard actualHash.caseInsensitiveCompare(expectedHash) == .orderedSame else {
-            throw NovaXControlError.message("Dữ liệu tải về không toàn vẹn")
-        }
-
-        let outputURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("novax-codepatch-\(UUID().uuidString)")
-        try plaintext.write(to: outputURL, options: [.atomic, .completeFileProtection])
-        return outputURL
     }
 
     private static func validCodePatchFileName(_ value: String?) -> String? {
@@ -1289,156 +1220,114 @@ final class FeaturePatchService: ObservableObject {
         case original
     }
 
-    /// Tải file codepatch (mod hoặc original) từ server về thư mục tạm
+    /// Resolve, obtain a one-use grant, verify the device envelope, then stage
+    /// the plaintext only for the filesystem writer. No legacy download fallback.
     private func downloadCodePatchFile(
         variant: GamePatchVariant,
         kind: CodePatchKind,
         auth: AuthManager
     ) async throws -> DownloadedCodePatch {
-        try await ensureNativeSession(auth: auth)
-        let route = Self.codePatchAPIBasePath + variant.rawValue + "/" + kind.rawValue + Self.codePatchDownloadSuffix
-        guard let url = URL(string: baseURL + route) else {
-            throw NovaXControlError.message("Không thể kết nối đến máy chủ")
+        let artifact = try await ProtectedDownloadService.shared.downloadCodePatch(
+            variant: variant, kind: kind, auth: auth)
+        guard let fileName = Self.validCodePatchFileName(artifact.fileName) else {
+            throw ProtectedDownloadError.invalidResponse
         }
-        var request = nativeRequest(url, auth: auth)
-        request.timeoutInterval = 60
-        request.setValue(Self.codePatchEncryptionFormat, forHTTPHeaderField: "X-CodePatch-Accept")
+        var directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AstraProtectedStaging", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
+            attributes: [.protectionKey: FileProtectionType.complete])
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try directory.setResourceValues(values)
+        let stagedFile = directory.appendingPathComponent(UUID().uuidString + ".codepatch")
         do {
-            let (tempURL, response) = try await pinnedSession.download(for: request)
-            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-                let body = (try? Data(contentsOf: tempURL)) ?? Data()
-                throw NovaXControlError.message(serverMessage(from: body, fallback: "Tải dữ liệu thất bại"))
-            }
-            guard let encodedName = http.value(forHTTPHeaderField: "X-CodePatch-File-Name"),
-                  let decodedName = encodedName.removingPercentEncoding,
-                  let fileName = FeaturePatchService.validCodePatchFileName(decodedName) else {
-                throw NovaXControlError.message("Tên file tải về không hợp lệ")
-            }
-            defer { try? FileManager.default.removeItem(at: tempURL) }
-            let decryptedURL = try Self.decryptCodePatch(
-                at: tempURL,
-                response: http,
-                sessionToken: nativeSessionToken,
-                variant: variant,
-                kind: kind
-            )
-            return DownloadedCodePatch(temporaryURL: decryptedURL, fileName: fileName)
-        } catch let err as NovaXControlError {
-            throw err
+            try artifact.data.write(to: stagedFile, options: [.atomic, .completeFileProtection])
+            return DownloadedCodePatch(temporaryURL: stagedFile, fileName: fileName)
         } catch {
-            throw NovaXControlError.message("Lỗi kết nối khi tải dữ liệu. Vui lòng thử lại sau.")
+            try? FileManager.default.removeItem(at: stagedFile)
+            throw error
         }
     }
 
-    /// Inject: tải file MOD từ server và ghi đè vào container Free Fire
     func injectCodePatch(variant: GamePatchVariant, auth: AuthManager) async throws {
-        patchStepMessage = "Đang kiểm tra kết nối bảo mật..."
-        defer { patchStepMessage = "" }
-        guard ExploitSupportPolicy.currentStorageMode != .unsupported else {
-            throw NovaXControlError.message("Phiên bản iOS này không nằm trong danh sách hỗ trợ ghi file của Astra.")
-        }
-        try await requireSecureControlNetwork()
-        let useAirLift = StorageEngineCoordinator.shared.isAirLiftActive
-        let destDir: URL
-        let airLiftUsed = useAirLift
-        do {
-            if useAirLift {
-                patchStepMessage = "Đang xác định thư mục \(variant.shortTitle)..."
-                destDir = try await FeaturePatchService.airLiftCodePatchDirectory(variant: variant)
-            } else if let directDirectory = FeaturePatchService.codePatchDirectory(variant: variant) {
-                destDir = directDirectory
-            } else {
-                throw NovaXControlError.message("Không thể truy cập trực tiếp dữ liệu game \(variant.shortTitle). Hãy chạy lại quyền kernel/direct rồi thử lại.")
-            }
-        } catch let error as AirLiftError {
-            throw NovaXControlError.message(error.localizedDescription)
-        }
-        patchStepMessage = "Đang tải dữ liệu cheat từ máy chủ..."
-        let downloaded = try await downloadCodePatchFile(variant: variant, kind: .mod, auth: auth)
-        let destURL = destDir.appendingPathComponent(downloaded.fileName)
-        defer { try? FileManager.default.removeItem(at: downloaded.temporaryURL) }
-
-        do {
-            patchStepMessage = "Đang ghi đè file cheat vào game..."
-            let fileData = try Data(contentsOf: downloaded.temporaryURL)
-            if airLiftUsed {
-                try await StorageEngineCoordinator.shared.writeFile(data: fileData, toPath: destURL.path)
-            } else if FileManager.default.fileExists(atPath: destURL.path) {
-                do {
-                    _ = try FileReplacementService.replace(target: destURL, with: downloaded.temporaryURL)
-                } catch {
-                    try fileData.write(to: destURL, options: .atomic)
-                }
-            } else {
-                try fileData.write(to: destURL, options: .atomic)
-            }
-        } catch let error as AirLiftError {
-            if StorageEngineCoordinator.shared.isAirLiftActive, error.requiresRePairing {
-                AirLiftGatekeeperManager.shared.triggerRePair(reason: "Không thể patch file qua AirLift: \(error.localizedDescription)")
-            }
-            throw NovaXControlError.message(error.localizedDescription)
-        } catch {
-            throw NovaXControlError.message("Không thể kích hoạt cheat cho \(variant.title). Vui lòng kiểm tra lại quyền ứng dụng.")
-        }
-        defaults.set(downloaded.fileName, forKey: "codepatch_file_name_\(variant.rawValue)")
-        defaults.set(true, forKey: "codepatch_mod_written_\(variant.rawValue)")
-        defaults.set(Date().timeIntervalSince1970, forKey: "codepatch_mod_time_\(variant.rawValue)")
-        nativeStatusMessage = "Đã kích hoạt cheat \(variant.shortTitle)"
+        try await installProtectedCodePatch(variant: variant, kind: .mod, auth: auth)
     }
 
-    /// Unject: tải file GỐC từ server và ghi đè vào container Free Fire
+    /// Original restore files receive exactly the same grant and device binding
+    /// as mods. A previous bearer/session capture cannot decrypt either artifact.
     func unjectCodePatch(variant: GamePatchVariant, auth: AuthManager) async throws {
-        patchStepMessage = "Đang kiểm tra kết nối bảo mật..."
-        defer { patchStepMessage = "" }
+        try await installProtectedCodePatch(variant: variant, kind: .original, auth: auth)
+    }
+
+    private func installProtectedCodePatch(variant: GamePatchVariant, kind: CodePatchKind,
+                                           auth: AuthManager) async throws {
+        guard !isNativeInjecting else { throw NovaXControlError.message("Đang có thao tác ghi dữ liệu. Vui lòng chờ.") }
+        guard auth.authState == .verified else { throw FeaturePatchError.notAuthenticated }
         guard ExploitSupportPolicy.currentStorageMode != .unsupported else {
             throw NovaXControlError.message("Phiên bản iOS này không nằm trong danh sách hỗ trợ ghi file của Astra.")
         }
+        let authRevision = auth.authenticationRevision
+        isNativeInjecting = true
+        patchStepMessage = "Đang kiểm tra kết nối bảo mật..."
+        defer { isNativeInjecting = false; patchStepMessage = "" }
+        try await requireSecureControlNetwork()
+
         let useAirLift = StorageEngineCoordinator.shared.isAirLiftActive
-        let destDir: URL
-        let airLiftUsed = useAirLift
+        let destinationDirectory: URL
+        if useAirLift {
+            patchStepMessage = "Đang xác định thư mục \(variant.shortTitle)..."
+            destinationDirectory = try await Self.airLiftCodePatchDirectory(variant: variant)
+        } else if let directDirectory = Self.codePatchDirectory(variant: variant) {
+            destinationDirectory = directDirectory
+        } else {
+            throw NovaXControlError.message("Không thể truy cập trực tiếp dữ liệu game \(variant.shortTitle). Hãy kiểm tra quyền rồi thử lại.")
+        }
+
+        patchStepMessage = kind == .mod ? "Đang tải dữ liệu từ máy chủ..." : "Đang tải dữ liệu gốc từ máy chủ..."
+        guard auth.authState == .verified, auth.authenticationRevision == authRevision else { throw FeaturePatchError.notAuthenticated }
+        let downloaded = try await downloadCodePatchFile(variant: variant, kind: kind, auth: auth)
+        defer { try? FileManager.default.removeItem(at: downloaded.temporaryURL) }
+        let destination = destinationDirectory.appendingPathComponent(downloaded.fileName)
+        let fileData = try Data(contentsOf: downloaded.temporaryURL)
+        guard auth.authState == .verified, auth.authenticationRevision == authRevision else { throw FeaturePatchError.notAuthenticated }
+        let networkGeneration = try await NetworkAccessGate.shared.requireAllowed()
+        try Task.checkCancellation()
+        try NetworkAccessGate.shared.validateGeneration(networkGeneration)
+        guard auth.authState == .verified, auth.authenticationRevision == authRevision else { throw FeaturePatchError.notAuthenticated }
+        try ReleaseCommitBarrier.requireAllowed()
+        patchStepMessage = kind == .mod ? "Đang ghi dữ liệu vào game..." : "Đang khôi phục dữ liệu gốc..."
         do {
             if useAirLift {
-                patchStepMessage = "Đang xác định thư mục \(variant.shortTitle)..."
-                destDir = try await FeaturePatchService.airLiftCodePatchDirectory(variant: variant)
-            } else if let directDirectory = FeaturePatchService.codePatchDirectory(variant: variant) {
-                destDir = directDirectory
+                try await StorageEngineCoordinator.shared.writeFile(data: fileData, toPath: destination.path)
             } else {
-                throw NovaXControlError.message("Không thể truy cập trực tiếp dữ liệu game \(variant.shortTitle). Hãy chạy lại quyền kernel/direct rồi thử lại.")
-            }
-        } catch let error as AirLiftError {
-            throw NovaXControlError.message(error.localizedDescription)
-        }
-        patchStepMessage = "Đang tải dữ liệu gốc từ máy chủ..."
-        let downloaded = try await downloadCodePatchFile(variant: variant, kind: .original, auth: auth)
-        let destURL = destDir.appendingPathComponent(downloaded.fileName)
-        defer { try? FileManager.default.removeItem(at: downloaded.temporaryURL) }
-
-        do {
-            patchStepMessage = "Đang ghi đè file gốc vào game..."
-            let fileData = try Data(contentsOf: downloaded.temporaryURL)
-            if airLiftUsed {
-                try await StorageEngineCoordinator.shared.writeFile(data: fileData, toPath: destURL.path)
-            } else if FileManager.default.fileExists(atPath: destURL.path) {
-                do {
-                    _ = try FileReplacementService.replace(target: destURL, with: downloaded.temporaryURL)
-                } catch {
-                    try fileData.write(to: destURL, options: .atomic)
+                try ReleaseCommitBarrier.withCommit {
+                    if FileManager.default.fileExists(atPath: destination.path) {
+                        do {
+                            _ = try FileReplacementService.replace(
+                                target: destination, with: downloaded.temporaryURL)
+                        } catch {
+                            // Do not let a generic replacement fallback bypass
+                            // a network invalidation or task cancellation.
+                            try Task.checkCancellation()
+                            try NetworkAccessGate.shared.validateGeneration(networkGeneration)
+                            try fileData.write(to: destination, options: .atomic)
+                        }
+                    } else {
+                        try fileData.write(to: destination, options: .atomic)
+                    }
                 }
-            } else {
-                try fileData.write(to: destURL, options: .atomic)
             }
         } catch let error as AirLiftError {
-            if StorageEngineCoordinator.shared.isAirLiftActive, error.requiresRePairing {
-                AirLiftGatekeeperManager.shared.triggerRePair(reason: "Không thể khôi phục game qua AirLift: \(error.localizedDescription)")
+            if error.requiresRePairing {
+                AirLiftGatekeeperManager.shared.triggerRePair(reason: error.localizedDescription)
             }
             throw NovaXControlError.message(error.localizedDescription)
-        } catch {
-            throw NovaXControlError.message("Không thể khôi phục game \(variant.title). Vui lòng kiểm tra lại quyền ứng dụng.")
         }
         defaults.set(downloaded.fileName, forKey: "codepatch_file_name_\(variant.rawValue)")
-        defaults.set(false, forKey: "codepatch_mod_written_\(variant.rawValue)")
-        defaults.set(Date().timeIntervalSince1970, forKey: "codepatch_original_time_\(variant.rawValue)")
-        nativeStatusMessage = "Đã khôi phục gốc \(variant.shortTitle)"
+        defaults.set(kind == .mod, forKey: "codepatch_mod_written_\(variant.rawValue)")
+        defaults.set(Date().timeIntervalSince1970,
+            forKey: "codepatch_\(kind == .mod ? "mod" : "original")_time_\(variant.rawValue)")
+        nativeStatusMessage = kind == .mod ? "Đã kích hoạt \(variant.shortTitle)" : "Đã khôi phục gốc \(variant.shortTitle)"
     }
 
     func isCodePatchInjected(variant: GamePatchVariant) -> Bool {
@@ -1451,6 +1340,19 @@ final class FeaturePatchService: ObservableObject {
         guard let data = try? Data(contentsOf: url) else { return "" }
         let hash = SHA256.hash(data: data)
         return hash.map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+enum PatchRestoreError: LocalizedError {
+    case airLiftRestoreUnsupported
+    case missingReceipt
+    var errorDescription: String? {
+        switch self {
+        case .airLiftRestoreUnsupported:
+            return "Chưa thể khôi phục file gốc qua AirLift. Chức năng vẫn được đánh dấu đang bật. Để trở về bản gốc, hãy cài lại game hoặc dùng bản khôi phục chính thức phù hợp."
+        case .missingReceipt:
+            return "Không tìm thấy bản sao lưu để khôi phục. Trạng thái đang bật được giữ nguyên; hãy kiểm tra dữ liệu hoặc liên hệ hỗ trợ."
+        }
     }
 }
 

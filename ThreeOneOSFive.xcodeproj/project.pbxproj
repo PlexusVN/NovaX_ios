@@ -77,6 +77,14 @@
 		3105SEC01 /* DeviceIdentityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105SEC02; };
 		3105SEC03 /* RequestProofService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105SEC04; };
 		3105SEC05 /* ServerSignatureVerifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105SEC06; };
+		A57A00000000000000000001 /* SecureAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57A00000000000000000002; };
+		A57A00000000000000000003 /* ProtectedArtifactDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57A00000000000000000004; };
+		A57A00000000000000000005 /* ProtectedDownloadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57A00000000000000000006; };
+		A57A00000000000000000007 /* NetworkAccessGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57A00000000000000000008; };
+		A57B00000000000000000001 /* BinaryIntegrity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57B00000000000000000002; };
+		A57B00000000000000000003 /* IntegrityAnchor.c in Sources */ = {isa = PBXBuildFile; fileRef = A57B00000000000000000004; };
+		A57C00000000000000000001 /* ReleaseIntegrity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57C00000000000000000002; };
+		A57C00000000000000000003 /* ProtectedOperationPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57C00000000000000000004; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -170,6 +178,15 @@
 		3105SEC02 /* DeviceIdentityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceIdentityService.swift; sourceTree = "<group>"; };
 		3105SEC04 /* RequestProofService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RequestProofService.swift; sourceTree = "<group>"; };
 		3105SEC06 /* ServerSignatureVerifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerSignatureVerifier.swift; sourceTree = "<group>"; };
+		A57A00000000000000000002 /* SecureAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureAPIClient.swift; sourceTree = "<group>"; };
+		A57A00000000000000000004 /* ProtectedArtifactDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtectedArtifactDecoder.swift; sourceTree = "<group>"; };
+		A57A00000000000000000006 /* ProtectedDownloadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtectedDownloadService.swift; sourceTree = "<group>"; };
+		A57A00000000000000000008 /* NetworkAccessGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkAccessGate.swift; sourceTree = "<group>"; };
+		A57B00000000000000000002 /* BinaryIntegrity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BinaryIntegrity.swift; sourceTree = "<group>"; };
+		A57B00000000000000000004 /* IntegrityAnchor.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = IntegrityAnchor.c; sourceTree = "<group>"; };
+		A57B00000000000000000005 /* IntegrityAnchor.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = IntegrityAnchor.h; sourceTree = "<group>"; };
+		A57C00000000000000000002 /* ReleaseIntegrity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseIntegrity.swift; sourceTree = "<group>"; };
+		A57C00000000000000000004 /* ProtectedOperationPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtectedOperationPolicy.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -307,6 +324,15 @@
 				3105SEC02 /* DeviceIdentityService.swift */,
 				3105SEC04 /* RequestProofService.swift */,
 				3105SEC06 /* ServerSignatureVerifier.swift */,
+				A57A00000000000000000002 /* SecureAPIClient.swift */,
+				A57A00000000000000000004 /* ProtectedArtifactDecoder.swift */,
+				A57A00000000000000000006 /* ProtectedDownloadService.swift */,
+				A57A00000000000000000008 /* NetworkAccessGate.swift */,
+				A57B00000000000000000002 /* BinaryIntegrity.swift */,
+				A57B00000000000000000004 /* IntegrityAnchor.c */,
+				A57B00000000000000000005 /* IntegrityAnchor.h */,
+				A57C00000000000000000002 /* ReleaseIntegrity.swift */,
+				A57C00000000000000000004 /* ProtectedOperationPolicy.swift */,
 				3105N106 /* GrappaHelper.m */,
 				3105N107 /* GrappaHelper.h */,
 			);
@@ -344,7 +370,7 @@
 				3105A700 /* Sources */,
 				3105A300 /* Frameworks */,
 				3105A800 /* Resources */,
-				3105A901 /* PostBuild Obfuscation */,
+				3105A901 /* Release Binary Hardening */,
 			);
 			buildRules = (
 			);
@@ -398,18 +424,18 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		3105A901 /* PostBuild Obfuscation */ = {
+		3105A901 /* Release Binary Hardening */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = ();
 			inputPaths = (
 				"$(TARGET_BUILD_DIR)/$(EXECUTABLE_PATH)",
 			);
-			name = "PostBuild Obfuscation";
+			name = "Release Binary Hardening";
 			outputPaths = ();
-			runOnlyForDeploymentPostprocessing = 1;
+			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "#!/bin/sh\nBINARY=\"$TARGET_BUILD_DIR/$EXECUTABLE_PATH\"\nif [ -f \"$BINARY\" ]; then\n  echo \"[obf] Post-build obfuscation applied\"\nfi\n";
+			shellScript = "#!/bin/sh\nset -eu\nif [ \"${CONFIGURATION:-}\" != \"Release\" ]; then\n  exit 0\nfi\nBINARY=\"$TARGET_BUILD_DIR/$EXECUTABLE_PATH\"\nSCRIPT=\"$PROJECT_DIR/tools/embed_integrity_hash.py\"\nif [ ! -f \"$BINARY\" ] || [ ! -f \"$SCRIPT\" ]; then\n  echo \"[hardening] executable or integrity tool missing\" >&2\n  exit 1\nfi\nPYTHON=$(command -v python3 || true)\nif [ -z \"$PYTHON\" ]; then\n  echo \"[hardening] python3 is required\" >&2\n  exit 1\nfi\n\"$PYTHON\" \"$SCRIPT\" \"$BINARY\"\nxcrun strip -S -x \"$BINARY\"\n\"$PYTHON\" \"$SCRIPT\" --verify \"$BINARY\"\necho \"[hardening] integrity hash embedded and local/debug symbols stripped\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -475,6 +501,14 @@
 				3105SEC01,
 				3105SEC03,
 				3105SEC05,
+				A57A00000000000000000001,
+				A57A00000000000000000003,
+				A57A00000000000000000005,
+				A57A00000000000000000007,
+				A57B00000000000000000001,
+				A57B00000000000000000003,
+				A57C00000000000000000001,
+				A57C00000000000000000003,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -501,7 +535,7 @@
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CODE_SIGN_ENTITLEMENTS = ThreeOneOSFive/ThreeOneOSFive.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 12;
+				CURRENT_PROJECT_VERSION = 14;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -518,7 +552,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2.6;
+				MARKETING_VERSION = 1.2.7;
 				OTHER_LDFLAGS = "-lz -lc++";
 				PRODUCT_BUNDLE_IDENTIFIER = "com.apple.mobile.MobileHouseArrest";
 				PRODUCT_NAME = Astra;
@@ -536,8 +570,14 @@
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CODE_SIGN_ENTITLEMENTS = ThreeOneOSFive/ThreeOneOSFive.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 12;
+				CURRENT_PROJECT_VERSION = 14;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEPLOYMENT_POSTPROCESSING = YES;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_TESTABILITY = NO;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = YES;
+				GCC_SYMBOLS_PRIVATE_EXTERN = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ThreeOneOSFive/Info.plist;
@@ -553,12 +593,16 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2.6;
+				MARKETING_VERSION = 1.2.7;
 				OTHER_LDFLAGS = "-lz -lc++";
+				LD_EXPORT_GLOBAL_SYMBOLS = NO;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.apple.mobile.MobileHouseArrest";
 				PRODUCT_NAME = Astra;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OBJC_BRIDGING_HEADER = "ThreeOneOSFive/ThreeOneOSFive-Bridging-Header.h";
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_REFLECTION_METADATA_LEVEL = "without-names";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				STRIP_INSTALLED_PRODUCT = YES;
@@ -669,9 +713,13 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEPLOYMENT_POSTPROCESSING = YES;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				ENABLE_TESTABILITY = NO;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = YES;
+				GCC_SYMBOLS_PRIVATE_EXTERN = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -683,9 +731,11 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
+				LD_EXPORT_GLOBAL_SYMBOLS = NO;
 				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_REFLECTION_METADATA_LEVEL = "without-names";
 				VALIDATE_PRODUCT = YES;
 				STRIP_INSTALLED_PRODUCT = YES;
 				STRIP_STYLE = all;

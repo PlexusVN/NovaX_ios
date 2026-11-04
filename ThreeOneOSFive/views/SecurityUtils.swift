@@ -106,28 +106,37 @@ enum HMACUtils {
 enum NetworkSecurityError: LocalizedError {
     case proxyConfigured
     case tlsInterceptionDetected
+    case connectionUnverified
 
     var errorDescription: String? {
         switch self {
         case .proxyConfigured:
             return "Lỗi hệ thống: phát hiện HTTP/HTTPS proxy. Hãy tắt ProxyPin, proxy hoặc VPN bắt gói tin rồi thử lại. LocalDevVPN của AirLift vẫn được hỗ trợ."
         case .tlsInterceptionDetected:
-            return "Lỗi hệ thống: kết nối HTTPS đang bị giải mã bởi chứng chỉ CA proxy. Hãy tắt ProxyPin/proxy VPN và gỡ hoặc tắt tin cậy chứng chỉ CA rồi thử lại."
+            return "Không thể xác minh chứng chỉ máy chủ. Nếu đang dùng ProxyPin hoặc proxy HTTPS, hãy tắt proxy rồi kiểm tra lại."
+        case .connectionUnverified:
+            return "Chưa xác minh được kết nối bảo mật. Hãy kiểm tra mạng rồi thử lại."
         }
     }
 }
 
-private enum AstraServerTrust {
-    static let protectedHost = "zynox.click"
+enum AstraServerTrust {
+    // Keep the production origin out of the plaintext string table. This is a
+    // static-analysis speed bump only; trust still comes from the certificate
+    // pin and signed server protocol below.
+    static let protectedHost = Obf.s([
+        221, 222, 201, 200, 223, 137, 196, 203, 206, 196, 204
+    ], 0xA7)
+    static let protectedOrigin = Obf.s([
+        207, 211, 211, 215, 212, 157, 136, 136, 221, 222,
+        201, 200, 223, 137, 196, 203, 206, 196, 204
+    ], 0xA7)
 
-    // SHA-256 of the DER certificates currently authorized for zynox.click:
-    // the active leaf (renewed GTS WE1), previous leaf, Google Trust Services WE1 intermediate,
-    // and its GlobalSign ECC Root CA R4.
-    private static let certificatePins: Set<String> = [
-        "7NfgIVpP+fdJQCMiloG7ljIWxP5OZEiAGfsc6+jgcQA=", // Active GTS WE1 Leaf
-        "IdQUF8E+9XNz3x4jmjWBYdYAZvahNfxagxuz9wc77wA=", // Previous Leaf
-        "oof/q3Ysxpom1IIDft9wH2U86JkCXGKn5cuIu5tBnLs=", // GTS WE1 Intermediate
-        "sIXXC5ZPGRpz5K8NVK56Dgeq/a+bcd0IYhOKtzJaJKI="  // GlobalSign Root CA R4
+    // SHA-256 of the exact leaf DER, independently checked over system-trusted
+    // TLS on 2026-11-03 (certificate expires 2027-01-27). No CA/root pin or
+    // unverified backup is accepted. Ship a verified replacement before rotation.
+    static let leafCertificatePins: Set<String> = [
+        "7NfgIVpP+fdJQCMiloG7ljIWxP5OZEiAGfsc6+jgcQA="
     ]
 
     static func accepts(_ trust: SecTrust, host: String) -> Bool {
@@ -136,68 +145,102 @@ private enum AstraServerTrust {
         var trustError: CFError?
         guard SecTrustEvaluateWithError(trust, &trustError) else { return false }
 
-        if let chain = SecTrustCopyCertificateChain(trust) as? [SecCertificate] {
-            for certificate in chain {
-                let der = SecCertificateCopyData(certificate) as Data
-                let pin = Data(SHA256.hash(data: der)).base64EncodedString()
-                if certificatePins.contains(pin) { return true }
-            }
-        }
-
-        // Khi SecTrustEvaluateWithError đã thẩm định thành công theo chính sách SSL chuẩn của Apple
-        // (chứng chỉ hợp lệ, tên miền zynox.click chuẩn, CA tin cậy, không bị giải mã bởi proxy),
-        // cho phép kết nối để tránh việc Cloudflare tự động xoay SSL làm gián đoạn người dùng.
-        return true
+        guard let chain = SecTrustCopyCertificateChain(trust) as? [SecCertificate],
+              let leaf = chain.first else { return false }
+        let der = SecCertificateCopyData(leaf) as Data
+        return leafCertificatePins.contains(Data(SHA256.hash(data: der)).base64EncodedString())
     }
 }
 
-final class CertPinningDelegate: NSObject, URLSessionDelegate {
+final class CertPinningDelegate: NSObject, URLSessionTaskDelegate {
     static let shared = CertPinningDelegate()
 
     func urlSession(_ session: URLSession,
                     didReceive challenge: URLAuthenticationChallenge,
                     completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        handle(challenge, completionHandler: completionHandler)
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    didReceive challenge: URLAuthenticationChallenge,
+                    completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        handle(challenge, completionHandler: completionHandler)
+    }
+
+    private func handle(_ challenge: URLAuthenticationChallenge,
+                        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
         guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
               challenge.protectionSpace.host.caseInsensitiveCompare(AstraServerTrust.protectedHost) == .orderedSame,
               let trust = challenge.protectionSpace.serverTrust else {
-            completionHandler(.performDefaultHandling, nil)
+            completionHandler(.cancelAuthenticationChallenge, nil)
             return
         }
         guard AstraServerTrust.accepts(trust, host: challenge.protectionSpace.host) else {
+            Task { @MainActor in NetworkAccessGate.shared.recordCertificateFailure() }
             completionHandler(.cancelAuthenticationChallenge, nil)
             return
         }
         completionHandler(.useCredential, URLCredential(trust: trust))
     }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest,
+                    completionHandler: @escaping (URLRequest?) -> Void) {
+        // Never replay credentials, a signed body or a request proof at a
+        // redirect target, even if it happens to use the same host.
+        completionHandler(nil)
+    }
 }
 
-private final class ProxyProbeDelegate: NSObject, URLSessionDelegate {
+private final class ProxyProbeDelegate: NSObject, URLSessionTaskDelegate {
     private let lock = NSLock()
     private var rejectedTrust = false
+    private var verifiedTrust = false
 
     var detectedInterception: Bool {
-        lock.lock()
-        defer { lock.unlock() }
+        lock.lock(); defer { lock.unlock() }
         return rejectedTrust
+    }
+    var verifiedPinnedTrust: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return verifiedTrust && !rejectedTrust
     }
 
     func urlSession(_ session: URLSession,
                     didReceive challenge: URLAuthenticationChallenge,
                     completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        handle(challenge, completionHandler: completionHandler)
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    didReceive challenge: URLAuthenticationChallenge,
+                    completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        handle(challenge, completionHandler: completionHandler)
+    }
+
+    private func handle(_ challenge: URLAuthenticationChallenge,
+                        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
         guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
               challenge.protectionSpace.host.caseInsensitiveCompare(AstraServerTrust.protectedHost) == .orderedSame,
               let trust = challenge.protectionSpace.serverTrust else {
-            completionHandler(.performDefaultHandling, nil)
+            completionHandler(.cancelAuthenticationChallenge, nil)
             return
         }
-        if AstraServerTrust.accepts(trust, host: challenge.protectionSpace.host) {
-            completionHandler(.useCredential, URLCredential(trust: trust))
-        } else {
-            lock.lock()
-            rejectedTrust = true
-            lock.unlock()
-            completionHandler(.cancelAuthenticationChallenge, nil)
-        }
+        let accepted = AstraServerTrust.accepts(trust, host: challenge.protectionSpace.host)
+        lock.lock()
+        verifiedTrust = verifiedTrust || accepted
+        rejectedTrust = rejectedTrust || !accepted
+        lock.unlock()
+        completionHandler(accepted ? .useCredential : .cancelAuthenticationChallenge,
+                          accepted ? URLCredential(trust: trust) : nil)
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest,
+                    completionHandler: @escaping (URLRequest?) -> Void) {
+        completionHandler(nil)
     }
 }
 
@@ -207,31 +250,68 @@ final class NetworkSecurityGuard {
     private init() {}
 
     func requireSafeConnection() async throws {
-        if Self.hasExplicitSystemProxy() {
-            throw NetworkSecurityError.proxyConfigured
+        switch await probeConnection() {
+        case .allowed: return
+        case .blocked(let message), .unavailable(let message):
+            throw NetworkAccessError.denied(message)
         }
+    }
 
+    /// A fresh, isolated session reduces connection reuse. URLSession does not
+    /// expose a universal "disable TLS session resumption" switch: if no actual
+    /// server-trust challenge was verified, the result remains unavailable.
+    /// The probe never calls SecureAPIClient and never carries API credentials.
+    func probeConnection() async -> NetworkProbeResult {
+        if Self.hasExplicitSystemProxy() {
+            return .blocked(NetworkSecurityError.proxyConfigured.localizedDescription)
+        }
+        guard !Task.isCancelled else { return .unavailable(NetworkSecurityError.connectionUnverified.localizedDescription) }
         let delegate = ProxyProbeDelegate()
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpShouldSetCookies = false
         configuration.httpCookieAcceptPolicy = .never
+        configuration.urlCredentialStorage = nil
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        configuration.httpMaximumConnectionsPerHost = 1
+        configuration.httpShouldUsePipelining = false
         configuration.timeoutIntervalForRequest = 8
         configuration.timeoutIntervalForResource = 10
         let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
         defer { session.invalidateAndCancel() }
 
-        guard let url = URL(string: "https://zynox.click/Nova-logo.png") else { return }
+        guard let url = URL(string: AstraServerTrust.protectedOrigin
+                            + "/Nova-logo.png?network_probe=\(UUID().uuidString)") else {
+            return .unavailable(NetworkSecurityError.connectionUnverified.localizedDescription)
+        }
         var request = URLRequest(url: url)
+        // Express serves HEAD for this GET route without transferring the
+        // 1.4 MiB logo body on every five-second trust probe.
+        request.httpMethod = "HEAD"
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
+        request.setValue("close", forHTTPHeaderField: "Connection")
         do {
-            _ = try await session.data(for: request)
+            let (_, response) = try await withTaskCancellationHandler(operation: {
+                try await session.data(for: request)
+            }, onCancel: { session.invalidateAndCancel() })
+            if Self.hasExplicitSystemProxy() {
+                return .blocked(NetworkSecurityError.proxyConfigured.localizedDescription)
+            }
+            if delegate.detectedInterception {
+                return .blocked(NetworkSecurityError.tlsInterceptionDetected.localizedDescription)
+            }
+            guard !Task.isCancelled, delegate.verifiedPinnedTrust,
+                  let http = response as? HTTPURLResponse, http.statusCode == 200,
+                  http.url?.host?.caseInsensitiveCompare(AstraServerTrust.protectedHost) == .orderedSame else {
+                return .unavailable(NetworkSecurityError.connectionUnverified.localizedDescription)
+            }
+            return .allowed
         } catch {
             if delegate.detectedInterception {
-                throw NetworkSecurityError.tlsInterceptionDetected
+                return .blocked(NetworkSecurityError.tlsInterceptionDetected.localizedDescription)
             }
-            // Offline/DNS failures are handled by the protected API call. They
-            // must not be mislabeled as a proxy or block LocalDevVPN/AirLift.
+            return .unavailable(NetworkSecurityError.connectionUnverified.localizedDescription)
         }
     }
 
@@ -275,7 +355,7 @@ final class NetworkSecurityGuard {
 }
 
 // Legacy API (backward compat)
-var expectedServerPin: String { "oof/q3Ysxpom1IIDft9wH2U86JkCXGKn5cuIu5tBnLs=" }
+var expectedServerPin: String { "7NfgIVpP+fdJQCMiloG7ljIWxP5OZEiAGfsc6+jgcQA=" }
 
 // MARK: - Device Utils
 

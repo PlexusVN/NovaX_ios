@@ -1,0 +1,79 @@
+{
+  "warning": "PUBLIC TEST FIXTURE ONLY. All included keys and plaintext are intentionally public. Never trust this signer in production.",
+  "protocol": "astra-artifact-v1",
+  "signerPublicKeyPEM": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArt56jzZkdXL37yhvJGRt\nMQG5HB+6TNTTwKzCw5UvXw0H+P1NO9IMaFWjTMkA3rgop+KR8R1feK1t+1NQ74/V\nPxDXMrct1j8ABMQYnCOhGEBhUwCXxnkTPUGw8xbpZBI1iIIDb2074buQ7YoHfv8i\n7ltvGCjXIKV7QYKRt9swedzp31dtJuVaFjHFSa4oRLSiIQPubZlQdNoC6+mIcONZ\n3iseopHejvTw+6UAikeW4pgqRSMNytIMyAaz4JvsMKR7bo55OdPSMrpBm9PXkaEz\n/eOQCi5a1XOT9PJG4rMbEnG3FXR4SLzEBfZ7qUQl2wO6but9QjUhXSnjqNVG5cln\nWwIDAQAB\n-----END PUBLIC KEY-----\n",
+  "recipientPrivateKeyHex": "0000000000000000000000000000000000000000000000000000000000000001",
+  "recipientPublicKeyX963": "BGsX0fLhLEJH+Lzm5WOkQPJ3A32BLeszoPShOUXYmMKWT+NC4v4af5uO5+tKfA+eFivOM1drMV7Oy7ZAaDe/UfU=",
+  "expectedPlaintextUTF8": "Astra official artifact interoperability fixture v1.\n",
+  "expectedPlaintextHex": "4173747261206f6666696369616c20617274696661637420696e7465726f7065726162696c69747920666978747572652076312e0a",
+  "signedManifest": {
+    "protocol": "astra-artifact-v1",
+    "type": "manifest",
+    "algorithm": "RS256",
+    "keyId": "fixture-rsa-2048",
+    "body": {
+      "artifactId": "00000000-0000-4000-8000-000000000004",
+      "releaseId": "00000000-0000-4000-8000-000000000005",
+      "releaseVersion": 7,
+      "variant": "ffth",
+      "kind": "package",
+      "fileName": "fixture.3105",
+      "plaintextSHA256": "78a3b8c9954fa3d6d638d6cc5b4b8d0d5927835d6e47a32b6d17561d939da7a3",
+      "plaintextSize": 53,
+      "contentEncryption": {
+        "algorithm": "A256GCM",
+        "nonce": "uGWPiiRaSnDaSXMq",
+        "tag": "1pWqLTsqbq1loyEV9EP0gw=="
+      },
+      "ciphertextSHA256": "a67c5ef8dfa909aaec093c0786bd0254a60da84b569e93a7fc37ed3e3d99fa2e",
+      "ciphertextSize": 53
+    },
+    "signature": "j3iwHeI6E23xFCM2Lzeli61mG7uNDIp6/zNqkmlKrQT9AjhsYIKHYrYwvUBuKopbzUHyscwTD91DxOXdtYXnImCCFpQ3M50hQeI8cAUHlSYv2dc2e0NgGindR5Ur7Zi5JSPYzZlNMOerEm+ypHjgoXWk7izKZpjAHiEgahlNjMx6gfeQ4Ack58ZcbiCFF8yuJ9f4CGe9Tc4r1u7LzdRvgZ9CoVqQ5mXGfeMp9DnA3WXGSAcau0saZS45S+58KHuyWe/kLCLZVJdZrlR379RBjwTI7Pm8pb1/iFZBLWdAoP3xKx2CfK3uSGIxz3PD8Vp7mtXjPik79GZi7LUFmibaZg=="
+  },
+  "signedGrant": {
+    "protocol": "astra-artifact-v1",
+    "type": "grant",
+    "algorithm": "RS256",
+    "keyId": "fixture-rsa-2048",
+    "body": {
+      "grantId": "00000000-0000-4000-8000-000000000003",
+      "artifactId": "00000000-0000-4000-8000-000000000004",
+      "manifestDigest": "c3330541515d16a6bae5bbbe4d0e7bfb4a0c089ec0e24350dcfab42e2cf51ac2",
+      "recipientId": "00000000-0000-4000-8000-000000000001",
+      "recipientKeySHA256": "698bea63dc44a344663ff1429aea10842df27b6b991ef25866b2c6c02cdcc5be",
+      "sessionId": "00000000-0000-4000-8000-000000000002",
+      "requestNonce": "0102030405060708090a0b0c0d0e0f10",
+      "issuedAt": 1730000000,
+      "expiresAt": 1730000120,
+      "keyEnvelope": {
+        "algorithm": "P256-ECDH-HKDF-SHA256-A256GCM",
+        "ephemeralPublicKey": "BN/ASqeZUVADiU8R3ghL+PH0LWOfaXHDaS5fM9eKJW+weROqdW69w8CvtKOL//EGfqWxo2LdtXw1GkNkqe5alyc=",
+        "salt": "aBHu7XrlyDfiiUg87BLSw1v6gg6IkfslrGG3q3knINk=",
+        "nonce": "l/PQtnwhr0SF3CfC",
+        "ciphertext": "3Nb0w968Du7rAPQCUbnqy/0IjtqVE8GGY9iarr9EpEE=",
+        "tag": "qnLzQSNNaCE5HitrSxT5EA=="
+      }
+    },
+    "signature": "pjNt/X89fgHxVA6rrkpg75TIgQ5IYvvgORBSyymw5q0tVw9Ys277ichhnJgSj+YBosjbvAoKfnTTYFjNhYcU95Z1hzo4tIEosKgnu8Wr/77cwNqWEHwCj67ZDt/bEFKdlQvKVamQCvg9buPVeq1en6kfmSq+QxITUmXWdQgv+EWelxJz0JsA9yePJ5jZXuByXeMzasyfdFN72q5ikUuJnXk3fJ4oGce2OSYJt3xc5BnNpkcu0bVZXpH5D4pV6SbCJV/HqfQgm+BX+d4CVyCjE3ZULvzMWcheg5qtZ0ggZSPQsRYgnrbOJjqNlQDYxQL6zIwE1LbskFDQCQ1VcMa6HQ=="
+  },
+  "ciphertextBase64": "rqvPdoZPUW5lVk2/IVJVNsNIBVaKhvnK0ryDIok1ptKv174k5qfEjFR6HoA+AlBDwzYBmfk=",
+  "verificationContext": {
+    "now": 1730000001,
+    "recipientId": "00000000-0000-4000-8000-000000000001",
+    "sessionId": "00000000-0000-4000-8000-000000000002",
+    "requestNonce": "0102030405060708090a0b0c0d0e0f10"
+  },
+  "expected": {
+    "manifestSignatureInputUTF8": "{\"algorithm\":\"RS256\",\"body\":{\"artifactId\":\"00000000-0000-4000-8000-000000000004\",\"ciphertextSHA256\":\"a67c5ef8dfa909aaec093c0786bd0254a60da84b569e93a7fc37ed3e3d99fa2e\",\"ciphertextSize\":53,\"contentEncryption\":{\"algorithm\":\"A256GCM\",\"nonce\":\"uGWPiiRaSnDaSXMq\",\"tag\":\"1pWqLTsqbq1loyEV9EP0gw==\"},\"fileName\":\"fixture.3105\",\"kind\":\"package\",\"plaintextSHA256\":\"78a3b8c9954fa3d6d638d6cc5b4b8d0d5927835d6e47a32b6d17561d939da7a3\",\"plaintextSize\":53,\"releaseId\":\"00000000-0000-4000-8000-000000000005\",\"releaseVersion\":7,\"variant\":\"ffth\"},\"keyId\":\"fixture-rsa-2048\",\"protocol\":\"astra-artifact-v1\",\"type\":\"manifest\"}",
+    "grantSignatureInputUTF8": "{\"algorithm\":\"RS256\",\"body\":{\"artifactId\":\"00000000-0000-4000-8000-000000000004\",\"expiresAt\":1730000120,\"grantId\":\"00000000-0000-4000-8000-000000000003\",\"issuedAt\":1730000000,\"keyEnvelope\":{\"algorithm\":\"P256-ECDH-HKDF-SHA256-A256GCM\",\"ciphertext\":\"3Nb0w968Du7rAPQCUbnqy/0IjtqVE8GGY9iarr9EpEE=\",\"ephemeralPublicKey\":\"BN/ASqeZUVADiU8R3ghL+PH0LWOfaXHDaS5fM9eKJW+weROqdW69w8CvtKOL//EGfqWxo2LdtXw1GkNkqe5alyc=\",\"nonce\":\"l/PQtnwhr0SF3CfC\",\"salt\":\"aBHu7XrlyDfiiUg87BLSw1v6gg6IkfslrGG3q3knINk=\",\"tag\":\"qnLzQSNNaCE5HitrSxT5EA==\"},\"manifestDigest\":\"c3330541515d16a6bae5bbbe4d0e7bfb4a0c089ec0e24350dcfab42e2cf51ac2\",\"recipientId\":\"00000000-0000-4000-8000-000000000001\",\"recipientKeySHA256\":\"698bea63dc44a344663ff1429aea10842df27b6b991ef25866b2c6c02cdcc5be\",\"requestNonce\":\"0102030405060708090a0b0c0d0e0f10\",\"sessionId\":\"00000000-0000-4000-8000-000000000002\"},\"keyId\":\"fixture-rsa-2048\",\"protocol\":\"astra-artifact-v1\",\"type\":\"grant\"}",
+    "manifestCanonicalUTF8": "{\"algorithm\":\"RS256\",\"body\":{\"artifactId\":\"00000000-0000-4000-8000-000000000004\",\"ciphertextSHA256\":\"a67c5ef8dfa909aaec093c0786bd0254a60da84b569e93a7fc37ed3e3d99fa2e\",\"ciphertextSize\":53,\"contentEncryption\":{\"algorithm\":\"A256GCM\",\"nonce\":\"uGWPiiRaSnDaSXMq\",\"tag\":\"1pWqLTsqbq1loyEV9EP0gw==\"},\"fileName\":\"fixture.3105\",\"kind\":\"package\",\"plaintextSHA256\":\"78a3b8c9954fa3d6d638d6cc5b4b8d0d5927835d6e47a32b6d17561d939da7a3\",\"plaintextSize\":53,\"releaseId\":\"00000000-0000-4000-8000-000000000005\",\"releaseVersion\":7,\"variant\":\"ffth\"},\"keyId\":\"fixture-rsa-2048\",\"protocol\":\"astra-artifact-v1\",\"signature\":\"j3iwHeI6E23xFCM2Lzeli61mG7uNDIp6/zNqkmlKrQT9AjhsYIKHYrYwvUBuKopbzUHyscwTD91DxOXdtYXnImCCFpQ3M50hQeI8cAUHlSYv2dc2e0NgGindR5Ur7Zi5JSPYzZlNMOerEm+ypHjgoXWk7izKZpjAHiEgahlNjMx6gfeQ4Ack58ZcbiCFF8yuJ9f4CGe9Tc4r1u7LzdRvgZ9CoVqQ5mXGfeMp9DnA3WXGSAcau0saZS45S+58KHuyWe/kLCLZVJdZrlR379RBjwTI7Pm8pb1/iFZBLWdAoP3xKx2CfK3uSGIxz3PD8Vp7mtXjPik79GZi7LUFmibaZg==\",\"type\":\"manifest\"}",
+    "manifestDigest": "c3330541515d16a6bae5bbbe4d0e7bfb4a0c089ec0e24350dcfab42e2cf51ac2",
+    "contentAADUTF8": "{\"algorithm\":\"A256GCM\",\"artifactId\":\"00000000-0000-4000-8000-000000000004\",\"fileName\":\"fixture.3105\",\"kind\":\"package\",\"nonce\":\"uGWPiiRaSnDaSXMq\",\"plaintextSHA256\":\"78a3b8c9954fa3d6d638d6cc5b4b8d0d5927835d6e47a32b6d17561d939da7a3\",\"plaintextSize\":53,\"protocol\":\"astra-artifact-v1\",\"purpose\":\"artifact-content\",\"releaseId\":\"00000000-0000-4000-8000-000000000005\",\"releaseVersion\":7,\"variant\":\"ffth\"}",
+    "grantAADUTF8": "{\"algorithm\":\"P256-ECDH-HKDF-SHA256-A256GCM\",\"artifactId\":\"00000000-0000-4000-8000-000000000004\",\"ephemeralPublicKey\":\"BN/ASqeZUVADiU8R3ghL+PH0LWOfaXHDaS5fM9eKJW+weROqdW69w8CvtKOL//EGfqWxo2LdtXw1GkNkqe5alyc=\",\"expiresAt\":1730000120,\"grantId\":\"00000000-0000-4000-8000-000000000003\",\"issuedAt\":1730000000,\"manifestDigest\":\"c3330541515d16a6bae5bbbe4d0e7bfb4a0c089ec0e24350dcfab42e2cf51ac2\",\"nonce\":\"l/PQtnwhr0SF3CfC\",\"protocol\":\"astra-artifact-v1\",\"purpose\":\"device-key-wrap\",\"recipientId\":\"00000000-0000-4000-8000-000000000001\",\"recipientKeySHA256\":\"698bea63dc44a344663ff1429aea10842df27b6b991ef25866b2c6c02cdcc5be\",\"requestNonce\":\"0102030405060708090a0b0c0d0e0f10\",\"salt\":\"aBHu7XrlyDfiiUg87BLSw1v6gg6IkfslrGG3q3knINk=\",\"sessionId\":\"00000000-0000-4000-8000-000000000002\"}",
+    "hkdfInfoUTF8": "astra-artifact-v1/device-key-wrap",
+    "sharedSecretHex": "dfc04aa799515003894f11de084bf8f1f42d639f6971c3692e5f33d78a256fb0",
+    "wrappingKeyHex": "d73e2531524449602aaa0caa202cd6674d9d99b35255ca341e7ec868d548b0f7",
+    "contentKeyHex": "50f8d4fdbd653d0e2d97b65bed7950740809e1c79788dbbf2b89abb121ea1143"
+  },
+  "signerPublicKeyPKCS1Base64": "MIIBCgKCAQEArt56jzZkdXL37yhvJGRtMQG5HB+6TNTTwKzCw5UvXw0H+P1NO9IMaFWjTMkA3rgop+KR8R1feK1t+1NQ74/VPxDXMrct1j8ABMQYnCOhGEBhUwCXxnkTPUGw8xbpZBI1iIIDb2074buQ7YoHfv8i7ltvGCjXIKV7QYKRt9swedzp31dtJuVaFjHFSa4oRLSiIQPubZlQdNoC6+mIcONZ3iseopHejvTw+6UAikeW4pgqRSMNytIMyAaz4JvsMKR7bo55OdPSMrpBm9PXkaEz/eOQCi5a1XOT9PJG4rMbEnG3FXR4SLzEBfZ7qUQl2wO6but9QjUhXSnjqNVG5clnWwIDAQAB"
+}

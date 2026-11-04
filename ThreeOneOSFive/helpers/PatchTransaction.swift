@@ -1008,18 +1008,21 @@ enum PatchTransaction {
 
 enum DevicePatchService {
     static func apply(project: PatchProject) throws -> PatchTransactionReceipt {
-        let bundleIDs = orderedBundleIdentifiers(in: project)
-        return try withResolvedContainers(bundleIDs: bundleIDs) { roots in
-            try PatchTransaction.apply(
-                project: project,
-                backupRoot: try PatchProjectLibrary.backupRootURL(),
-                containerResolver: { bundleID in
-                    guard let root = roots[bundleID] else {
-                        throw PatchPackageError.targetAppUnavailable(bundleID)
+        try ReleaseCommitBarrier.requireAllowed()
+        return try ReleaseCommitBarrier.withCommit {
+            let bundleIDs = orderedBundleIdentifiers(in: project)
+            return try withResolvedContainers(bundleIDs: bundleIDs) { roots in
+                try PatchTransaction.apply(
+                    project: project,
+                    backupRoot: try PatchProjectLibrary.backupRootURL(),
+                    containerResolver: { bundleID in
+                        guard let root = roots[bundleID] else {
+                            throw PatchPackageError.targetAppUnavailable(bundleID)
+                        }
+                        return root
                     }
-                    return root
-                }
-            )
+                )
+            }
         }
     }
 
@@ -1042,18 +1045,21 @@ enum DevicePatchService {
         receipt: PatchTransactionReceipt,
         allowChangedTargets: Bool = false
     ) throws {
-        let bundleIDs = try PatchTransaction.requiredBundleIdentifiers(for: receipt)
-        try withResolvedContainers(bundleIDs: bundleIDs) { roots in
-            try PatchTransaction.restore(
-                receipt: receipt,
-                allowChangedTargets: allowChangedTargets,
-                containerResolver: { bundleID in
-                    guard let root = roots[bundleID] else {
-                        throw PatchPackageError.targetAppUnavailable(bundleID)
+        try ReleaseCommitBarrier.requireAllowed()
+        try ReleaseCommitBarrier.withCommit {
+            let bundleIDs = try PatchTransaction.requiredBundleIdentifiers(for: receipt)
+            try withResolvedContainers(bundleIDs: bundleIDs) { roots in
+                try PatchTransaction.restore(
+                    receipt: receipt,
+                    allowChangedTargets: allowChangedTargets,
+                    containerResolver: { bundleID in
+                        guard let root = roots[bundleID] else {
+                            throw PatchPackageError.targetAppUnavailable(bundleID)
+                        }
+                        return root
                     }
-                    return root
-                }
-            )
+                )
+            }
         }
     }
 
@@ -1061,18 +1067,21 @@ enum DevicePatchService {
         receipt: PatchTransactionReceipt,
         project: PatchProject
     ) throws {
-        let bundleIDs = try PatchTransaction.requiredBundleIdentifiers(for: receipt)
-        try withResolvedContainers(bundleIDs: bundleIDs) { roots in
-            try PatchTransaction.resetToAppliedState(
-                receipt: receipt,
-                fallbackProject: project,
-                containerResolver: { bundleID in
-                    guard let root = roots[bundleID] else {
-                        throw PatchPackageError.targetAppUnavailable(bundleID)
+        try ReleaseCommitBarrier.requireAllowed()
+        try ReleaseCommitBarrier.withCommit {
+            let bundleIDs = try PatchTransaction.requiredBundleIdentifiers(for: receipt)
+            try withResolvedContainers(bundleIDs: bundleIDs) { roots in
+                try PatchTransaction.resetToAppliedState(
+                    receipt: receipt,
+                    fallbackProject: project,
+                    containerResolver: { bundleID in
+                        guard let root = roots[bundleID] else {
+                            throw PatchPackageError.targetAppUnavailable(bundleID)
+                        }
+                        return root
                     }
-                    return root
-                }
-            )
+                )
+            }
         }
     }
 

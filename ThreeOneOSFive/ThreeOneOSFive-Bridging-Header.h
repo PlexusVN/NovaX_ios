@@ -6,3 +6,4 @@
 #import "helpers/AppIconHelper.h"
 #import "helpers/DisplayIdentity.h"
 #import "helpers/GrappaHelper.h"
+#import "helpers/IntegrityAnchor.h"

@@ -15,9 +15,29 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up release signing test runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
       - name: Set up Xcode version
         run: |
           xcodebuild -version
+
+      - name: Verify protected download CryptoKit interoperability
+        run: |
+          swiftc ThreeOneOSFive/helpers/SecureAPIClient.swift \
+            ThreeOneOSFive/helpers/NetworkAccessGate.swift \
+            ThreeOneOSFive/helpers/ServerSignatureVerifier.swift \
+            ThreeOneOSFive/helpers/ProtectedArtifactDecoder.swift \
+            Tests/ProtectedArtifactSelfCheck.swift -o "$RUNNER_TEMP/astra-security-selfcheck"
+          "$RUNNER_TEMP/astra-security-selfcheck" Tests/Fixtures/artifact_crypto_v1.json
+
+      - name: Verify license-scoped device identity and migration
+        run: |
+          swiftc ThreeOneOSFive/helpers/DeviceIdentityService.swift \
+            Tests/DeviceIdentitySelfCheck.swift -o "$RUNNER_TEMP/astra-identity-selfcheck"
+          "$RUNNER_TEMP/astra-identity-selfcheck"
 
       - name: Verify committed patched AirliftFFI
         run: |
@@ -27,6 +47,15 @@ jobs:
           # for the required patch markers and rejects unsafe direct writes.
           test -s Frameworks/AirliftFFI.xcframework/ios-arm64/libairlift_ffi.a
           test -s Frameworks/AirliftFFI.xcframework/ios-arm64-simulator/libairlift_ffi.a
+          nm -gj Frameworks/AirliftFFI.xcframework/ios-arm64/libairlift_ffi.a | grep -Fx "_ALGetGrappaToken"
+
+      - name: Verify binary integrity embedder
+        run: |
+          python3 -m unittest discover -s Tests -p 'test_*.py' -v
+          python3 -m py_compile ReleaseTools/macho_release.py ReleaseTools/seal_release.py
+          swiftc ThreeOneOSFive/helpers/ProtectedOperationPolicy.swift \
+            Tests/ProtectedOperationSelfCheck.swift -o "$RUNNER_TEMP/astra-operation-selfcheck"
+          "$RUNNER_TEMP/astra-operation-selfcheck"
 
       - name: Build App (Unsigned)
         run: |
@@ -47,7 +76,12 @@ jobs:
           test -d "$APP_NAME"
           EXECUTABLE=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP_NAME/Info.plist")
           test -x "$APP_NAME/$EXECUTABLE"
-          nm -gj "$APP_NAME/$EXECUTABLE" | grep -Fx "_ALGetGrappaToken"
+          python3 tools/embed_integrity_hash.py --verify "$APP_NAME/$EXECUTABLE"
+          python3 ReleaseTools/macho_release.py "$APP_NAME/$EXECUTABLE" > "$RUNNER_TEMP/astra-release-shape.json"
+          if nm -gj "$APP_NAME/$EXECUTABLE" 2>/dev/null | grep -E "AntiTamper|JailbreakDetector|BinaryIntegrity|SignedReleaseIntegrity|ReleaseCommitBarrier|ProtectedDownloadService"; then
+            echo "Security symbols leaked from stripped Release executable" >&2
+            exit 1
+          fi
           strings "$APP_NAME/$EXECUTABLE" | grep -F "RemoteXPC timed out after 6s"
           strings "$APP_NAME/$EXECUTABLE" | grep -F "timeout fallback trying raw RPPairing"
           strings "$APP_NAME/$EXECUTABLE" | grep -F "AirTraffic write timed out after 180s; operation cancelled"

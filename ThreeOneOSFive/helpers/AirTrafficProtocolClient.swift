@@ -113,7 +113,48 @@ final class AirTrafficProtocolClient: ObservableObject {
     )
     private let ffiWorkState = FFIWorkState()
 
-    private init() {}
+    private init() {
+        cleanupOrphanedStagingDirectories()
+    }
+
+    private static let stagingPrefix = "novax-airlift-batch-"
+
+    /// The FFI currently consumes a directory path, so plaintext staging is
+    /// necessary. Keep it protected while locked, excluded from backups, and
+    /// owned by a narrowly named temporary directory with a random UUID.
+    private func makeProtectedStagingDirectory() throws -> URL {
+        var stage = FileManager.default.temporaryDirectory.appendingPathComponent(
+            Self.stagingPrefix + UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: stage, withIntermediateDirectories: false,
+            attributes: [.protectionKey: FileProtectionType.complete])
+        do {
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            try stage.setResourceValues(values)
+            return stage
+        } catch {
+            try? FileManager.default.removeItem(at: stage)
+            throw error
+        }
+    }
+
+    private func cleanupOrphanedStagingDirectories() {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory.standardizedFileURL.resolvingSymlinksInPath()
+        guard let entries = try? manager.contentsOfDirectory(at: root,
+            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey]) else { return }
+        for entry in entries where entry.lastPathComponent.hasPrefix(Self.stagingPrefix) {
+            let suffix = String(entry.lastPathComponent.dropFirst(Self.stagingPrefix.count))
+            guard let id = UUID(uuidString: suffix),
+                  id.uuidString.caseInsensitiveCompare(suffix) == .orderedSame,
+                  entry.deletingLastPathComponent().standardizedFileURL.path == root.path,
+                  let values = try? entry.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]),
+                  values.isDirectory == true, values.isSymbolicLink != true,
+                  entry.resolvingSymlinksInPath().deletingLastPathComponent().path == root.path else { continue }
+            // Only this transport's immediate UUID directories are eligible.
+            try? manager.removeItem(at: entry)
+        }
+    }
 
     func resetSession() {
         // Keep all access to AirliftFFI's process-global route state on the
@@ -181,6 +222,8 @@ final class AirTrafficProtocolClient: ObservableObject {
     }
 
     func writeFile(data: Data, targetPath: String) async throws {
+        _ = try await NetworkAccessGate.shared.requireAllowed()
+        try Task.checkCancellation()
         guard !isBusy else {
             throw AirLiftError.executionFailed("Một thao tác AirLift khác đang chạy. Vui lòng chờ hoàn tất.")
         }
@@ -194,31 +237,36 @@ final class AirTrafficProtocolClient: ObservableObject {
         defer { isBusy = false }
 
         try await verifyTransportAndPairing()
+        _ = try await NetworkAccessGate.shared.requireAllowed()
+        try Task.checkCancellation()
         let pairingPath = try activePairingPath()
         verificationLevel = .none
         // Never write after a failed canary. Re-run it for every transaction,
         // because a cached success becomes stale after a VPN/RSD reconnect.
         try await verifyCanary(pairingPath: pairingPath, targetDirectory: directory)
-        try? await Task.sleep(nanoseconds: 200_000_000)
+        _ = try await NetworkAccessGate.shared.requireAllowed()
+        try await Task.sleep(nanoseconds: 200_000_000)
 
-        let stage = FileManager.default.temporaryDirectory
-            .appendingPathComponent("novax-airlift-\(UUID().uuidString)", isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: stage) }
+        let stagingLease = AirLiftStagingLease(url: try makeProtectedStagingDirectory())
+        let stage = stagingLease.url
         do {
-            try FileManager.default.createDirectory(at: stage, withIntermediateDirectories: false)
             try data.write(
                 to: stage.appendingPathComponent(filename),
-                options: [.atomic]
+                options: [.atomic, .completeFileProtection]
             )
         } catch {
             throw AirLiftError.filePayloadCreationFailed
         }
 
         do {
+            let networkGeneration = try await NetworkAccessGate.shared.requireAllowed()
+            try Task.checkCancellation()
             try await writeDirectory(
                 pairingPath: pairingPath,
                 sourceDirectory: stage.path,
-                targetDirectory: directory
+                stagingLease: stagingLease,
+                targetDirectory: directory,
+                networkGeneration: networkGeneration
             )
         } catch {
             verificationLevel = .none
@@ -239,6 +287,8 @@ final class AirTrafficProtocolClient: ObservableObject {
     }
 
     func writeFiles(_ files: [String: Data], targetDirectory: String) async throws {
+        _ = try await NetworkAccessGate.shared.requireAllowed()
+        try Task.checkCancellation()
         guard !isBusy else {
             throw AirLiftError.executionFailed("Một thao tác AirLift khác đang chạy. Vui lòng chờ hoàn tất.")
         }
@@ -249,16 +299,17 @@ final class AirTrafficProtocolClient: ObservableObject {
         defer { isBusy = false }
 
         try await verifyTransportAndPairing()
+        _ = try await NetworkAccessGate.shared.requireAllowed()
+        try Task.checkCancellation()
         let pairingPath = try activePairingPath()
         verificationLevel = .none
         try await verifyCanary(pairingPath: pairingPath, targetDirectory: directory)
-        try? await Task.sleep(nanoseconds: 200_000_000)
+        _ = try await NetworkAccessGate.shared.requireAllowed()
+        try await Task.sleep(nanoseconds: 200_000_000)
 
-        let stage = FileManager.default.temporaryDirectory
-            .appendingPathComponent("novax-airlift-batch-\(UUID().uuidString)", isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: stage) }
+        let stagingLease = AirLiftStagingLease(url: try makeProtectedStagingDirectory())
+        let stage = stagingLease.url
         do {
-            try FileManager.default.createDirectory(at: stage, withIntermediateDirectories: false)
             for (name, data) in files {
                 guard !name.isEmpty, name == (name as NSString).lastPathComponent,
                       name != ".", name != ".." else {
@@ -266,7 +317,7 @@ final class AirTrafficProtocolClient: ObservableObject {
                 }
                 try data.write(
                     to: stage.appendingPathComponent(name),
-                    options: [.atomic]
+                    options: [.atomic, .completeFileProtection]
                 )
             }
         } catch let error as AirLiftError {
@@ -276,10 +327,14 @@ final class AirTrafficProtocolClient: ObservableObject {
         }
 
         do {
+            let networkGeneration = try await NetworkAccessGate.shared.requireAllowed()
+            try Task.checkCancellation()
             try await writeDirectory(
                 pairingPath: pairingPath,
                 sourceDirectory: stage.path,
-                targetDirectory: directory
+                stagingLease: stagingLease,
+                targetDirectory: directory,
+                networkGeneration: networkGeneration
             )
         } catch {
             verificationLevel = .none
@@ -448,20 +503,23 @@ final class AirTrafficProtocolClient: ObservableObject {
     }
 
     private func verifyCanary(pairingPath: String, targetDirectory: String) async throws {
+        try ReleaseCommitBarrier.requireAllowed()
         verificationLevel = .none
         let result: FFIStringResult = try await runBlocking(name: "Astra.AirLift.Canary", timeout: 195) {
-            var json: UnsafeMutablePointer<CChar>?
-            var error: UnsafeMutablePointer<CChar>?
-            let code = pairingPath.withCString { pairing in
-                targetDirectory.withCString { target in
-                    al_exploit_run(pairing, target, novaAirLiftLogCallback, nil, &json, &error)
+            try ReleaseCommitBarrier.withCommit {
+                var json: UnsafeMutablePointer<CChar>?
+                var error: UnsafeMutablePointer<CChar>?
+                let code = pairingPath.withCString { pairing in
+                    targetDirectory.withCString { target in
+                        al_exploit_run(pairing, target, novaAirLiftLogCallback, nil, &json, &error)
+                    }
                 }
+                return FFIStringResult(
+                    code: code,
+                    value: Self.consumeString(&json),
+                    error: Self.consumeString(&error)
+                )
             }
-            return FFIStringResult(
-                code: code,
-                value: Self.consumeString(&json),
-                error: Self.consumeString(&error)
-            )
         }
         guard result.code == 0 else {
             if Self.isPairingRevokedError(result.error) {
@@ -482,21 +540,34 @@ final class AirTrafficProtocolClient: ObservableObject {
     private func writeDirectory(
         pairingPath: String,
         sourceDirectory: String,
-        targetDirectory: String
+        stagingLease: AirLiftStagingLease,
+        targetDirectory: String,
+        networkGeneration: UInt64
     ) async throws {
+        // This is the last suspension-free check before enqueueing native I/O.
+        // Once the C writer starts it has no cancellation API; block later
+        // operations rather than interrupting a file transaction mid-write.
+        try Task.checkCancellation()
+        try NetworkAccessGate.shared.validateGeneration(networkGeneration)
+        try ReleaseCommitBarrier.requireAllowed()
         let result: FFIVoidResult = try await runBlocking(name: "Astra.AirLift.Write", timeout: 195) {
-            var error: UnsafeMutablePointer<CChar>?
-            let code = pairingPath.withCString { pairing in
-                sourceDirectory.withCString { source in
-                    targetDirectory.withCString { target in
-                        al_exploit_write_dir(
-                            pairing, source, target,
-                            novaAirLiftLogCallback, nil, &error
-                        )
+            // The native operation owns the staging files until it actually
+            // returns. A Swift timeout must not delete its input underneath it.
+            defer { withExtendedLifetime(stagingLease) {} }
+            return try ReleaseCommitBarrier.withCommit {
+                var error: UnsafeMutablePointer<CChar>?
+                let code = pairingPath.withCString { pairing in
+                    sourceDirectory.withCString { source in
+                        targetDirectory.withCString { target in
+                            al_exploit_write_dir(
+                                pairing, source, target,
+                                novaAirLiftLogCallback, nil, &error
+                            )
+                        }
                     }
                 }
+                return FFIVoidResult(code: code, error: Self.consumeString(&error))
             }
-            return FFIVoidResult(code: code, error: Self.consumeString(&error))
         }
         guard result.code == 0 else {
             if Self.isPairingRevokedError(result.error) {
@@ -570,6 +641,12 @@ private struct FFIStringResult: Sendable {
     let code: Int32
     let value: String
     let error: String
+}
+
+private final class AirLiftStagingLease: @unchecked Sendable {
+    let url: URL
+    init(url: URL) { self.url = url }
+    deinit { try? FileManager.default.removeItem(at: url) }
 }
 
 private struct FFIVoidResult: Sendable {

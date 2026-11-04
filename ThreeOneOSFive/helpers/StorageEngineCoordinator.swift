@@ -56,6 +56,10 @@ final class StorageEngineCoordinator: ObservableObject {
     
     /// Writes or replaces a file in the destination path using the optimal engine.
     func writeFile(data: Data, toPath destinationPath: String) async throws {
+        let networkGeneration = try await NetworkAccessGate.shared.requireAllowed()
+        try Task.checkCancellation()
+        try NetworkAccessGate.shared.validateGeneration(networkGeneration)
+        try ReleaseCommitBarrier.requireAllowed()
         if isAirLiftActive {
             guard isAirTrafficEngineLinked else {
                 throw AirLiftError.executionFailed("AirTraffic engine chưa được liên kết; thao tác ghi đã bị chặn an toàn.")
@@ -76,7 +80,9 @@ final class StorageEngineCoordinator: ObservableObject {
             if !FileManager.default.fileExists(atPath: parent.path) {
                 try? FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
             }
-            try data.write(to: url, options: .atomic)
+            try ReleaseCommitBarrier.withCommit {
+                try data.write(to: url, options: .atomic)
+            }
         }
     }
     
@@ -133,6 +139,7 @@ final class StorageEngineCoordinator: ObservableObject {
                 .resolveAppContainer(bundleID: bundleID)
         }
 
+        var completedBatches = 0
         for key in batches.keys.sorted(by: {
             if $0.bundleID != $1.bundleID { return $0.bundleID < $1.bundleID }
             return $0.relativeDirectory < $1.relativeDirectory
@@ -144,13 +151,22 @@ final class StorageEngineCoordinator: ObservableObject {
                 ? root
                 : (root as NSString).appendingPathComponent(key.relativeDirectory)
             do {
+                let networkGeneration = try await NetworkAccessGate.shared.requireAllowed()
+                try Task.checkCancellation()
+                try NetworkAccessGate.shared.validateGeneration(networkGeneration)
                 try await AirTrafficProtocolClient.shared.writeFiles(
                     files,
                     targetDirectory: destination
                 )
+                completedBatches += 1
             } catch {
                 if let airLiftError = error as? AirLiftError, airLiftError.requiresRePairing {
                     AirLiftGatekeeperManager.shared.triggerRePair(reason: "Pairing AirLift không còn hợp lệ: \(airLiftError.localizedDescription)")
+                }
+                if completedBatches > 0 {
+                    throw AirLiftError.executionFailed(
+                        "Đã ghi \(completedBatches) nhóm file trước khi thao tác dừng. Gói có thể được áp dụng một phần; cần kiểm tra lại trước khi tiếp tục. \(error.localizedDescription)"
+                    )
                 }
                 throw error
             }
