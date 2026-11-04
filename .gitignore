@@ -41,6 +41,7 @@ __pycache__/
 !/Tests/DeviceIdentitySelfCheck.swift
 !/Tests/test_embed_integrity_hash.py
 !/Tests/test_seal_release.py
+!/Tests/test_security_build_wiring.py
 !/Tests/ProtectedOperationSelfCheck.swift
 !/Tests/Fixtures/
 /Tests/Fixtures/*

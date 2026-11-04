@@ -179,6 +179,12 @@ struct ProtectedArtifactSelfCheck {
     }
 
     static func checkEndpointPolicy() throws {
+        try require(AstraServerTrust.protectedHost == "zynox.click", "production host decodes correctly")
+        try require(AstraServerTrust.protectedOrigin == "https://" + AstraServerTrust.protectedHost,
+                    "production origin agrees with endpoint policy")
+        try require(!AstraServerTrust.leafCertificatePins.isEmpty &&
+                    AstraServerTrust.leafCertificatePins.allSatisfy { Data(base64Encoded: $0)?.count == 32 },
+                    "production pins remain SHA256 leaf digests")
         for address in [
             "https://zynox.click/api/v2/artifacts/sync",
             "https://zynox.click/api/v2/artifacts/resolve",

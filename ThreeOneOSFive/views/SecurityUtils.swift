@@ -120,38 +120,6 @@ enum NetworkSecurityError: LocalizedError {
     }
 }
 
-enum AstraServerTrust {
-    // Keep the production origin out of the plaintext string table. This is a
-    // static-analysis speed bump only; trust still comes from the certificate
-    // pin and signed server protocol below.
-    static let protectedHost = Obf.s([
-        221, 222, 201, 200, 223, 137, 196, 203, 206, 196, 204
-    ], 0xA7)
-    static let protectedOrigin = Obf.s([
-        207, 211, 211, 215, 212, 157, 136, 136, 221, 222,
-        201, 200, 223, 137, 196, 203, 206, 196, 204
-    ], 0xA7)
-
-    // SHA-256 of the exact leaf DER, independently checked over system-trusted
-    // TLS on 2026-11-03 (certificate expires 2027-01-27). No CA/root pin or
-    // unverified backup is accepted. Ship a verified replacement before rotation.
-    static let leafCertificatePins: Set<String> = [
-        "7NfgIVpP+fdJQCMiloG7ljIWxP5OZEiAGfsc6+jgcQA="
-    ]
-
-    static func accepts(_ trust: SecTrust, host: String) -> Bool {
-        guard host.caseInsensitiveCompare(protectedHost) == .orderedSame else { return false }
-        SecTrustSetPolicies(trust, SecPolicyCreateSSL(true, host as CFString))
-        var trustError: CFError?
-        guard SecTrustEvaluateWithError(trust, &trustError) else { return false }
-
-        guard let chain = SecTrustCopyCertificateChain(trust) as? [SecCertificate],
-              let leaf = chain.first else { return false }
-        let der = SecCertificateCopyData(leaf) as Data
-        return leafCertificatePins.contains(Data(SHA256.hash(data: der)).base64EncodedString())
-    }
-}
-
 final class CertPinningDelegate: NSObject, URLSessionTaskDelegate {
     static let shared = CertPinningDelegate()
 

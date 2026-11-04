@@ -85,6 +85,7 @@
 		A57B00000000000000000003 /* IntegrityAnchor.c in Sources */ = {isa = PBXBuildFile; fileRef = A57B00000000000000000004; };
 		A57C00000000000000000001 /* ReleaseIntegrity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57C00000000000000000002; };
 		A57C00000000000000000003 /* ProtectedOperationPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57C00000000000000000004; };
+		A57D00000000000000000001 /* AstraServerTrust.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57D00000000000000000002; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -187,6 +188,7 @@
 		A57B00000000000000000005 /* IntegrityAnchor.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = IntegrityAnchor.h; sourceTree = "<group>"; };
 		A57C00000000000000000002 /* ReleaseIntegrity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseIntegrity.swift; sourceTree = "<group>"; };
 		A57C00000000000000000004 /* ProtectedOperationPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtectedOperationPolicy.swift; sourceTree = "<group>"; };
+		A57D00000000000000000002 /* AstraServerTrust.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AstraServerTrust.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -333,6 +335,7 @@
 				A57B00000000000000000005 /* IntegrityAnchor.h */,
 				A57C00000000000000000002 /* ReleaseIntegrity.swift */,
 				A57C00000000000000000004 /* ProtectedOperationPolicy.swift */,
+				A57D00000000000000000002 /* AstraServerTrust.swift */,
 				3105N106 /* GrappaHelper.m */,
 				3105N107 /* GrappaHelper.h */,
 			);
@@ -509,6 +512,7 @@
 				A57B00000000000000000003,
 				A57C00000000000000000001,
 				A57C00000000000000000003,
+				A57D00000000000000000001,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

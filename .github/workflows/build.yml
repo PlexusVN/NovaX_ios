@@ -26,7 +26,8 @@ jobs:
 
       - name: Verify protected download CryptoKit interoperability
         run: |
-          swiftc ThreeOneOSFive/helpers/SecureAPIClient.swift \
+          swiftc ThreeOneOSFive/helpers/AstraServerTrust.swift \
+            ThreeOneOSFive/helpers/SecureAPIClient.swift \
             ThreeOneOSFive/helpers/NetworkAccessGate.swift \
             ThreeOneOSFive/helpers/ServerSignatureVerifier.swift \
             ThreeOneOSFive/helpers/ProtectedArtifactDecoder.swift \
