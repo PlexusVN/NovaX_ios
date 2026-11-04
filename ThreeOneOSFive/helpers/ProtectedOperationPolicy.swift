@@ -1,5 +1,40 @@
 import Foundation
 
+/// Sideloading, Developer Mode, an open port or a stale preference is not proof
+/// of jailbreak. Require independent, jailbreak-specific evidence families.
+enum SideloadSecurityPolicy {
+    static func permitsUnsealedLease(code: String?, assurance: String?) -> Bool {
+        code == "release_policy_not_enforced" && assurance == "policy_disabled"
+    }
+
+    static let jailbreakEvidenceFamilies: [Set<String>] = [
+        ["rootless_jb_root", "preboot_jailbreak_bootstrap"],
+        ["jailbreak_package_manager", "jailbreak_package_database"],
+        ["jailbreak_hook_framework"],
+        ["sandbox_escape_write"]
+    ]
+
+    static func confirmedJailbreakEvidence(_ evidence: [String]) -> [String] {
+        let observed = Set(evidence)
+        guard jailbreakEvidenceFamilies.filter({ !$0.isDisjoint(with: observed) }).count >= 2 else { return [] }
+        let admissible = jailbreakEvidenceFamilies.reduce(into: Set<String>()) { $0.formUnion($1) }
+        return observed.intersection(admissible).sorted()
+    }
+
+    static func instrumentationImage(_ path: String) -> String? {
+        if path.hasPrefix("/System/") || path.hasPrefix("/usr/lib/")
+            || path.hasPrefix("/private/preboot/Cryptexes/OS/") { return nil }
+        // Match the loaded module's basename, never a user-chosen .app folder
+        // or an unrelated directory containing "shadow", "liberty", etc.
+        let name = (path as NSString).lastPathComponent.lowercased()
+        let stems = ["fridagadget", "frida-agent", "cycript", "cynject", "libhooker",
+                     "libsubstitute", "substitute", "mobilesubstrate", "substrateloader",
+                     "libsubstrate", "substrate", "ellekit", "libellekit", "sslkillswitch",
+                     "sslkillswitch2", "shadow", "liberty", "abypass"]
+        return stems.first { name == $0 || name == $0 + ".dylib" || name.hasPrefix($0 + "-") }
+    }
+}
+
 /// Expiration uses monotonic time. The user's clock and timezone cannot extend
 /// a lease or incorrectly reject one when the device clock is a little behind.
 struct ProtectedLeasePolicy {

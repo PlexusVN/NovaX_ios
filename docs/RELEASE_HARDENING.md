@@ -1,5 +1,44 @@
 # Astra Release hardening
 
+## ESign/KSign false-positive hotfix — build 15
+
+No App Store receipt, Apple distribution certificate, Team ID, Developer Mode
+state or certificate name is required by these checks. A clean sideload is not
+a jailbreak. Normal re-signing must preserve the executable, original bundle ID,
+version/build and app resources; optional injected instrumentation is not a clean
+re-sign and remains blocked.
+
+- A missing `Astra.release` no longer opens the unsafe-device screen or sends a
+  jailbreak quarantine. The app still reports mask 0, not a successful release.
+  Protected access requires a nonce-bound, RSA-verified server response with
+  BOTH `release_policy_not_enforced` and `policy_disabled`. This honors the
+  existing explicit `ASTRA_RELEASE_POLICY_ENABLED=false` rollout mode. There is
+  no offline/client-only fallback and no automatic change to the server flag.
+- When release policy is enabled, an unsealed/unregistered build is still denied
+  protected access. Seal the trusted build and publish its registry before
+  distributing it. Seal signing is Astra's own release signature, not App Store
+  distribution and not the ESign/KSign iOS code signature.
+- Invalid present seals, changed code and unexpected dependencies still fail
+  closed. Packaging/read errors use a separate installation-verification screen;
+  they do not clear Keychain data, quarantine hardware or force-exit as jailbreak.
+- Open localhost ports, historical `CS_DEBUGGED`, DYLD environment variables,
+  SSH paths/preferences and a single stale root path do not independently prove
+  jailbreak. Quarantine requires two distinct strong evidence families: bootstrap,
+  package manager/database, hook framework on disk, or sandbox escape.
+- Runtime debugger attachment and identified injected modules still block. Image
+  checks use module basenames, not a user-selected app-folder substring.
+- The backend independently applies the same corroboration rule, so older app
+  reports containing only a port/debug flag or binary read error cannot punish a
+  device. Deploy updated `security_evidence.js`, `security_incidents.js`,
+  `automatic_enforcement.js` and `release_integrity.js` together. No SQL migration
+  or new npm dependency is required for this hotfix.
+
+Existing quarantines are not mass-cleared. Review an affected device or let its
+original quarantine expire. Signing/identity recovery does not bypass quarantine.
+CI regression checks cover policy/cryptography and build; actual signed ESign and
+KSign installs on physical devices must still be tested. No absolute no-false-
+positive or uncrackable guarantee is made.
+
 ## Release-only compiler/linker policy
 
 The `3105` Release configuration now enables:

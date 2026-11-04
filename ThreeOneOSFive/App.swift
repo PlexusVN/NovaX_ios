@@ -15,6 +15,7 @@ struct ThreeOneOSFiveApp: App {
     @AppStorage(AppLanguage.storageKey) private var languageCode = AppLanguage.vietnamese.rawValue
     @State private var showMainInterface = false
     @State private var runtimeSecurityEvidence: [String] = []
+    @State private var installationIssue: String?
     @Environment(\.scenePhase) private var scenePhase
     private let launchSecurityEvidence: [String]
 
@@ -22,10 +23,9 @@ struct ThreeOneOSFiveApp: App {
         let securityResult = AntiTamper.checkAtLaunch()
         let binaryIntegrity = BinaryIntegrity.evaluate()
         let signedRelease = SignedReleaseIntegrity.check()
-        var evidence = securityResult.evidenceCodes
-        if let binaryEvidence = binaryIntegrity.evidenceCode { evidence.append(binaryEvidence) }
-        if let releaseEvidence = signedRelease.evidenceCode { evidence.append(releaseEvidence) }
-        launchSecurityEvidence = Array(Set(evidence)).sorted()
+        launchSecurityEvidence = Array(Set(securityResult.evidenceCodes)).sorted()
+        _installationIssue = State(initialValue: binaryIntegrity.isCompromised || signedRelease.requiresLocalBlock
+            ? "Không thể xác minh bản cài đặt. Hãy cài lại bản phát hành chính thức, giữ nguyên Bundle ID và không bật chèn thư viện khi ký ESign/KSign. Lỗi này không tự khóa HWID." : nil)
 
         setupLogCapture()
         log("app: Astra launching — iOS \(AppInfo.osVersion) (\(AppInfo.osBuild)) \(AppInfo.machineName)")
@@ -35,7 +35,7 @@ struct ThreeOneOSFiveApp: App {
         if binaryIntegrity.isCompromised {
             log("app: executable integrity validation failed")
         }
-        if signedRelease.isCompromised {
+        if binaryIntegrity.isCompromised || signedRelease.requiresLocalBlock {
             ReleaseCommitBarrier.blockNewCommits()
             log("app: signed release validation failed")
         }
@@ -80,6 +80,9 @@ struct ThreeOneOSFiveApp: App {
                 if isSecurityLocked {
                     SecurityLockdownView(evidenceCodes: securityEvidence, auth: authManager)
                         .zIndex(1_000)
+                } else if let installationIssue {
+                    InstallationVerificationView(detail: installationIssue)
+                        .zIndex(900)
                 } else {
                 // Một màn hình duy nhất: SplashLoginView gộp loading + login
                 // → liền mạch, không có "chuyển cảnh" giữa 2 view (giống HTML)
@@ -150,7 +153,7 @@ struct ThreeOneOSFiveApp: App {
             .animation(.easeInOut(duration: 0.32), value: gatekeeper.canBypassGatekeeper)
             .preferredColorScheme(.dark)
             .task(id: authManager.authState == .verified) {
-                guard !isSecurityLocked else { return }
+                guard !isSecurityLocked, installationIssue == nil else { return }
                 guard authManager.authState == .verified else {
                     showMainInterface = false
                     return
@@ -164,13 +167,13 @@ struct ThreeOneOSFiveApp: App {
                 }
             }
             .onAppear {
-                guard !isSecurityLocked else { return }
+                guard !isSecurityLocked, installationIssue == nil else { return }
                 networkAccess.setActive(scenePhase == .active)
                 updateManager.checkForUpdate()
                 appState.detectSupport()
             }
             .onChange(of: scenePhase) { phase in
-                guard !isSecurityLocked else { return }
+                guard !isSecurityLocked, installationIssue == nil else { return }
                 // Switching to Settings invalidates the old network lease before
                 // any future API/apply work. Foreground always verifies again.
                 networkAccess.setActive(phase == .active)
@@ -180,7 +183,7 @@ struct ThreeOneOSFiveApp: App {
                 Task { await featurePatchService.syncFromServer(auth: authManager) }
             }
             .onChange(of: networkAccess.state) { state in
-                guard !isSecurityLocked else { return }
+                guard !isSecurityLocked, installationIssue == nil else { return }
                 if state == .blocked {
                     // Discard only the in-memory download session. A verified
                     // recovery opens a new one; license and device keys remain.
@@ -190,7 +193,7 @@ struct ThreeOneOSFiveApp: App {
                 }
             }
             .onChange(of: authManager.authState) { state in
-                guard !isSecurityLocked else { return }
+                guard !isSecurityLocked, installationIssue == nil else { return }
                 updateManager.checkForUpdate()
                 if state == .verified {
                     Task { await featurePatchService.syncFromServer(auth: authManager) }
@@ -201,11 +204,11 @@ struct ThreeOneOSFiveApp: App {
                 }
             }
             .onOpenURL { url in
-                guard !isSecurityLocked else { return }
+                guard !isSecurityLocked, installationIssue == nil else { return }
                 patchDraftCoordinator.presentImport(url)
             }
-            .task(id: isSecurityLocked) {
-                guard !isSecurityLocked else { return }
+            .task(id: isSecurityLocked || installationIssue != nil) {
+                guard !isSecurityLocked, installationIssue == nil else { return }
                 var cycle = 0
                 while !Task.isCancelled {
                     try? await Task.sleep(nanoseconds: 3_000_000_000)
@@ -222,14 +225,34 @@ struct ThreeOneOSFiveApp: App {
                     cycle += 1
                     if cycle % 5 == 0 {
                         let release = await ReleaseIntegrityRuntime.verify(force: true)
-                        if release.isCompromised {
+                        if release.requiresLocalBlock {
                             ReleaseCommitBarrier.blockNewCommits()
-                            runtimeSecurityEvidence = [release.evidenceCode ?? "signed_release_integrity_failed"]
+                            installationIssue = "Không thể xác minh bản cài đặt. Hãy đóng ứng dụng và cài lại bản phát hành chính thức. Lỗi này không tự khóa HWID."
                             return
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+/// Packaging/read/integrity failures are NOT device jailbreak evidence. This
+/// screen never quarantines an HWID, clears a Keychain identity or exits the app.
+private struct InstallationVerificationView: View {
+    let detail: String
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            VStack(spacing: 18) {
+                Image(systemName: "app.badge.checkmark")
+                    .font(.system(size: 42, weight: .semibold))
+                    .foregroundColor(.purple)
+                Text("Cần xác minh bản cài đặt")
+                    .font(.title3.weight(.bold)).foregroundColor(.white)
+                Text(detail).foregroundColor(.white.opacity(0.72))
+                    .multilineTextAlignment(.center)
+            }.padding(30)
         }
     }
 }

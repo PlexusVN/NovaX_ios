@@ -7,6 +7,12 @@ import Security
 
 enum SelfCheckFailure: Error { case failed(String) }
 
+// Only the live-debugger observation is needed by the release verifier. The
+// offline harness never inspects or changes the host's debugger/code-sign state.
+enum AntiTamper {
+    static let isDebuggerAttached = false
+}
+
 // The macOS harness exercises endpoint policy only, never a network session.
 // The iOS app links the real UIKit-based pinning delegate from SecurityUtils.
 final class CertPinningDelegate: NSObject, URLSessionTaskDelegate {
@@ -179,6 +185,17 @@ struct ProtectedArtifactSelfCheck {
     }
 
     static func checkEndpointPolicy() throws {
+        let missing = SignedReleaseCheckResult(enforced: true, mask: 0,
+            releaseID: "", sealDigest: "", issue: .missingSeal)
+        try require(missing.enforced && missing.mask == 0 && missing.isCompromised,
+                    "missing seal never pretends to be a verified release")
+        try require(!missing.requiresLocalBlock && missing.isMissingSeal,
+                    "missing seal can negotiate server policy without declaring jailbreak")
+        for issue in [SignedReleaseIssue.invalidSeal, .unreadableInstallation, .verificationFailed] {
+            let invalid = SignedReleaseCheckResult(enforced: true, mask: 0,
+                releaseID: "", sealDigest: "", issue: issue)
+            try require(invalid.requiresLocalBlock, "invalid present seal remains fail-closed")
+        }
         try require(AstraServerTrust.protectedHost == "zynox.click", "production host decodes correctly")
         try require(AstraServerTrust.protectedOrigin == "https://" + AstraServerTrust.protectedHost,
                     "production origin agrees with endpoint policy")

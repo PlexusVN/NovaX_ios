@@ -71,6 +71,24 @@ class SecurityBuildWiringTests(unittest.TestCase):
                        '! strings "$APP_NAME/$EXECUTABLE" | grep -F "proceeding with direct writeDirectory"']:
             self.assertIn(marker, workflow)
 
+    def test_packaging_is_not_device_quarantine_and_missing_seal_keeps_server_gate(self):
+        app = (ROOT / 'ThreeOneOSFive/App.swift').read_text(encoding='utf-8')
+        self.assertNotIn('evidence.append(binaryEvidence)', app)
+        self.assertNotIn('evidence.append(releaseEvidence)', app)
+        self.assertIn('InstallationVerificationView(detail: installationIssue)', app)
+        screen = app.split('private struct InstallationVerificationView: View')[1].split(
+            'private struct SecurityLockdownView: View')[0]
+        self.assertNotIn('quarantineForJailbreak', screen)
+        self.assertNotIn('exit(', screen)
+        download = (ROOT / 'ThreeOneOSFive/helpers/ProtectedDownloadService.swift').read_text(encoding='utf-8')
+        quarantine = download.split('func quarantineForJailbreak(')[1].split('func download(')[0]
+        self.assertIn('SideloadSecurityPolicy.confirmedJailbreakEvidence(evidenceCodes)', quarantine)
+        self.assertNotIn('binary_text_unreadable', quarantine)
+        lease = download.split('private func ensureReleaseLease()')[1].split('func reportReleaseIntegrityFailure')[0]
+        self.assertIn('post("/api/v2/security/integrity"', lease)
+        self.assertIn('SideloadSecurityPolicy.permitsUnsealedLease', lease)
+        self.assertIn('signed: true, purpose: "app-integrity-v1"', lease)
+
 
 if __name__ == '__main__':
     unittest.main()

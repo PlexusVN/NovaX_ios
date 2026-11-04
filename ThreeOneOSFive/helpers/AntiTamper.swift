@@ -45,8 +45,9 @@ enum JailbreakDetector {
             scores[code] = max(scores[code] ?? 0, score)
         }
 
-        // Strong runtime signals. These are not normal App Store/enterprise app
-        // conditions and therefore independently cross the decision threshold.
+        // Observations only. Scores remain diagnostic; the final decision below
+        // requires independent jailbreak-specific evidence families. Sideloading
+        // or a single unverified runtime/network observation is not jailbreak.
         if let value = ProcessInfo.processInfo.environment["DYLD_INSERT_LIBRARIES"], !value.isEmpty {
             record("dyld_injection_environment", 100)
         }
@@ -109,7 +110,7 @@ enum JailbreakDetector {
 
         let score = scores.values.reduce(0, +)
         let result = JailbreakDetectionResult(
-            isJailbroken: score >= 100,
+            isJailbroken: !SideloadSecurityPolicy.confirmedJailbreakEvidence(Array(scores.keys)).isEmpty,
             score: min(score, 999),
             evidenceCodes: scores.keys.sorted()
         )
@@ -218,19 +219,11 @@ enum AntiTamper {
     // MARK: - 2. Injected Dylibs (Frida, Cycript, Substrate, Hookers)
 
     static var detectedInjectedDylib: String? {
-        let suspiciousDylibs = [
-            "FridaGadget", "frida-agent", "cycript", "cynject",
-            "libhooker", "substitute", "substrate", "ellekit",
-            "sslkillswitch", "shadow", "Liberty", "ABypass"
-        ]
         let count = _dyld_image_count()
         for i in 0..<count {
             if let imageNameC = _dyld_get_image_name(i) {
-                let imageName = String(cString: imageNameC).lowercased()
-                for sus in suspiciousDylibs {
-                    if imageName.contains(sus.lowercased()) {
-                        return sus
-                    }
+                if let signal = SideloadSecurityPolicy.instrumentationImage(String(cString: imageNameC)) {
+                    return signal
                 }
             }
         }
@@ -306,9 +299,9 @@ enum AntiTamper {
         }
 
         if isCodeSignatureDebugged {
-            reasons.append("Debugged code-sign state detected")
+            // Historical code-sign debug state alone is not a live debugger or
+            // a jailbreak. P_TRACED above remains a blocking runtime signal.
             details["codesign_debugged"] = true
-            evidenceCodes.append("codesign_debugged")
         }
 
         if let dylib = detectedInjectedDylib {
@@ -318,9 +311,9 @@ enum AntiTamper {
         }
 
         if isFridaPortOpen {
-            reasons.append("Frida server port active (27042/27043)")
+            // Any local app can listen here. No protocol/agent was identified;
+            // an open TCP port alone must never lock a clean sideloaded device.
             details["frida_port"] = true
-            evidenceCodes.append("frida_server_port")
         }
 
         evidenceCodes = Array(Set(evidenceCodes)).sorted()

@@ -9,6 +9,33 @@ struct ProtectedOperationSelfCheck {
     }
 
     static func main() throws {
+        let benign: [[String]] = [[], ["codesign_debugged"], ["frida_server_port"],
+            ["binary_text_unreadable"], ["binary_text_mismatch"], ["rootless_jb_root"],
+            ["rootless_jb_root", "preboot_jailbreak_bootstrap"],
+            ["jailbreak_preference_artifact", "jailbreak_remote_shell", "codesign_debugged", "frida_server_port"]]
+        for evidence in benign {
+            try require(SideloadSecurityPolicy.confirmedJailbreakEvidence(evidence).isEmpty,
+                        "uncorroborated evidence cannot quarantine an HWID")
+        }
+        try require(SideloadSecurityPolicy.confirmedJailbreakEvidence(
+            ["rootless_jb_root", "jailbreak_package_manager", "binary_text_unreadable"])
+            == ["jailbreak_package_manager", "rootless_jb_root"], "two independent jailbreak families")
+        for path in ["/private/var/containers/Bundle/Shadow.app/Astra",
+                     "/System/Library/PrivateFrameworks/Shadow.framework/Shadow",
+                     "/System/Library/Frameworks/LibertyUI.framework/LibertyUI",
+                     "/private/var/containers/Bundle/Astra.app/Astra"] {
+            try require(SideloadSecurityPolicy.instrumentationImage(path) == nil, "no folder substring false positive")
+        }
+        try require(SideloadSecurityPolicy.instrumentationImage("/app/Frameworks/FridaGadget.dylib") != nil,
+                    "actual Frida module is still blocked")
+        try require(SideloadSecurityPolicy.permitsUnsealedLease(
+            code: "release_policy_not_enforced", assurance: "policy_disabled"), "explicit server compatibility only")
+        for code in [nil, "release_allowed", "app_integrity_rejected"] as [String?] {
+            try require(!SideloadSecurityPolicy.permitsUnsealedLease(code: code, assurance: "policy_disabled"),
+                        "unsealed release cannot reuse an unrelated authorization")
+        }
+        try require(!SideloadSecurityPolicy.permitsUnsealedLease(code: "release_policy_not_enforced", assurance: nil),
+                    "compatibility requires exact assurance")
         var lease = ProtectedLeasePolicy()
         try lease.accept(ttl: 120, requestStarted: 1000, now: 1002)
         try require(lease.permitsTransfer(now: 1002), "fresh monotonic lease")

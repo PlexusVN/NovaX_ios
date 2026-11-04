@@ -31,6 +31,8 @@ jobs:
             ThreeOneOSFive/helpers/NetworkAccessGate.swift \
             ThreeOneOSFive/helpers/ServerSignatureVerifier.swift \
             ThreeOneOSFive/helpers/ProtectedArtifactDecoder.swift \
+            ThreeOneOSFive/helpers/ProtectedOperationPolicy.swift \
+            ThreeOneOSFive/helpers/ReleaseIntegrity.swift \
             Tests/ProtectedArtifactSelfCheck.swift -o "$RUNNER_TEMP/astra-security-selfcheck"
           "$RUNNER_TEMP/astra-security-selfcheck" Tests/Fixtures/artifact_crypto_v1.json
 

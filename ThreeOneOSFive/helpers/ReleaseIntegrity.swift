@@ -31,14 +31,24 @@ struct SignedReleaseCheckResult: Sendable {
     let mask: Int
     let releaseID: String
     let sealDigest: String
+    var issue: SignedReleaseIssue? = nil
 
     var isCompromised: Bool { enforced && mask != SignedReleaseIntegrity.allChecksMask }
+    var isMissingSeal: Bool { enforced && issue == .missingSeal }
+    // Missing distribution metadata is not a jailbreak or proof of tampering.
+    // It may proceed ONLY to the signed server policy negotiation, never directly
+    // to a protected download/commit on the strength of a local fallback.
+    var requiresLocalBlock: Bool { isCompromised && !isMissingSeal }
     var evidenceCode: String? { isCompromised ? "signed_release_integrity_failed" : nil }
 
     static let notConfigured = SignedReleaseCheckResult(
         enforced: false, mask: SignedReleaseIntegrity.allChecksMask,
         releaseID: "", sealDigest: ""
     )
+}
+
+enum SignedReleaseIssue: String, Sendable {
+    case missingSeal, unreadableInstallation, invalidSeal, verificationFailed
 }
 
 private struct SignedReleaseImage {
@@ -200,8 +210,14 @@ enum SignedReleaseIntegrity {
         store(.notConfigured)
         return .notConfigured
 #else
+        guard Bundle.main.url(forResource: "Astra", withExtension: "release") != nil else {
+            let result = SignedReleaseCheckResult(enforced: true, mask: 0,
+                releaseID: "", sealDigest: "", issue: .missingSeal)
+            store(result)
+            return result
+        }
         let result = currentInspection().map(inspect) ?? SignedReleaseCheckResult(
-            enforced: true, mask: 0, releaseID: "", sealDigest: ""
+            enforced: true, mask: 0, releaseID: "", sealDigest: "", issue: .unreadableInstallation
         )
         store(result)
         return result
@@ -215,7 +231,7 @@ enum SignedReleaseIntegrity {
     private static func inspect(_ value: SignedReleaseInspection) -> SignedReleaseCheckResult {
         guard value.sealData.count <= 65_536,
               let seal = try? JSONDecoder().decode(SignedReleaseSeal.self, from: value.sealData) else {
-            return SignedReleaseCheckResult(enforced: true, mask: 0, releaseID: "", sealDigest: "")
+            return SignedReleaseCheckResult(enforced: true, mask: 0, releaseID: "", sealDigest: "", issue: .invalidSeal)
         }
         let image = value.image
 
@@ -241,7 +257,8 @@ enum SignedReleaseIntegrity {
             enforced: true,
             mask: mask,
             releaseID: seal.body.release_id,
-            sealDigest: digest(value.sealData)
+            sealDigest: digest(value.sealData),
+            issue: mask == allChecksMask ? nil : .verificationFailed
         )
     }
 
@@ -315,7 +332,7 @@ enum SignedReleaseIntegrity {
             regularExecutable: attributes?[.type] as? FileAttributeType == .typeRegular,
             memoryTextHash: memoryTextHash,
             loadedImages: loadedImages,
-            debuggerAttached: AntiTamper.isDebuggerAttached || AntiTamper.isCodeSignatureDebugged
+            debuggerAttached: AntiTamper.isDebuggerAttached
         )
     }
 
@@ -339,7 +356,7 @@ enum ReleaseIntegrityRuntime {
 
     static func verify(force: Bool = false) async -> SignedReleaseCheckResult {
         let cached = SignedReleaseIntegrity.lastResult
-        if cached.isCompromised { return cached }
+        if cached.requiresLocalBlock && !force { return cached }
         if !force, ProcessInfo.processInfo.systemUptime - checkedAt < 2 { return cached }
         if pending == nil {
             pending = Task.detached(priority: .utility) { SignedReleaseIntegrity.check() }

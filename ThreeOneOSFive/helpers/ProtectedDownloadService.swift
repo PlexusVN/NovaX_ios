@@ -33,6 +33,8 @@ enum ProtectedDownloadError: LocalizedError {
                 return "Quyền sử dụng đã bị máy chủ thu hồi. Hãy liên hệ hỗ trợ để khôi phục quyền hợp lệ."
             case "enforcement_unavailable":
                 return "Dịch vụ kiểm tra bảo mật đang tạm gián đoạn. Hãy thử lại sau."
+            case "release_verification_required", "app_integrity_rejected", "client_integrity_failed":
+                return "Chưa thể xác minh bản cài đặt này. Hãy dùng bản phát hành chính thức hoặc liên hệ admin kiểm tra cấu hình phát hành. Đây không phải thông báo khóa HWID."
             case "enrollment_authorization_required", "device_recovery_required", "device_already_enrolled":
                 return "Định danh cài đặt đã thay đổi. Hãy nhờ admin Reset HWID của key, sau đó đăng nhập lại. Pairing trên máy vẫn được giữ nguyên."
             default:
@@ -146,6 +148,7 @@ final class ProtectedDownloadService: ObservableObject {
     private var currentAuthContext: ProtectedAuthContext?
     private var contextEpoch: UInt64 = 0
     private var releaseLease = ProtectedLeasePolicy()
+    private var releaseLeaseSubject = ""
 
     private func endpoint(_ path: String) throws -> URL {
         guard let url = URL(string: origin + path) else { throw SecureAPIError.invalidEndpoint }
@@ -268,6 +271,7 @@ final class ProtectedDownloadService: ObservableObject {
 
     private func clearSession() {
         releaseLease.clear()
+        releaseLeaseSubject = ""
         sessionID = ""; sessionToken = ""; sessionExpiry = .distantPast
     }
 
@@ -301,7 +305,7 @@ final class ProtectedDownloadService: ObservableObject {
             }.value
             let release = await ReleaseIntegrityRuntime.verify()
             try context.validate()
-            guard !runtime.isCompromised, !executable.isCompromised, !release.isCompromised else {
+            guard !runtime.isCompromised, !executable.isCompromised, !release.requiresLocalBlock else {
                 ReleaseCommitBarrier.blockNewCommits()
                 AntiTamper.reportCrackAndLockMachine(
                     reason: "Protected operation rejected by local integrity gate",
@@ -535,15 +539,7 @@ final class ProtectedDownloadService: ObservableObject {
     /// installation. The API derives the device/HWID from the signed P-256
     /// request and never accepts a client-selected victim identifier.
     func quarantineForJailbreak(auth: AuthManager, evidenceCodes: [String]) async -> Bool {
-        let allowed = Set([
-            "dyld_injection_environment", "injected_jailbreak_dylib", "frida_server_port",
-            "sandbox_escape_write",
-            "rootless_jb_root", "preboot_jailbreak_bootstrap", "jailbreak_package_manager",
-            "jailbreak_hook_framework", "jailbreak_package_database", "jailbreak_remote_shell",
-            "jailbreak_preference_artifact", "debugger_attached", "codesign_debugged",
-            "runtime_instrumentation", "binary_text_mismatch", "binary_text_unreadable"
-        ])
-        let evidence = Array(Set(evidenceCodes.filter { allowed.contains($0) })).sorted()
+        let evidence = SideloadSecurityPolicy.confirmedJailbreakEvidence(evidenceCodes)
         guard auth.authState == .verified, !evidence.isEmpty else { return false }
         let requestedContext = ProtectedAuthContext(auth)
         await gate.acquire()
@@ -629,33 +625,43 @@ final class ProtectedDownloadService: ObservableObject {
 
     /// A short server lease binds every protected artifact request to a release
     /// document signed by Astra. Debug/simulator builds remain usable for local
-    /// development, while device Release builds must carry Astra.release.
+    /// development. A device build without a seal MUST obtain an explicit signed
+    /// compatibility response; it cannot locally declare itself trusted.
     private func ensureReleaseLease() async throws {
         let result = await ReleaseIntegrityRuntime.verify()
-        guard !result.isCompromised else {
+        guard !result.requiresLocalBlock else {
             ReleaseCommitBarrier.blockNewCommits()
             throw ProtectedDownloadError.rejected("client_integrity_failed")
         }
         guard result.enforced else { return }
+        let subject = "\(result.releaseID)|\(result.sealDigest)|\(result.mask)|\(result.issue?.rawValue ?? "valid")"
+        if releaseLeaseSubject != subject { releaseLease.clear() }
         if releaseLease.permitsTransfer(now: ProcessInfo.processInfo.systemUptime) { return }
         let started = ProcessInfo.processInfo.systemUptime
         let (data, _) = try await post("/api/v2/security/integrity", body: [
             "release_id": result.releaseID,
-            "seal_digest": result.sealDigest,
+            "seal_digest": result.sealDigest.isEmpty ? String(repeating: "0", count: 64) : result.sealDigest,
             "check_mask": result.mask
         ], signed: true, purpose: "app-integrity-v1")
         let response = try dictionary(data)
+        if result.isMissingSeal {
+            guard SideloadSecurityPolicy.permitsUnsealedLease(code: response["code"] as? String,
+                    assurance: response["assurance"] as? String) else {
+                throw ProtectedDownloadError.rejected("release_verification_required")
+            }
+        }
         guard let ttl = response["lease_ttl_seconds"] as? Double else {
             throw ProtectedDownloadError.invalidResponse
         }
         try releaseLease.accept(ttl: ttl, requestStarted: started,
                                 now: ProcessInfo.processInfo.systemUptime)
+        releaseLeaseSubject = subject
     }
 
     /// Best-effort signed notification for a modified release. This deliberately
     /// never enrolls a device or opens a new session after integrity has failed.
     func reportReleaseIntegrityFailure(_ result: SignedReleaseCheckResult) async {
-        guard result.isCompromised, let identity, !sessionID.isEmpty,
+        guard result.requiresLocalBlock, let identity, !sessionID.isEmpty,
               !sessionToken.isEmpty, sessionExpiry > Date(),
               let deviceID = try? identity.persistedEnrollmentID(), !deviceID.isEmpty else { return }
         let id = sessionID, token = sessionToken
