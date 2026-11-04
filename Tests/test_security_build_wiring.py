@@ -56,6 +56,20 @@ class SecurityBuildWiringTests(unittest.TestCase):
             self.assertEqual(decoded, expected)
         self.assertIn('7NfgIVpP+fdJQCMiloG7ljIWxP5OZEiAGfsc6+jgcQA=', source)
 
+    def test_framework_gate_checks_rust_exports_not_the_app_objc_helper(self):
+        workflow = (ROOT / '.github/workflows/build.yml').read_text(encoding='utf-8')
+        gate = workflow.split('- name: Verify committed patched AirliftFFI')[1].split('\n      - name:')[0]
+        self.assertNotIn('"_ALGetGrappaToken"', gate)
+        for symbol in ['_al_exploit_run', '_al_exploit_write_dir', '_al_pairing_run_host']:
+            self.assertIn(symbol, gate)
+        for platform in ['ios-arm64', 'ios-arm64-simulator']:
+            self.assertIn(platform, gate)
+        # Do not accidentally remove the independent post-link patch checks.
+        for marker in ['RemoteXPC timed out after 6s', 'timeout fallback trying raw RPPairing',
+                       'AirTraffic write timed out after 180s; operation cancelled',
+                       '! strings "$APP_NAME/$EXECUTABLE" | grep -F "proceeding with direct writeDirectory"']:
+            self.assertIn(marker, workflow)
+
 
 if __name__ == '__main__':
     unittest.main()

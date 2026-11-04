@@ -46,9 +46,17 @@ jobs:
           # Use the committed framework instead of rebuilding upstream Rust
           # sources in CI. Post-Build Verification checks the linked executable
           # for the required patch markers and rejects unsafe direct writes.
-          test -s Frameworks/AirliftFFI.xcframework/ios-arm64/libairlift_ffi.a
-          test -s Frameworks/AirliftFFI.xcframework/ios-arm64-simulator/libairlift_ffi.a
-          nm -gj Frameworks/AirliftFFI.xcframework/ios-arm64/libairlift_ffi.a | grep -Fx "_ALGetGrappaToken"
+          # ALGetGrappaToken belongs to GrappaHelper.m in the app, not Rust's
+          # archive. Check the actual defined FFI exports in both platform slices.
+          for AIRLIFT_PLATFORM in ios-arm64 ios-arm64-simulator; do
+            AIRLIFT_LIBRARY="Frameworks/AirliftFFI.xcframework/$AIRLIFT_PLATFORM/libairlift_ffi.a"
+            AIRLIFT_SYMBOLS="$RUNNER_TEMP/airlift-$AIRLIFT_PLATFORM-symbols.txt"
+            test -s "$AIRLIFT_LIBRARY"
+            nm -gUj "$AIRLIFT_LIBRARY" > "$AIRLIFT_SYMBOLS"
+            for AIRLIFT_SYMBOL in _al_exploit_run _al_exploit_write_dir _al_pairing_run_host; do
+              grep -Fx "$AIRLIFT_SYMBOL" "$AIRLIFT_SYMBOLS"
+            done
+          done
 
       - name: Verify binary integrity embedder
         run: |
