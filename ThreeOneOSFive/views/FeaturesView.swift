@@ -117,13 +117,14 @@ struct FeaturesView: View {
                 HStack {
                     Spacer()
                     VStack(spacing: 8) {
-                        if protectedDownloads.accessNotice == nil {
+                        if service.isLoading {
                             ProgressView()
                                 .tint(AppTheme.gamingBlueBright)
                         }
-                        Text(protectedDownloads.accessNotice ?? "Đang chuẩn bị...")
+                        Text(service.isLoading ? "Đang chuẩn bị..." :
+                            (service.catalogError ?? protectedDownloads.accessNotice ?? "Chưa có danh mục được phát hành."))
                             .font(.system(size: 12, design: .monospaced))
-                            .foregroundColor(AppTheme.gamingText.opacity(protectedDownloads.accessNotice == nil ? 0.3 : 0.8))
+                            .foregroundColor(AppTheme.gamingText.opacity(0.75))
                             .multilineTextAlignment(.center)
                     }
                     .padding(.vertical, 16)
@@ -446,8 +447,15 @@ struct FeaturesView: View {
                 .foregroundColor(AppTheme.gamingText.opacity(0.5))
             Text(service.catalogError ?? "Đang chuẩn bị chức năng...")
                 .font(.system(size: 12, design: .monospaced))
-                .foregroundColor(AppTheme.gamingText.opacity(0.25))
+                .foregroundColor(AppTheme.gamingText.opacity(0.7))
                 .multilineTextAlignment(.center)
+            if service.catalogError != nil {
+                Button("Thử lại") {
+                    Task { await service.syncFromServer(auth: authManager) }
+                }.disabled(service.isLoading)
+                    .buttonStyle(.borderedProminent)
+                    .tint(AppTheme.gamingViolet)
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 40)

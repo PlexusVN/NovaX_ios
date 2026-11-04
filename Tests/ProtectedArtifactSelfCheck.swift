@@ -182,6 +182,46 @@ struct ProtectedArtifactSelfCheck {
         let malformed = try JSONDecoder().decode(AstraServerEnvelope.self, from: json(object))
         try require(!verifier.verifyEnvelope(envelope: malformed, expectedNonce: nonce,
             expectedPurpose: "test-response", payloadData: payload, now: now), "malformed signature fails closed")
+
+        func signedFailure(purpose: String, requestNonce: String) throws -> Data {
+            let bytes = try json(["success": false, "code": "session_expired"])
+            let milliseconds = Int64(Date().timeIntervalSince1970 * 1000)
+            var document: [String: Any] = ["protocol": 2, "kid": "test-only", "purpose": purpose,
+                "request_nonce": requestNonce, "issued_ms": milliseconds, "expires_ms": milliseconds + 60_000,
+                "payload_sha256": SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined(),
+                "payload_b64": bytes.base64EncodedString(), "signature": ""]
+            let unsigned = try JSONDecoder().decode(AstraServerEnvelope.self, from: json(document))
+            guard let signature = SecKeyCreateSignature(privateKey, .rsaSignatureMessagePKCS1v15SHA256,
+                    Data(verifier.canonicalEnvelopeString(unsigned).utf8) as CFData, nil) else {
+                throw SelfCheckFailure.failed("error fixture signature")
+            }
+            document["signature"] = (signature as Data).base64EncodedString()
+            return try json(["astra_v2": document, "code": "unsigned-sibling-must-not-be-used"])
+        }
+        let route = "/api/v2/novax/session/renew"
+        let middleware = try signedFailure(purpose: "POST " + route, requestNonce: nonce)
+        try require(verifier.verifiedErrorPayload(in: middleware, expectedNonce: nonce,
+            method: "POST", path: route, handlerPurpose: "novax-session-renew-v2") != nil,
+            "exact-route middleware error verifies")
+        try require(verifier.verifiedErrorPayload(in: middleware, expectedNonce: String(repeating: "b", count: 32),
+            method: "POST", path: route, handlerPurpose: "novax-session-renew-v2") == nil, "wrong error nonce rejected")
+        try require(verifier.verifiedErrorPayload(in: middleware, expectedNonce: nonce,
+            method: "POST", path: "/api/v2/device/context", handlerPurpose: "device-context-v2") == nil,
+            "error cannot move to another route")
+        let arbitrary = try signedFailure(purpose: "attacker-selected-purpose", requestNonce: nonce)
+        try require(verifier.verifiedErrorPayload(in: arbitrary, expectedNonce: nonce,
+            method: "POST", path: route, handlerPurpose: "novax-session-renew-v2") == nil,
+            "unlisted error purpose rejected")
+        let readiness = try signedFailure(purpose: "artifact-error", requestNonce: nonce)
+        try require(verifier.verifiedErrorPayload(in: readiness, expectedNonce: nonce,
+            method: "POST", path: "/api/v2/artifacts/sync", handlerPurpose: "artifact-sync") != nil,
+            "signed service-readiness response verifies")
+        try require(verifier.verifiedErrorPayload(in: readiness, expectedNonce: nonce,
+            method: "POST", path: route, handlerPurpose: "novax-session-renew-v2") == nil,
+            "artifact error not accepted as bootstrap instruction")
+        try require(verifier.verifiedErrorPayload(in: Data("{\"success\":false,\"code\":\"session_expired\"}".utf8),
+            expectedNonce: nonce, method: "POST", path: route, handlerPurpose: "novax-session-renew-v2") == nil,
+            "unsigned recovery instruction rejected")
     }
 
     static func checkEndpointPolicy() throws {

@@ -33,6 +33,14 @@ enum ProtectedDownloadError: LocalizedError {
                 return "Quyền sử dụng đã bị máy chủ thu hồi. Hãy liên hệ hỗ trợ để khôi phục quyền hợp lệ."
             case "enforcement_unavailable":
                 return "Dịch vụ kiểm tra bảo mật đang tạm gián đoạn. Hãy thử lại sau."
+            case "protected_downloads_not_configured":
+                return "Dịch vụ chưa được quản trị viên kích hoạt. Vui lòng liên hệ hỗ trợ."
+            case "protected_download_unavailable", "HTTP_503":
+                return "Dịch vụ đang tạm gián đoạn hoặc chưa cấu hình xong. Vui lòng thử lại sau."
+            case "session_expired":
+                return "Phiên tải đã hết hạn. Hãy thử lại để tạo phiên bảo mật mới."
+            case "recipient_enrollment_required", "recipient_upgrade_required":
+                return "Định danh nhận dữ liệu cần được nâng cấp. Hãy đăng nhập lại hoặc liên hệ hỗ trợ."
             case "release_verification_required", "app_integrity_rejected", "client_integrity_failed":
                 return "Chưa thể xác minh bản cài đặt này. Hãy dùng bản phát hành chính thức hoặc liên hệ admin kiểm tra cấu hình phát hành. Đây không phải thông báo khóa HWID."
             case "enrollment_authorization_required", "device_recovery_required", "device_already_enrolled":
@@ -232,11 +240,8 @@ final class ProtectedDownloadService: ObservableObject {
             if response.statusCode == 401 && detachedSession == nil { clearSession() }
             // Artifact failures use a separate signed purpose. Only an exact
             // request nonce and a verified purpose can influence retry/recovery.
-            let errorPurposes = ["security-enforcement-v2"] + (path.hasPrefix("/api/v2/artifacts/")
-                ? ["artifact-error"] : purpose.map { [$0] } ?? [])
-            for errorPurpose in errorPurposes {
-                if let verified = try? ServerSignatureVerifier.shared.verifiedPayload(in: data,
-                        expectedNonce: nonce, expectedPurpose: errorPurpose),
+                if let verified = ServerSignatureVerifier.shared.verifiedErrorPayload(in: data,
+                        expectedNonce: nonce, method: "POST", path: path, handlerPurpose: purpose),
                    let object = try? JSONSerialization.jsonObject(with: verified) as? [String: Any],
                    let rejection = ProtectedDownloadError.fromVerifiedPayload(object, statusCode: response.statusCode) {
                     if object["session_revoked"] as? Bool == true, detachedSession == nil { clearSession() }
@@ -248,7 +253,6 @@ final class ProtectedDownloadService: ObservableObject {
                     }
                     throw rejection
                 }
-            }
             throw ProtectedDownloadError.rejected("HTTP_\(response.statusCode)")
         }
         let payload: Data

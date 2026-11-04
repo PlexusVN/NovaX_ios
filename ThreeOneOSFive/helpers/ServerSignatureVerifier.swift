@@ -100,6 +100,24 @@ public final class ServerSignatureVerifier {
     }
 
     /// Artifact callers additionally validate their document type and context.
+    /// Middleware signs failures for the exact request route, whereas route
+    /// handlers use their documented purpose. Neither permits another request's
+    /// nonce, an unsigned response or an arbitrary server-supplied purpose.
+    func verifiedErrorPayload(in data: Data, expectedNonce: String,
+                              method: String, path: String, handlerPurpose: String?) -> Data? {
+        guard method == "POST", path.hasPrefix("/api/"), path.count <= 256 else { return nil }
+        var purposes = ["security-enforcement-v2", "\(method) \(path)"]
+        if path.hasPrefix("/api/v2/artifacts/") { purposes.append("artifact-error") }
+        if let handlerPurpose { purposes.append(handlerPurpose) }
+        for purpose in purposes {
+            if let payload = try? verifiedPayload(in: data, expectedNonce: expectedNonce, expectedPurpose: purpose) {
+                return payload
+            }
+        }
+        return nil
+    }
+
+    /// Artifact callers additionally validate their document type and context.
     func verifyRS256(keyID: String, signedData: Data, signatureBase64: String) -> Bool {
         guard let publicKeyDer = trustedPublicKeys[keyID],
               signatureBase64.utf8.count <= 1400,
