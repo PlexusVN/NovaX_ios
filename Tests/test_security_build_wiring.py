@@ -60,6 +60,7 @@ class SecurityBuildWiringTests(unittest.TestCase):
         workflow = (ROOT / '.github/workflows/build.yml').read_text(encoding='utf-8')
         gate = workflow.split('- name: Verify committed patched AirliftFFI')[1].split('\n      - name:')[0]
         self.assertNotIn('"_ALGetGrappaToken"', gate)
+        self.assertIn('nm --no-llvm-bc -gUj', gate)
         for symbol in ['_al_exploit_run', '_al_exploit_write_dir', '_al_pairing_run_host']:
             self.assertIn(symbol, gate)
         for platform in ['ios-arm64', 'ios-arm64-simulator']:

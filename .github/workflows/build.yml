@@ -52,7 +52,10 @@ jobs:
             AIRLIFT_LIBRARY="Frameworks/AirliftFFI.xcframework/$AIRLIFT_PLATFORM/libairlift_ffi.a"
             AIRLIFT_SYMBOLS="$RUNNER_TEMP/airlift-$AIRLIFT_PLATFORM-symbols.txt"
             test -s "$AIRLIFT_LIBRARY"
-            nm -gUj "$AIRLIFT_LIBRARY" > "$AIRLIFT_SYMBOLS"
+            # Rust embeds newer LLVM bitcode in compiler_builtins. Inspect native
+            # Mach-O exports only; Xcode 16's bitcode reader cannot decode LLVM 22.
+            # https://llvm.org/docs/CommandGuide/llvm-nm.html#cmdoption-llvm-nm-no-llvm-bc
+            nm --no-llvm-bc -gUj "$AIRLIFT_LIBRARY" > "$AIRLIFT_SYMBOLS"
             for AIRLIFT_SYMBOL in _al_exploit_run _al_exploit_write_dir _al_pairing_run_host; do
               grep -Fx "$AIRLIFT_SYMBOL" "$AIRLIFT_SYMBOLS"
             done
