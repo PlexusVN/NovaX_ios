@@ -100,21 +100,21 @@ enum AppTheme {
     static let gamingBackgroundRaised = Color(hex: 0x071122)
     static let gamingSurface = Color(hex: 0x0B1628)
     static let gamingSurfaceRaised = Color(hex: 0x10213B)
-    static let gamingBlue = Color(hex: 0x4E6CE8)
-    static let gamingBlueBright = Color(hex: 0x8B8CF8)
-    static let gamingViolet = Color(hex: 0x8B5CF6)
-    static let gamingPink = Color(hex: 0xD946EF)
+    static let gamingBlue = Color(hex: 0x147DFF)
+    static let gamingBlueBright = Color(hex: 0x38BDF8)
+    static let gamingViolet = Color(hex: 0x5865F2)
+    static let gamingPink = Color(hex: 0xEC4899)
     static let gamingText = Color(hex: 0xF4F8FF)
     static let gamingTextSecondary = Color(hex: 0x91A4C0)
     static let gamingBorder = Color(hex: 0x1E3A5F)
 
     static let gamingAccentGradient = LinearGradient(
-        colors: [gamingBlue, gamingViolet, gamingPink],
+        colors: [gamingBlue, gamingBlueBright, gamingViolet, gamingPink],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
     static let gamingBorderGradient = LinearGradient(
-        colors: [gamingBlue.opacity(0.60), gamingViolet.opacity(0.48), gamingPink.opacity(0.30)],
+        colors: [gamingBlueBright.opacity(0.70), gamingViolet.opacity(0.48), gamingPink.opacity(0.30)],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
@@ -314,9 +314,9 @@ struct OutlineButtonStyle: ButtonStyle {
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(AppTheme.ink, lineWidth: 1)
+                    .stroke(AppTheme.gamingBorderGradient, lineWidth: 1)
             )
-            .foregroundStyle(AppTheme.ink)
+            .foregroundStyle(AppTheme.gamingText)
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
             .opacity(configuration.isPressed ? 0.9 : 1)
             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: configuration.isPressed)

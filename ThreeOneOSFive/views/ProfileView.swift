@@ -57,7 +57,7 @@ struct ProfileView: View {
             .background(MeshBackground())
             .navigationTitle("Hồ sơ")
             .navigationBarTitleDisplayMode(.inline)
-            .tint(AppTheme.ink)
+            .tint(AppTheme.gamingBlueBright)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
@@ -66,11 +66,11 @@ struct ProfileView: View {
                     } label: {
                         Image(systemName: "gearshape.fill")
                             .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(AppTheme.ink)
+                            .foregroundStyle(AppTheme.gamingBlueBright)
                             .frame(width: 32, height: 32)
                             .background(AppTheme.paperRaised)
                             .clipShape(Circle())
-                            .overlay(Circle().stroke(AppTheme.grey200, lineWidth: 1))
+                            .overlay(Circle().stroke(AppTheme.gamingBorderGradient.opacity(0.5), lineWidth: 1))
                     }
                 }
             }
@@ -98,14 +98,14 @@ struct ProfileView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 19, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 19, style: .continuous)
-                        .stroke(AppTheme.grey200, lineWidth: 1)
+                        .stroke(AppTheme.gamingBorderGradient.opacity(0.4), lineWidth: 1)
                 )
                 .shadow(color: Color.black.opacity(0.10), radius: 8, x: 0, y: 4)
 
             VStack(alignment: .leading, spacing: 5) {
                 Text("Astra")
                     .font(.system(size: 26, weight: .bold, design: .rounded))
-                    .foregroundStyle(AppTheme.ink)
+                    .foregroundStyle(AppTheme.gamingAccentGradient)
                     .kerning(-0.6)
 
                 Text("Phiên bản \(Self.version)")
@@ -114,11 +114,15 @@ struct ProfileView: View {
 
                 Text("PREMIUM")
                     .font(.system(size: 9, weight: .heavy, design: .monospaced))
-                    .foregroundStyle(AppTheme.ink)
+                    .foregroundStyle(AppTheme.gamingBlueBright)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 4)
-                    .background(AppTheme.grey50)
+                    .background(AppTheme.gamingSurfaceRaised)
                     .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .stroke(AppTheme.gamingBorderGradient.opacity(0.4), lineWidth: 0.8)
+                    )
             }
             Spacer()
 
@@ -132,8 +136,11 @@ struct ProfileView: View {
             }
             .padding(.horizontal, 9)
             .padding(.vertical, 7)
-            .background(AppTheme.grey50)
+            .background(AppTheme.gamingSurfaceRaised)
             .clipShape(Capsule())
+            .overlay(
+                Capsule().stroke(AppTheme.statusSuccess.opacity(0.3), lineWidth: 0.8)
+            )
         }
         .frame(minHeight: 112, alignment: .center)
         .padding(19)
@@ -141,7 +148,7 @@ struct ProfileView: View {
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(AppTheme.grey200, lineWidth: 1)
+                .stroke(AppTheme.gamingBorderGradient.opacity(0.45), lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(0.05), radius: 14, x: 0, y: 6)
     }
@@ -154,17 +161,27 @@ struct ProfileView: View {
             HStack(spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 13, style: .continuous)
-                        .fill(AppTheme.ink)
+                        .fill(
+                            LinearGradient(
+                                colors: [AppTheme.gamingBlue.opacity(0.28), AppTheme.gamingViolet.opacity(0.20)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
                         .frame(width: 42, height: 42)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                .stroke(AppTheme.gamingBorderGradient.opacity(0.6), lineWidth: 1)
+                        )
                     Image(systemName: "key.fill")
                         .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(AppTheme.gamingBlueBright)
                 }
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Thông tin key")
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(AppTheme.ink)
+                        .foregroundStyle(AppTheme.gamingText)
                         .kerning(-0.25)
                     Text("Thông tin kích hoạt trên thiết bị này")
                         .font(.system(size: 12))
@@ -177,10 +194,15 @@ struct ProfileView: View {
             // License dark block
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text("LICENSE KEY")
-                        .font(.system(size: 10, weight: .heavy, design: .monospaced))
-                        .foregroundStyle(AppTheme.grey400)
-                        .tracking(1.1)
+                    HStack(spacing: 6) {
+                        Image(systemName: "shield.lefthalf.filled")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(AppTheme.gamingBlueBright)
+                        Text("LICENSE KEY")
+                            .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                            .foregroundStyle(AppTheme.gamingBlueBright)
+                            .tracking(1.1)
+                    }
                     Spacer()
                     Button {
                         Haptics.light()
@@ -188,23 +210,42 @@ struct ProfileView: View {
                         Haptics.success()
                     } label: {
                         Image(systemName: "doc.on.doc.fill")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(AppTheme.ink)
-                            .frame(width: 36, height: 36)
-                            .background(AppTheme.paperRaised)
-                            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(AppTheme.gamingBlueBright)
+                            .frame(width: 34, height: 34)
+                            .background(AppTheme.gamingSurfaceRaised)
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .stroke(AppTheme.gamingBorderGradient.opacity(0.4), lineWidth: 0.8)
+                            )
                     }
                     .buttonStyle(.plain)
                 }
                 Text(auth.licenseKey.isEmpty ? "Chưa kích hoạt" : auth.licenseKey)
-                    .font(.system(size: 17, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.white)
+                    .font(.system(size: 18, weight: .bold, design: .monospaced))
+                    .foregroundStyle(AppTheme.gamingAccentGradient)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
             .padding(17)
-            .background(AppTheme.ink)
+            .background(
+                LinearGradient(
+                    colors: [
+                        Color(hex: 0x071122),
+                        Color(hex: 0x0B1628),
+                        Color(hex: 0x10213B)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
             .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 17, style: .continuous)
+                    .stroke(AppTheme.gamingBorderGradient, lineWidth: 1.2)
+            )
+            .shadow(color: AppTheme.gamingBlue.opacity(0.18), radius: 10, x: 0, y: 4)
 
             // Info grid (2 cột, tự về 1 cột <380px)
             infoGrid
@@ -222,7 +263,7 @@ struct ProfileView: View {
             }
             .padding(.horizontal, 15)
             .padding(.vertical, 14)
-            .background(AppTheme.paperRaised)
+            .background(AppTheme.gamingSurfaceRaised)
             .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 15, style: .continuous)
@@ -235,7 +276,7 @@ struct ProfileView: View {
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(AppTheme.grey200, lineWidth: 1)
+                .stroke(AppTheme.gamingBorderGradient.opacity(0.45), lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(0.06), radius: 18, x: 0, y: 8)
     }
@@ -275,7 +316,7 @@ struct ProfileView: View {
             Text(value)
                 .font(.system(size: fullWidth ? 13 : 15, weight: .semibold,
                               design: fullWidth || isMono ? .monospaced : .rounded))
-                .foregroundStyle(AppTheme.ink)
+                .foregroundStyle(AppTheme.gamingText)
                 .lineLimit(fullWidth ? 1 : 2)
                 .truncationMode(.middle)
         }
@@ -285,7 +326,7 @@ struct ProfileView: View {
         .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .stroke(Color.black.opacity(0.04), lineWidth: 1)
+                .stroke(AppTheme.grey200, lineWidth: 1)
         )
         .gridCellColumns(fullWidth ? 2 : 1)
     }
@@ -297,17 +338,27 @@ struct ProfileView: View {
             HStack(spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 13, style: .continuous)
-                        .fill(AppTheme.ink)
+                        .fill(
+                            LinearGradient(
+                                colors: [AppTheme.gamingBlue.opacity(0.28), AppTheme.gamingViolet.opacity(0.20)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
                         .frame(width: 42, height: 42)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                .stroke(AppTheme.gamingBorderGradient.opacity(0.6), lineWidth: 1)
+                        )
                     Image(systemName: "arrow.triangle.2.circlepath")
                         .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(AppTheme.gamingBlueBright)
                 }
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Phiên bản & cập nhật")
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(AppTheme.ink)
+                        .foregroundStyle(AppTheme.gamingText)
                         .kerning(-0.25)
                     Text("Thông tin bản dựng hiện tại")
                         .font(.system(size: 12))
@@ -327,7 +378,7 @@ struct ProfileView: View {
                     HStack(alignment: .lastTextBaseline, spacing: 9) {
                         Text(Self.version)
                             .font(.system(size: 30, weight: .bold, design: .rounded))
-                            .foregroundStyle(AppTheme.ink)
+                            .foregroundStyle(AppTheme.gamingAccentGradient)
                             .kerning(-1)
                         Text("Build \(Self.build)")
                             .font(.system(size: 12, weight: .semibold))
@@ -371,7 +422,7 @@ struct ProfileView: View {
                             .font(.system(size: 14, weight: .semibold))
                     }
                 }
-                .foregroundStyle(AppTheme.ink)
+                .foregroundStyle(AppTheme.gamingText)
                 .frame(maxWidth: .infinity, minHeight: 48)
             }
             .buttonStyle(OutlineButtonStyle())
@@ -392,7 +443,7 @@ struct ProfileView: View {
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(AppTheme.grey200, lineWidth: 1)
+                .stroke(AppTheme.gamingBorderGradient.opacity(0.45), lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(0.06), radius: 18, x: 0, y: 8)
     }
@@ -404,17 +455,27 @@ struct ProfileView: View {
             HStack(spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 13, style: .continuous)
-                        .fill(AppTheme.ink)
+                        .fill(
+                            LinearGradient(
+                                colors: [AppTheme.gamingBlue.opacity(0.28), AppTheme.gamingViolet.opacity(0.20)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
                         .frame(width: 42, height: 42)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                .stroke(AppTheme.gamingBorderGradient.opacity(0.6), lineWidth: 1)
+                        )
                     Image(systemName: "rectangle.portrait.and.arrow.right")
                         .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(AppTheme.gamingBlueBright)
                 }
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Phiên đăng nhập")
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(AppTheme.ink)
+                        .foregroundStyle(AppTheme.gamingText)
                         .kerning(-0.25)
                     Text("Quản lý license key đang sử dụng")
                         .font(.system(size: 12))
@@ -432,13 +493,13 @@ struct ProfileView: View {
                 HStack(spacing: 13) {
                     Image(systemName: "rectangle.portrait.and.arrow.right")
                         .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(AppTheme.ink)
+                        .foregroundStyle(AppTheme.statusError)
                         .frame(width: 24)
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Đăng xuất key")
                             .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(AppTheme.ink)
+                            .foregroundStyle(AppTheme.gamingText)
                         Text("Trở về màn hình nhập license key")
                             .font(.system(size: 11))
                             .foregroundStyle(AppTheme.grey500)
@@ -465,7 +526,7 @@ struct ProfileView: View {
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(AppTheme.grey200, lineWidth: 1)
+                .stroke(AppTheme.gamingBorderGradient.opacity(0.45), lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(0.06), radius: 18, x: 0, y: 8)
     }
@@ -477,19 +538,27 @@ struct ProfileView: View {
             HStack(spacing: 13) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(AppTheme.ink, lineWidth: 1)
-                        .background(AppTheme.paperRaised)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .fill(
+                            LinearGradient(
+                                colors: [AppTheme.gamingBlue.opacity(0.28), AppTheme.gamingViolet.opacity(0.20)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
                         .frame(width: 42, height: 42)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(AppTheme.gamingBorderGradient.opacity(0.6), lineWidth: 1)
+                        )
                     Image(systemName: "person.fill")
                         .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(AppTheme.ink)
+                        .foregroundStyle(AppTheme.gamingBlueBright)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("NHÀ PHÁT TRIỂN")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(AppTheme.ink)
+                        .foregroundStyle(AppTheme.gamingText)
                     Text("Astra Developer")
                         .font(.system(size: 12))
                         .foregroundStyle(AppTheme.grey500)
@@ -509,7 +578,7 @@ struct ProfileView: View {
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(AppTheme.grey200, lineWidth: 1)
+                .stroke(AppTheme.gamingBorderGradient.opacity(0.45), lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(0.05), radius: 14, x: 0, y: 6)
     }
@@ -530,17 +599,27 @@ struct ProfileView: View {
                 VStack(spacing: 14) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .fill(AppTheme.ink)
+                            .fill(
+                                LinearGradient(
+                                    colors: [AppTheme.statusError.opacity(0.25), AppTheme.gamingViolet.opacity(0.20)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
                             .frame(width: 62, height: 62)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                    .stroke(AppTheme.statusError.opacity(0.5), lineWidth: 1)
+                            )
                         Image(systemName: "rectangle.portrait.and.arrow.right")
                             .font(.system(size: 25, weight: .bold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(AppTheme.statusError)
                     }
                     .padding(.top, 4)
 
                     Text("Đăng xuất key?")
                         .font(.system(size: 24, weight: .bold))
-                        .foregroundStyle(AppTheme.ink)
+                        .foregroundStyle(AppTheme.gamingText)
                         .kerning(-0.45)
 
                     Text("Phiên license hiện tại sẽ được xóa khỏi Astra và bạn sẽ trở về màn hình nhập key.")
@@ -579,7 +658,7 @@ struct ProfileView: View {
                     } label: {
                         Text("Hủy")
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(AppTheme.ink)
+                            .foregroundStyle(AppTheme.grey700)
                             .frame(maxWidth: .infinity, minHeight: 48)
                             .background(AppTheme.grey50)
                             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -597,8 +676,15 @@ struct ProfileView: View {
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity, minHeight: 48)
-                            .background(AppTheme.ink)
+                            .background(
+                                LinearGradient(
+                                    colors: [AppTheme.statusError, Color(hex: 0xE11D48)],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
                             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .shadow(color: AppTheme.statusError.opacity(0.3), radius: 6, x: 0, y: 2)
                     }
                     .buttonStyle(.plain)
                 }
@@ -606,6 +692,10 @@ struct ProfileView: View {
             }
             .background(AppTheme.paperRaised)
             .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    .stroke(AppTheme.gamingBorderGradient.opacity(0.5), lineWidth: 1)
+            )
             .shadow(color: Color.black.opacity(0.20), radius: 40, x: 0, y: 18)
             .padding(.horizontal, 28)
         }
