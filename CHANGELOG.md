@@ -2,6 +2,18 @@
 
 All notable user-facing changes are documented in this file.
 
+## [1.2.10] - 2026-11-06
+
+### Fixed
+
+- Completed on-device AirLift pairing from the validated staging record instead of rejecting the transient `waitingSettings` state as an empty credential file.
+- Preserved atomic file protection and Keychain ordering when promoting a new AirLift pairing record.
+- Added device-identity recovery and protected-download diagnostics needed by installations whose previous identity was revoked.
+
+### Verification
+
+- Added pairing-completion and device-recovery regression checks to the unsigned IPA workflow.
+
 ## [1.0.1] - 2026-08-15
 
 ### Added

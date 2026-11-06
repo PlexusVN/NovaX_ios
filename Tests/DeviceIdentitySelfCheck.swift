@@ -105,19 +105,6 @@ struct DeviceIdentitySelfCheck {
         try require(try retried.getOrCreateAgreementKey().publicKeyX963Base64 == pendingAgreement, "lost response reuses recipient key")
         try require(try retried.installationID() == pendingInstall, "lost response reuses installation")
         try require(try retried.persistedEnrollmentID() == nil, "lost response does not invent enrollment ID")
-
-        let protectedB = memory.values.filter { $0.key.contains(b) }
-        memory.failingTag = "astra.identity.v3.\(a).authorized_recovery_pending"
-        let beforeRecoveryFailure = memory.values
-        try rejects("failed recovery journal cannot destroy identity") { try returningA.resetAuthorizedInstallation() }
-        try require(memory.values == beforeRecoveryFailure, "failed recovery preserves complete namespace")
-        memory.failingTag = nil
-        try returningA.resetAuthorizedInstallation()
-        try require(try memory.identity(a).persistedEnrollmentID() == nil, "authorized reset removes old enrollment")
-        try require(try memory.identity(a).getOrCreateKey().publicKeyX963Base64 != signingA, "authorized reset rotates signing identity")
-        try require(try memory.identity(a).hasPendingAuthorizedRecovery == false, "finished recovery clears journal")
-        try require(memory.values.filter { $0.key.contains(b) } == protectedB, "recovery leaves other license untouched")
-        try rejects("legacy global archive cannot be reset by scoped recovery") { try legacy.resetAuthorizedInstallation() }
         print("Device identity self-check: \(checks) checks passed")
     }
 }

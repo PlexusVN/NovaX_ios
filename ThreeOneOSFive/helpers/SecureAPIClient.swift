@@ -72,10 +72,11 @@ final class APIRequestRegistry: @unchecked Sendable {
 /// All authenticated API traffic stays on this origin. Public media and the
 /// LocalDevVPN device transport are separate and must never receive API secrets.
 enum SecureAPIEndpointPolicy {
-    static let host = AstraServerTrust.protectedHost
+    static let host = AppSecurityConfiguration.apiHost
 
     static func permits(_ url: URL) -> Bool {
-        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+        guard AppSecurityConfiguration.isConfigured,
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
               components.scheme?.lowercased() == "https",
               components.host?.lowercased() == host,
               components.port == nil || components.port == 443,
@@ -96,8 +97,8 @@ enum SecureAPIEndpointPolicy {
             "/api/ff/categories", "/api/ff/patches", "/api/ff/sync",
             "/api/novax/login", "/api/novax/commands",
             "/api/security/report-crack", "/api/v2/security/report-crack",
-            "/api/v2/security/jailbreak-quarantine",
             "/api/v2/security/integrity",
+            "/api/v2/security/integrity-v2",
             "/api/v2/security/policy", "/api/v2/device/challenge",
             "/api/v2/device/context",
             "/api/v2/device/enroll", "/api/v2/novax/login",
@@ -164,6 +165,7 @@ final class SecureAPIClient {
     }
 
     func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        try await AppIntegrityRuntime.shared.requireAllowed()
         try Self.validate(request)
         let generation = try await NetworkAccessGate.shared.requireAllowed()
         let epoch = requests.epoch
@@ -188,6 +190,7 @@ final class SecureAPIClient {
     }
 
     func download(for request: URLRequest) async throws -> (URL, HTTPURLResponse) {
+        try await AppIntegrityRuntime.shared.requireAllowed()
         try Self.validate(request)
         let generation = try await NetworkAccessGate.shared.requireAllowed()
         let epoch = requests.epoch

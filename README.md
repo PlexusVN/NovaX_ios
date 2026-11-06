@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-1.2.6-E6753A?style=flat-square">
+  <img alt="Version" src="https://img.shields.io/badge/version-1.2.10-E6753A?style=flat-square">
   <img alt="iOS" src="https://img.shields.io/badge/iOS-16.0–18.8.x%20%7C%2026.x%20%7C%2027.0–27.2b2-222222?style=flat-square">
   <img alt="Swift" src="https://img.shields.io/badge/Swift-5-F05138?style=flat-square&logo=swift&logoColor=white">
   <img alt="Languages" src="https://img.shields.io/badge/languages-English%20%7C%20Tiếng%20Việt%20%7C%20简体中文-E6753A?style=flat-square">
@@ -34,6 +34,12 @@
   &nbsp;
   <img src="docs/images/cleaner.png" width="245" alt="Astra Cleaner">
 </p>
+
+## What's new in 1.2.10
+
+- Fixes on-device AirLift pairing on supported iOS 27 builds by validating and atomically promoting the completed pairing record.
+- Adds device-identity recovery and clearer protected-download authorization diagnostics.
+- Adds CI regression checks for AirLift completion, recovery interruption safety, and protected recovery flows.
 
 ## What's new in 1.2.6
 

@@ -15,13 +15,10 @@ DerivedData/
 *.dSYM
 *.dSYM.zip
 *.app
-*.release.json
 
 # Swift Package Manager
 .build/
 .swiftpm/
-__pycache__/
-*.pyc
 
 # Signing material and local configuration
 *.cer
@@ -39,10 +36,6 @@ __pycache__/
 /Tests/*
 !/Tests/ProtectedArtifactSelfCheck.swift
 !/Tests/DeviceIdentitySelfCheck.swift
-!/Tests/test_embed_integrity_hash.py
-!/Tests/test_seal_release.py
-!/Tests/test_security_build_wiring.py
-!/Tests/ProtectedOperationSelfCheck.swift
 !/Tests/Fixtures/
 /Tests/Fixtures/*
 !/Tests/Fixtures/artifact_crypto_v1.json
@@ -50,8 +43,34 @@ __pycache__/
 /SECURITY.md
 
 # Temporary files
+__pycache__/
+*.py[cod]
 *.tmp
 *.swp
 *~
 
 scratch/
+
+# Public, harmless regression fixtures only (no catalog download data).
+!/Tests/IntegritySelfCheck.swift
+!/Tests/CatalogApplicationSelfCheck.swift
+!/Tests/Fixtures/integrity_release.json
+!/Tests/Fixtures/catalog/
+/Tests/Fixtures/catalog/*
+!/Tests/Fixtures/catalog/catalog.json
+!/Tests/Fixtures/catalog/1001.3105
+!/Tests/Fixtures/catalog/1002.3105
+!/Tests/Fixtures/catalog/1003.3105
+Astra.release
+release-registry.json
+
+!/Tests/DeviceEnvironmentSelfCheck.swift
+!/Tests/Fixtures/device_environment_v1.json
+
+!/Tests/ProtectedLeaseSelfCheck.swift
+!/Tests/check_airlift_pairing_finish.py
+!/Tests/DeviceRecoverySelfCheck.swift
+!/Tests/ProtectedRecoverySelfCheck.swift
+!/Tests/ProtectedRecoveryFlowSelfCheck.swift
+!/Tests/extract_recovery_contract.py
+!/Tests/extract_recovery_flow.py

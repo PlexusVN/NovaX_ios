@@ -110,7 +110,7 @@ final class ProtectedArtifactDecoder {
               grant.sessionId == sessionID, grant.requestNonce == requestNonce,
               Self.matches(requestNonce, #"^[0-9a-f]{32}$"#),
               UUID(uuidString: sessionID) != nil, UUID(uuidString: recipientID) != nil,
-              grant.issuedAt <= nowSeconds + 30, nowSeconds < grant.expiresAt,
+              grant.issuedAt <= nowSeconds, nowSeconds < grant.expiresAt,
               ciphertext.count == manifest.ciphertextSize,
               Self.sha256(ciphertext) == manifest.ciphertextSHA256 else {
             throw ProtectedArtifactError.contextMismatch
@@ -186,7 +186,8 @@ final class ProtectedArtifactDecoder {
         guard UUID(uuidString: manifest.artifactId) != nil,
               Self.matches(manifest.releaseId, #"^[A-Za-z0-9_.:@-]{1,128}$"#),
               manifest.releaseVersion > 0, manifest.releaseVersion <= 9_007_199_254_740_991,
-              ["ffth", "ffmax"].contains(manifest.variant),
+              AppSecurityConfiguration.protectedBundleID(forVariant: manifest.variant) != nil,
+              manifest.variant != "capcut" || manifest.kind == "package",
               ["package", "mod", "original"].contains(manifest.kind),
               manifest.fileName.utf8.count <= 255,
               Self.matches(manifest.fileName, #"^[A-Za-z0-9_~%+ .()=-]+$"#),

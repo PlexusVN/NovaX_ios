@@ -27,6 +27,42 @@ struct PatchRestoreInspection: Equatable {
     let changedTargets: [PatchTargetChange]
 }
 
+enum PatchApplicationState: Equatable {
+    case off, applied, recoveryRequired
+    var requiresRestore: Bool { self != .off }
+}
+
+/// Preferences associate catalog items with transaction journals, which own the
+/// backups. A missing preference flag must never hide an existing transaction.
+struct CatalogPatchApplicationRegistry {
+    let defaults: UserDefaults
+    private let prefix = "patch_applied_"
+    func projectID(for identity: String) -> UUID? {
+        defaults.string(forKey: prefix + identity + "_projectID").flatMap(UUID.init(uuidString:))
+    }
+    func associate(_ projectID: UUID, with identity: String) {
+        defaults.set(projectID.uuidString, forKey: prefix + identity + "_projectID")
+    }
+    func markApplied(_ identity: String) {
+        defaults.set(true, forKey: prefix + identity)
+        defaults.removeObject(forKey: prefix + identity + "_recovery")
+    }
+    func markRecoveryRequired(_ identity: String) {
+        defaults.set(true, forKey: prefix + identity + "_recovery")
+    }
+    func clear(_ identity: String) {
+        for suffix in ["", "_projectID", "_recovery"] { defaults.removeObject(forKey: prefix + identity + suffix) }
+    }
+    func state(for identity: String, recordedState: (UUID) -> PatchApplicationState?) -> PatchApplicationState {
+        if let id = projectID(for: identity), let state = recordedState(id) {
+            if state == .off { return .off }
+            return defaults.bool(forKey: prefix + identity + "_recovery") ? .recoveryRequired : state
+        }
+        return defaults.bool(forKey: prefix + identity) || defaults.bool(forKey: prefix + identity + "_recovery")
+            ? .recoveryRequired : .off
+    }
+}
+
 enum PatchTransaction {
     private enum Status: String, Codable {
         case prepared
@@ -520,6 +556,54 @@ enum PatchTransaction {
         )
     }
 
+    static func recordedApplicationState(receipt: PatchTransactionReceipt) throws -> PatchApplicationState {
+        let journal = try activeJournal(for: receipt)
+        return journal.status == .applied ? .applied : .recoveryRequired
+    }
+
+    static func latestRecordedApplicationState(projectID: UUID, backupRoot: URL,
+                                               fileManager: FileManager = .default) -> PatchApplicationState? {
+        let directory = backupRoot.appendingPathComponent(projectID.uuidString, isDirectory: true)
+        guard let transactions = try? fileManager.contentsOfDirectory(at: directory,
+            includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else { return nil }
+        let journals = transactions.compactMap { transaction -> Journal? in
+            guard let journal = try? readJournal(transaction.appendingPathComponent(journalFilename)),
+                  (minimumSchemaVersion...schemaVersion).contains(journal.schemaVersion),
+                  journal.projectID == projectID, transaction.lastPathComponent == journal.transactionID.uuidString else { return nil }
+            return journal
+        }
+        guard let journal = journals.max(by: { $0.createdAt < $1.createdAt }) else { return nil }
+        switch journal.status {
+        case .applied: return .applied
+        case .prepared: return .recoveryRequired
+        case .restored, .rolledBack: return .off
+        }
+    }
+
+    /// Adopt a previous successful write without overwriting its original
+    /// backup. A pending, changed or different release requires explicit restore.
+    static func inspectExistingApplication(
+        receipt: PatchTransactionReceipt,
+        project: PatchProject,
+        containerResolver: (String) throws -> URL,
+        fileManager: FileManager = .default
+    ) throws -> PatchApplicationState {
+        let journal = try activeJournal(for: receipt)
+        guard project.id == journal.projectID else { throw PatchPackageError.invalidProject }
+        guard journal.status == .applied, journal.records.count == project.rules.count,
+              Set(project.rules.map(\.id)).count == project.rules.count else { return .recoveryRequired }
+        let rules = Dictionary(uniqueKeysWithValues: project.rules.map { ($0.id, $0) })
+        guard journal.records.allSatisfy({ record in
+            guard let rule = rules[record.ruleID] else { return false }
+            return rule.bundleID == record.bundleID && rule.relativePath == record.relativePath
+                && digest(rule.replacementData) == record.replacementDigest
+        }) else { return .recoveryRequired }
+        let roots = try resolvedRoots(journal: journal, containerResolver: containerResolver)
+        let records = try resolvedRecords(journal.records, transactionDirectory: receipt.journalURL.deletingLastPathComponent(),
+            roots: roots, fileManager: fileManager)
+        return try changedTargets(in: records, fileManager: fileManager).isEmpty ? .applied : .recoveryRequired
+    }
+
     static func appliedTargetKeys(
         backupRoot: URL,
         excludingProjectID: UUID? = nil,
@@ -1007,22 +1091,33 @@ enum PatchTransaction {
 // MARK: - Device Patch Service
 
 enum DevicePatchService {
+    static func recordedApplicationState(projectID: UUID) -> PatchApplicationState? {
+        guard let root = try? PatchProjectLibrary.backupRootURL() else { return nil }
+        return PatchTransaction.latestRecordedApplicationState(projectID: projectID, backupRoot: root)
+    }
+
+    static func inspectExistingApplication(receipt: PatchTransactionReceipt, project: PatchProject) throws -> PatchApplicationState {
+        try withResolvedContainers(bundleIDs: project.allBundleIdentifiers) { roots in
+            try PatchTransaction.inspectExistingApplication(receipt: receipt, project: project, containerResolver: { bundleID in
+                guard let root = roots[bundleID] else { throw PatchPackageError.targetAppUnavailable(bundleID) }
+                return root
+            })
+        }
+    }
+
     static func apply(project: PatchProject) throws -> PatchTransactionReceipt {
-        try ReleaseCommitBarrier.requireAllowed()
-        return try ReleaseCommitBarrier.withCommit {
-            let bundleIDs = orderedBundleIdentifiers(in: project)
-            return try withResolvedContainers(bundleIDs: bundleIDs) { roots in
-                try PatchTransaction.apply(
-                    project: project,
-                    backupRoot: try PatchProjectLibrary.backupRootURL(),
-                    containerResolver: { bundleID in
-                        guard let root = roots[bundleID] else {
-                            throw PatchPackageError.targetAppUnavailable(bundleID)
-                        }
-                        return root
+        let bundleIDs = orderedBundleIdentifiers(in: project)
+        return try withResolvedContainers(bundleIDs: bundleIDs) { roots in
+            try PatchTransaction.apply(
+                project: project,
+                backupRoot: try PatchProjectLibrary.backupRootURL(),
+                containerResolver: { bundleID in
+                    guard let root = roots[bundleID] else {
+                        throw PatchPackageError.targetAppUnavailable(bundleID)
                     }
-                )
-            }
+                    return root
+                }
+            )
         }
     }
 
@@ -1045,21 +1140,18 @@ enum DevicePatchService {
         receipt: PatchTransactionReceipt,
         allowChangedTargets: Bool = false
     ) throws {
-        try ReleaseCommitBarrier.requireAllowed()
-        try ReleaseCommitBarrier.withCommit {
-            let bundleIDs = try PatchTransaction.requiredBundleIdentifiers(for: receipt)
-            try withResolvedContainers(bundleIDs: bundleIDs) { roots in
-                try PatchTransaction.restore(
-                    receipt: receipt,
-                    allowChangedTargets: allowChangedTargets,
-                    containerResolver: { bundleID in
-                        guard let root = roots[bundleID] else {
-                            throw PatchPackageError.targetAppUnavailable(bundleID)
-                        }
-                        return root
+        let bundleIDs = try PatchTransaction.requiredBundleIdentifiers(for: receipt)
+        try withResolvedContainers(bundleIDs: bundleIDs) { roots in
+            try PatchTransaction.restore(
+                receipt: receipt,
+                allowChangedTargets: allowChangedTargets,
+                containerResolver: { bundleID in
+                    guard let root = roots[bundleID] else {
+                        throw PatchPackageError.targetAppUnavailable(bundleID)
                     }
-                )
-            }
+                    return root
+                }
+            )
         }
     }
 
@@ -1067,21 +1159,18 @@ enum DevicePatchService {
         receipt: PatchTransactionReceipt,
         project: PatchProject
     ) throws {
-        try ReleaseCommitBarrier.requireAllowed()
-        try ReleaseCommitBarrier.withCommit {
-            let bundleIDs = try PatchTransaction.requiredBundleIdentifiers(for: receipt)
-            try withResolvedContainers(bundleIDs: bundleIDs) { roots in
-                try PatchTransaction.resetToAppliedState(
-                    receipt: receipt,
-                    fallbackProject: project,
-                    containerResolver: { bundleID in
-                        guard let root = roots[bundleID] else {
-                            throw PatchPackageError.targetAppUnavailable(bundleID)
-                        }
-                        return root
+        let bundleIDs = try PatchTransaction.requiredBundleIdentifiers(for: receipt)
+        try withResolvedContainers(bundleIDs: bundleIDs) { roots in
+            try PatchTransaction.resetToAppliedState(
+                receipt: receipt,
+                fallbackProject: project,
+                containerResolver: { bundleID in
+                    guard let root = roots[bundleID] else {
+                        throw PatchPackageError.targetAppUnavailable(bundleID)
                     }
-                )
-            }
+                    return root
+                }
+            )
         }
     }
 

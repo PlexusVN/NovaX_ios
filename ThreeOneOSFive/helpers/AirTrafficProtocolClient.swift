@@ -247,8 +247,8 @@ final class AirTrafficProtocolClient: ObservableObject {
         _ = try await NetworkAccessGate.shared.requireAllowed()
         try await Task.sleep(nanoseconds: 200_000_000)
 
-        let stagingLease = AirLiftStagingLease(url: try makeProtectedStagingDirectory())
-        let stage = stagingLease.url
+        let stage = try makeProtectedStagingDirectory()
+        defer { try? FileManager.default.removeItem(at: stage) }
         do {
             try data.write(
                 to: stage.appendingPathComponent(filename),
@@ -264,7 +264,6 @@ final class AirTrafficProtocolClient: ObservableObject {
             try await writeDirectory(
                 pairingPath: pairingPath,
                 sourceDirectory: stage.path,
-                stagingLease: stagingLease,
                 targetDirectory: directory,
                 networkGeneration: networkGeneration
             )
@@ -307,8 +306,8 @@ final class AirTrafficProtocolClient: ObservableObject {
         _ = try await NetworkAccessGate.shared.requireAllowed()
         try await Task.sleep(nanoseconds: 200_000_000)
 
-        let stagingLease = AirLiftStagingLease(url: try makeProtectedStagingDirectory())
-        let stage = stagingLease.url
+        let stage = try makeProtectedStagingDirectory()
+        defer { try? FileManager.default.removeItem(at: stage) }
         do {
             for (name, data) in files {
                 guard !name.isEmpty, name == (name as NSString).lastPathComponent,
@@ -332,7 +331,6 @@ final class AirTrafficProtocolClient: ObservableObject {
             try await writeDirectory(
                 pairingPath: pairingPath,
                 sourceDirectory: stage.path,
-                stagingLease: stagingLease,
                 targetDirectory: directory,
                 networkGeneration: networkGeneration
             )
@@ -503,23 +501,20 @@ final class AirTrafficProtocolClient: ObservableObject {
     }
 
     private func verifyCanary(pairingPath: String, targetDirectory: String) async throws {
-        try ReleaseCommitBarrier.requireAllowed()
         verificationLevel = .none
         let result: FFIStringResult = try await runBlocking(name: "Astra.AirLift.Canary", timeout: 195) {
-            try ReleaseCommitBarrier.withCommit {
-                var json: UnsafeMutablePointer<CChar>?
-                var error: UnsafeMutablePointer<CChar>?
-                let code = pairingPath.withCString { pairing in
-                    targetDirectory.withCString { target in
-                        al_exploit_run(pairing, target, novaAirLiftLogCallback, nil, &json, &error)
-                    }
+            var json: UnsafeMutablePointer<CChar>?
+            var error: UnsafeMutablePointer<CChar>?
+            let code = pairingPath.withCString { pairing in
+                targetDirectory.withCString { target in
+                    al_exploit_run(pairing, target, novaAirLiftLogCallback, nil, &json, &error)
                 }
-                return FFIStringResult(
-                    code: code,
-                    value: Self.consumeString(&json),
-                    error: Self.consumeString(&error)
-                )
             }
+            return FFIStringResult(
+                code: code,
+                value: Self.consumeString(&json),
+                error: Self.consumeString(&error)
+            )
         }
         guard result.code == 0 else {
             if Self.isPairingRevokedError(result.error) {
@@ -540,7 +535,6 @@ final class AirTrafficProtocolClient: ObservableObject {
     private func writeDirectory(
         pairingPath: String,
         sourceDirectory: String,
-        stagingLease: AirLiftStagingLease,
         targetDirectory: String,
         networkGeneration: UInt64
     ) async throws {
@@ -549,24 +543,21 @@ final class AirTrafficProtocolClient: ObservableObject {
         // operations rather than interrupting a file transaction mid-write.
         try Task.checkCancellation()
         try NetworkAccessGate.shared.validateGeneration(networkGeneration)
-        try ReleaseCommitBarrier.requireAllowed()
+        try await AppIntegrityRuntime.shared.requireAllowed(force:true)
         let result: FFIVoidResult = try await runBlocking(name: "Astra.AirLift.Write", timeout: 195) {
-            // The native operation owns the staging files until it actually
-            // returns. A Swift timeout must not delete its input underneath it.
-            defer { withExtendedLifetime(stagingLease) {} }
-            return try ReleaseCommitBarrier.withCommit {
-                var error: UnsafeMutablePointer<CChar>?
-                let code = pairingPath.withCString { pairing in
-                    sourceDirectory.withCString { source in
-                        targetDirectory.withCString { target in
-                            al_exploit_write_dir(
-                                pairing, source, target,
-                                novaAirLiftLogCallback, nil, &error
-                            )
-                        }
+            try IntegrityCommitBarrier.withCommit {
+            var error: UnsafeMutablePointer<CChar>?
+            let code = pairingPath.withCString { pairing in
+                sourceDirectory.withCString { source in
+                    targetDirectory.withCString { target in
+                        al_exploit_write_dir(
+                            pairing, source, target,
+                            novaAirLiftLogCallback, nil, &error
+                        )
                     }
                 }
-                return FFIVoidResult(code: code, error: Self.consumeString(&error))
+            }
+            return FFIVoidResult(code: code, error: Self.consumeString(&error))
             }
         }
         guard result.code == 0 else {
@@ -641,12 +632,6 @@ private struct FFIStringResult: Sendable {
     let code: Int32
     let value: String
     let error: String
-}
-
-private final class AirLiftStagingLease: @unchecked Sendable {
-    let url: URL
-    init(url: URL) { self.url = url }
-    deinit { try? FileManager.default.removeItem(at: url) }
 }
 
 private struct FFIVoidResult: Sendable {

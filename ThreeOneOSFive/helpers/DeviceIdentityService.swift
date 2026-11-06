@@ -83,6 +83,7 @@ public final class DeviceIdentityService {
     private var agreementKey: AgreementKey?
 
     let licenseBinding: String?
+    private let recoveryGeneration: String?
     private let storage: DeviceIdentityStorage
     private let useSecureEnclave: Bool
     private static let identityTags = ["novax_device_install_id", "novax_device_key_id",
@@ -91,7 +92,13 @@ public final class DeviceIdentityService {
 
     private convenience init() { self.init(namespace: nil) }
     init(namespace: String?, storage: DeviceIdentityStorage = .keychain, useSecureEnclave: Bool = true) {
-        self.licenseBinding = namespace; self.storage = storage; self.useSecureEnclave = useSecureEnclave
+        self.licenseBinding = namespace; self.recoveryGeneration = nil
+        self.storage = storage; self.useSecureEnclave = useSecureEnclave
+    }
+    private init(binding: String, recoveryGeneration: String, storage: DeviceIdentityStorage,
+                 useSecureEnclave: Bool) {
+        self.licenseBinding = binding; self.recoveryGeneration = recoveryGeneration
+        self.storage = storage; self.useSecureEnclave = useSecureEnclave
     }
     static func canonicalLicense(_ value: String) -> String {
         value.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
@@ -99,12 +106,195 @@ public final class DeviceIdentityService {
     static func binding(forLicense value: String) -> String {
         SHA256.hash(data: Data(canonicalLicense(value).utf8)).map { String(format: "%02x", $0) }.joined()
     }
-    static func scoped(to binding: String) throws -> DeviceIdentityService {
+    static func scoped(to binding: String, storage: DeviceIdentityStorage = .keychain,
+                       useSecureEnclave: Bool = true) throws -> DeviceIdentityService {
         guard binding.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil else { throw DeviceIdentityError.invalidInput }
-        return DeviceIdentityService(namespace: binding)
+        let base = DeviceIdentityService(namespace: binding, storage: storage, useSecureEnclave: useSecureEnclave)
+        guard let generation = try base.readGeneration("active_generation_v1") else { return base }
+        let selected = base.recoveryIdentity(generation)
+        _ = try selected.validatedRecoveryRecord()
+        guard try selected.persistedEnrollmentID() != nil else { throw DeviceIdentityError.invalidIdentity }
+        return selected
     }
     private func storageTag(_ base: String) -> String {
-        licenseBinding.map { "astra.identity.v3.\($0).\(base)" } ?? base
+        guard let licenseBinding else { return base }
+        let prefix = "astra.identity.v3.\(licenseBinding)"
+        return recoveryGeneration.map { "\(prefix).generation.\($0).\(base)" } ?? "\(prefix).\(base)"
+    }
+
+    private struct RecoveryRecord: Codable, Equatable {
+        let version: Int
+        let generation: String
+        let licenseBinding: String
+        let keyID: Int
+        let hwidHash: String
+        let signingFingerprint: String
+        let agreementFingerprint: String
+    }
+    private func recoveryControlTag(_ suffix: String) throws -> String {
+        guard let licenseBinding,
+              licenseBinding.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil else {
+            throw DeviceIdentityError.invalidInput
+        }
+        return "astra.identity.v3.\(licenseBinding).\(suffix)"
+    }
+    private func readGeneration(_ suffix: String) throws -> String? {
+        guard let text = try readText(recoveryControlTag(suffix)) else { return nil }
+        guard UUID(uuidString: text)?.uuidString.lowercased() == text else {
+            throw DeviceIdentityError.invalidIdentity
+        }
+        return text
+    }
+    private func recoveryIdentity(_ generation: String) -> DeviceIdentityService {
+        DeviceIdentityService(binding: licenseBinding!, recoveryGeneration: generation,
+                              storage: storage, useSecureEnclave: useSecureEnclave)
+    }
+    private static func recoveryHWIDHash(_ hwid: String) throws -> String {
+        let value = hwid.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !value.isEmpty, value.utf8.count <= 255,
+              !value.contains("\r"), !value.contains("\n"), !value.contains("\0") else {
+            throw DeviceIdentityError.invalidInput
+        }
+        return SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+    private static func publicFingerprint(_ base64: String) throws -> String {
+        guard let bytes = Data(base64Encoded: base64), bytes.count == 65, bytes.first == 4 else {
+            throw DeviceIdentityError.invalidIdentity
+        }
+        return SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+    }
+    /// This path never creates keys or backend markers. A published recovery
+    /// candidate with lost/corrupt material must not silently rotate its keys.
+    private func existingRecoveryPublicKeys() throws -> (signing: String, agreement: String) {
+        guard recoveryGeneration != nil else { throw DeviceIdentityError.invalidIdentity }
+        let signingBackend = try readText(signingBackendTag)
+        let agreementBackend = try readText(agreementBackendTag)
+        let signingSE = try readData(tag: seKeyTag), signingSoftware = try readData(tag: softwareKeyTag)
+        let agreementSE = try readData(tag: agreementSETag), agreementSoftware = try readData(tag: agreementSoftwareTag)
+        let signing: String
+        switch signingBackend {
+        case AssuranceLevel.secureEnclave.rawValue:
+            guard let signingSE, signingSoftware == nil else { throw DeviceIdentityError.invalidIdentity }
+            signing = try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: signingSE)
+                .publicKey.x963Representation.base64EncodedString()
+        case AssuranceLevel.softwareKeychain.rawValue:
+            guard let signingSoftware, signingSE == nil else { throw DeviceIdentityError.invalidIdentity }
+            signing = try P256.Signing.PrivateKey(rawRepresentation: signingSoftware)
+                .publicKey.x963Representation.base64EncodedString()
+        default: throw DeviceIdentityError.identityMissing
+        }
+        let agreement: String
+        switch agreementBackend {
+        case AssuranceLevel.secureEnclave.rawValue:
+            guard let agreementSE, agreementSoftware == nil else { throw DeviceIdentityError.invalidIdentity }
+            agreement = try SecureEnclave.P256.KeyAgreement.PrivateKey(dataRepresentation: agreementSE)
+                .publicKey.x963Representation.base64EncodedString()
+        case AssuranceLevel.softwareKeychain.rawValue:
+            guard let agreementSoftware, agreementSE == nil else { throw DeviceIdentityError.invalidIdentity }
+            agreement = try P256.KeyAgreement.PrivateKey(rawRepresentation: agreementSoftware)
+                .publicKey.x963Representation.base64EncodedString()
+        default: throw DeviceIdentityError.identityMissing
+        }
+        guard signing != agreement else { throw DeviceIdentityError.invalidIdentity }
+        return (signing, agreement)
+    }
+    private func validatedRecoveryRecord() throws -> RecoveryRecord {
+        guard let generation = recoveryGeneration, let licenseBinding,
+              let data = try readData(tag: storageTag("recovery_record_v1")), data.count <= 2048,
+              let shape = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              Set(shape.keys) == Set(["version", "generation", "licenseBinding", "keyID", "hwidHash",
+                                      "signingFingerprint", "agreementFingerprint"]),
+              let record = try? JSONDecoder().decode(RecoveryRecord.self, from: data),
+              record.version == 1, record.generation == generation,
+              record.licenseBinding == licenseBinding, record.keyID > 0,
+              UUID(uuidString: generation)?.uuidString.lowercased() == generation,
+              [record.hwidHash, record.signingFingerprint, record.agreementFingerprint].allSatisfy({
+                  $0.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil
+              }), record.signingFingerprint != record.agreementFingerprint,
+              try existingInstallationID() == generation,
+              try persistedServerKeyID() == record.keyID else { throw DeviceIdentityError.invalidIdentity }
+        let keys = try existingRecoveryPublicKeys()
+        guard try Self.publicFingerprint(keys.signing) == record.signingFingerprint,
+              try Self.publicFingerprint(keys.agreement) == record.agreementFingerprint else {
+            throw DeviceIdentityError.invalidIdentity
+        }
+        return record
+    }
+    /// Read-only. A marker is published only after an authorized challenge has
+    /// prepared durable material. It permits exact-key enrollment retry after
+    /// a committed enrollment consumes its ticket but its HTTP response is lost.
+    func pendingRecoveryCandidate(hwid: String) throws -> DeviceIdentityService? {
+        try locked {
+            guard let generation = try readGeneration("pending_recovery_v1") else { return nil }
+            if try readGeneration("active_generation_v1") == generation { return nil }
+            let candidate = recoveryIdentity(generation)
+            let record = try candidate.validatedRecoveryRecord()
+            guard record.hwidHash == (try Self.recoveryHWIDHash(hwid)) else {
+                throw DeviceIdentityError.invalidIdentity
+            }
+            return candidate
+        }
+    }
+    /// Call only after verifying a fresh signed recovery_authorized=true
+    /// challenge for this exact license, HWID, server key ID and installation.
+    /// No enrolled data or old private key is deleted or overwritten.
+    func prepareRecoveryCandidate(installationID: String, keyID: Int,
+                                  hwid: String) throws -> DeviceIdentityService {
+        try locked {
+            guard keyID > 0, let licenseBinding,
+                  UUID(uuidString: installationID)?.uuidString.lowercased() == installationID,
+                  installationID != (try readGeneration("active_generation_v1")),
+                  installationID != (try existingInstallationID()) else {
+                throw DeviceIdentityError.invalidInput
+            }
+            let hwidHash = try Self.recoveryHWIDHash(hwid)
+            if let existingKeyID = try persistedServerKeyID(), existingKeyID != keyID {
+                throw DeviceIdentityError.invalidIdentity
+            }
+            if let pending = try pendingRecoveryCandidate(hwid: hwid) {
+                guard try pending.existingInstallationID() == installationID,
+                      try pending.persistedServerKeyID() == keyID else { throw DeviceIdentityError.ambiguousIdentity }
+                return pending
+            }
+            let candidate = recoveryIdentity(installationID)
+            try candidate.persistInstallationID(installationID)
+            try candidate.persistServerKeyID(keyID)
+            let signing = try candidate.getOrCreateKey().publicKeyX963Base64
+            let agreement = try candidate.getOrCreateAgreementKey().publicKeyX963Base64
+            let record = RecoveryRecord(version: 1, generation: installationID, licenseBinding: licenseBinding,
+                keyID: keyID, hwidHash: hwidHash, signingFingerprint: try Self.publicFingerprint(signing),
+                agreementFingerprint: try Self.publicFingerprint(agreement))
+            try candidate.saveData(JSONEncoder().encode(record), tag: candidate.storageTag("recovery_record_v1"))
+            _ = try candidate.validatedRecoveryRecord()
+            // Publish LAST: no server enrollment may be sent before this returns.
+            try saveData(Data(installationID.utf8), tag: recoveryControlTag("pending_recovery_v1"))
+            return candidate
+        }
+    }
+    /// Call only after a signed enrollment response proves this candidate's
+    /// device ID, revision and recipient fingerprint under the unchanged auth context.
+    /// Publishing the active generation is one atomic Keychain item update.
+    @discardableResult
+    func promoteRecoveryCandidate(_ candidate: DeviceIdentityService, deviceKeyID: String,
+                                  keyID: Int, hwid: String) throws -> DeviceIdentityService {
+        try locked {
+            guard candidate.licenseBinding == licenseBinding, let generation = candidate.recoveryGeneration,
+                  UUID(uuidString: deviceKeyID) != nil,
+                  try readGeneration("pending_recovery_v1") == generation else {
+                throw DeviceIdentityError.invalidIdentity
+            }
+            let durable = recoveryIdentity(generation)
+            let record = try durable.validatedRecoveryRecord()
+            guard record == (try candidate.validatedRecoveryRecord()), record.keyID == keyID,
+                  record.hwidHash == (try Self.recoveryHWIDHash(hwid)) else { throw DeviceIdentityError.invalidIdentity }
+            try durable.persistEnrollment(deviceKeyId: deviceKeyID)
+            _ = try durable.validatedRecoveryRecord()
+            try saveData(Data(generation.utf8), tag: recoveryControlTag("active_generation_v1"))
+            // Cleanup is optional after the commit. A stale completed pending
+            // marker is ignored by pendingRecoveryCandidate, even after a crash.
+            try? removeData(tag: recoveryControlTag("pending_recovery_v1"))
+            return durable
+        }
     }
     /// Only a verified signed device-context response may choose this binding.
     /// Preserve the legacy archive and refuse to overwrite any conflicting key.
@@ -141,30 +331,6 @@ public final class DeviceIdentityService {
         guard let text = try readText(storageTag("server_license_key_id")) else { return nil }
         guard let keyID = Int(text), keyID > 0 else { throw DeviceIdentityError.invalidIdentity }
         return keyID
-    }
-
-    /// Called only after a signature-verified server revocation or explicit
-    /// admin recovery authorization. Never touches pairing, license or another
-    /// license's identity, and never exports private key material to files.
-    func resetAuthorizedInstallation() throws {
-        try locked {
-            guard licenseBinding != nil else { throw DeviceIdentityError.invalidIdentity }
-            try saveData(Data("pending".utf8), tag: storageTag("authorized_recovery_pending"))
-            // Remove the published enrollment marker first: a crash during
-            // cleanup must not expose a partially removed enrolled identity.
-            try removeData(tag: deviceKeyIdKey)
-            for base in Self.identityTags where base != "novax_device_key_id" {
-                try removeData(tag: storageTag(base))
-            }
-            try removeData(tag: storageTag("server_license_key_id"))
-            signingKey = nil
-            agreementKey = nil
-            try removeData(tag: storageTag("authorized_recovery_pending"))
-        }
-    }
-
-    var hasPendingAuthorizedRecovery: Bool {
-        get throws { try readData(tag: storageTag("authorized_recovery_pending")) != nil }
     }
 
     /// Compatibility accessor; security-sensitive callers use installationID().

@@ -45,6 +45,8 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
         case localNetworkPermission
         case publicationFailed(String)
         case emptyRecord
+        case invalidRecord
+        case persistenceFailed(String)
         case failed(String)
 
         var errorDescription: String? {
@@ -58,7 +60,11 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
             case .publicationFailed(let message):
                 return "Không thể phát thiết bị Astra qua Bonjour: \(message)"
             case .emptyRecord:
-                return "Ghép đôi hoàn tất nhưng file thông tin xác thực bị trống."
+                return "Chưa xác nhận được dữ liệu ghép đôi. Phiên ghép đôi chưa sẵn sàng."
+            case .invalidRecord:
+                return "Ghép đôi đã trả dữ liệu nhưng thông tin xác thực chưa đầy đủ. Hãy xoá phiên Astra trong Chế độ nhà phát triển rồi ghép đôi lại."
+            case .persistenceFailed(let message):
+                return "Ghép đôi hoàn tất nhưng Astra không thể lưu thông tin xác thực an toàn: \(message)"
             case .failed(let message):
                 return message
             }
@@ -122,6 +128,7 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
     }
 
     private let pairingFileName = "novax_airlift_pairing.plist"
+    private let pairingStagingFileName = "novax_airlift_pairing.pending.plist"
     private let pairingKeychainKey = "novax.airlift.pairingRecord.v1"
     private var pairingFileURL: URL {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -136,6 +143,10 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
         return folder.appendingPathComponent(pairingFileName)
     }
 
+    private var pairingStagingFileURL: URL {
+        pairingFileURL.deletingLastPathComponent().appendingPathComponent(pairingStagingFileName)
+    }
+
     private var legacyPairingFileURL: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
             .appendingPathComponent(".airlift", isDirectory: true)
@@ -144,6 +155,7 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
 
     private override init() {
         super.init()
+        discardPairingStagingFile()
         migrateLegacyPairingFileIfNeeded()
         restorePairingFileFromKeychainIfNeeded()
         checkPairingStatus()
@@ -382,7 +394,7 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
         beginPairingBackgroundTask()
         startHostReadyWatchdog()
 
-        let outputPath = pairingFileURL.path
+        let outputPath = preparePairingStagingFile().path
         let altIRK = Self.storedAltIRK
         let context = UnsafeMutableRawPointer(Unmanaged.passRetained(self).toOpaque())
 
@@ -405,7 +417,6 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
             }
 
             let issuedIRK = Self.string(result.host_alt_irk_hex)
-            let resultPath = Self.string(result.pairing_file_path)
             let deviceName = Self.string(result.device_name)
             let errorMessage = Self.string(result.error)
             al_pairing_result_free(&result)
@@ -414,7 +425,7 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
                 Unmanaged<AirLiftPairingManager>.fromOpaque(context).release()
                 self.finishPairing(
                     returnCode: returnCode,
-                    outputPath: resultPath.isEmpty ? outputPath : resultPath,
+                    outputPath: outputPath,
                     issuedIRK: issuedIRK,
                     deviceName: deviceName,
                     errorMessage: errorMessage
@@ -457,29 +468,79 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
         isBackgroundKeepAliveActive = false
         endPairingBackgroundTask()
         bonjourStatus = .idle
+        defer { discardPairingStagingFile() }
 
-        if returnCode == 0,
-           let data = try? Data(contentsOf: URL(fileURLWithPath: outputPath)),
-           !data.isEmpty {
-            if !issuedIRK.isEmpty { Self.storedAltIRK = issuedIRK }
-            if outputPath != pairingFileURL.path {
-                try? data.write(to: pairingFileURL, options: [.atomic, .completeFileProtection])
-            }
-            backupPairingDataToKeychain(data)
-            checkPairingStatus()
-            guard status.isPaired else {
-                resolve(.failure(PairingError.emptyRecord))
-                return
-            }
-            status = .verified
-            let label = deviceName.isEmpty ? "iPhone" : deviceName
-            resolve(.success(pairingFileURL.path))
-            alertMessage = "Đã ghép đôi với \(label)."
-        } else {
+        guard returnCode == 0 else {
             status = .missing
+            pairingFilePath = nil
             let detail = errorMessage.isEmpty ? "RPPairing trả về mã \(returnCode)." : errorMessage
             resolve(.failure(PairingError.failed(detail)))
+            return
         }
+
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: outputPath)),
+              !data.isEmpty else {
+            status = .missing
+            pairingFilePath = nil
+            resolve(.failure(PairingError.emptyRecord))
+            return
+        }
+
+        guard let object = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
+              let record = object as? [String: Any],
+              Self.isSupportedPairingRecord(record) else {
+            status = .invalid
+            pairingFilePath = nil
+            resolve(.failure(PairingError.invalidRecord))
+            return
+        }
+
+        do {
+            // Promote validated staging data with atomic replacement and
+            // complete file protection; native output never becomes canonical.
+            try data.write(to: pairingFileURL, options: [.atomic, .completeFileProtection])
+        } catch {
+            status = .invalid
+            pairingFilePath = nil
+            resolve(.failure(PairingError.persistenceFailed(error.localizedDescription)))
+            return
+        }
+
+        if !issuedIRK.isEmpty { Self.storedAltIRK = issuedIRK }
+        if !backupPairingDataToKeychain(data) {
+            log("airlift pairing: valid record saved, but Keychain recovery backup failed")
+        }
+
+        // Pairing normally finishes while the UI is still in .waitingSettings.
+        // File validity, not that transient state, is the completion authority.
+        pairingFilePath = pairingFileURL.path
+        status = .verified
+        let label = deviceName.isEmpty ? "iPhone" : deviceName
+        resolve(.success(pairingFileURL.path))
+        alertMessage = "Đã ghép đôi với \(label)."
+    }
+
+    /// Native pairing writes to staging first. A valid existing record is
+    /// copied there so the Rust host can reuse its signing identity on re-pair.
+    private func preparePairingStagingFile() -> URL {
+        discardPairingStagingFile()
+        guard let data = try? Data(contentsOf: pairingFileURL),
+              !data.isEmpty,
+              let object = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
+              let record = object as? [String: Any],
+              Self.isSupportedPairingRecord(record) else {
+            return pairingStagingFileURL
+        }
+        do {
+            try data.write(to: pairingStagingFileURL, options: [.atomic, .completeFileProtection])
+        } catch {
+            log("airlift pairing: could not seed staging record; starting with a fresh host identity")
+        }
+        return pairingStagingFileURL
+    }
+
+    private func discardPairingStagingFile() {
+        try? FileManager.default.removeItem(at: pairingStagingFileURL)
     }
 
     private func resolve(_ result: Result<String, Error>) {

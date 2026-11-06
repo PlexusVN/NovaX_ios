@@ -17,7 +17,7 @@ final class StorageEngineCoordinator: ObservableObject {
     /// AirliftFFI is statically linked into the application target. Runtime
     /// operations still fail closed unless tunnel, pairing and canary checks pass.
     let isAirTrafficEngineLinked = true
-    
+
     @AppStorage("useAirLiftForAll") var useAirLiftForAll: Bool = false {
         didSet {
             let required = ExploitSupportPolicy.currentStorageMode == .airLift
@@ -34,11 +34,11 @@ final class StorageEngineCoordinator: ObservableObject {
             }
         }
     }
-    
+
     var isAirLiftActive: Bool {
         ExploitSupportPolicy.currentStorageMode == .airLift
     }
-    
+
     private init() {
         let required = ExploitSupportPolicy.currentStorageMode == .airLift
         if useAirLiftForAll != required {
@@ -53,13 +53,13 @@ final class StorageEngineCoordinator: ObservableObject {
     func isProjectAppliedThroughAirLift(_ projectID: UUID) -> Bool {
         UserDefaults.standard.bool(forKey: airLiftAppliedKey(projectID))
     }
-    
+
     /// Writes or replaces a file in the destination path using the optimal engine.
     func writeFile(data: Data, toPath destinationPath: String) async throws {
+        try await AppIntegrityRuntime.shared.requireAllowed(force:true)
         let networkGeneration = try await NetworkAccessGate.shared.requireAllowed()
         try Task.checkCancellation()
         try NetworkAccessGate.shared.validateGeneration(networkGeneration)
-        try ReleaseCommitBarrier.requireAllowed()
         if isAirLiftActive {
             guard isAirTrafficEngineLinked else {
                 throw AirLiftError.executionFailed("AirTraffic engine chưa được liên kết; thao tác ghi đã bị chặn an toàn.")
@@ -80,12 +80,10 @@ final class StorageEngineCoordinator: ObservableObject {
             if !FileManager.default.fileExists(atPath: parent.path) {
                 try? FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
             }
-            try ReleaseCommitBarrier.withCommit {
-                try data.write(to: url, options: .atomic)
-            }
+            try IntegrityCommitBarrier.withCommit { try data.write(to:url,options:.atomic) }
         }
     }
-    
+
     /// Reads a file from a path using the optimal engine.
     func readFile(atPath path: String) async throws -> Data {
         if isAirLiftActive {
@@ -97,7 +95,7 @@ final class StorageEngineCoordinator: ObservableObject {
             return try Data(contentsOf: URL(fileURLWithPath: path))
         }
     }
-    
+
     /// Injects a mod/patch file directly into a game or app container.
     func deployGamePatch(sourceFile: URL, targetContainerPath: String, destinationRelativePath: String) async throws {
         let fileData = try Data(contentsOf: sourceFile)
@@ -109,6 +107,7 @@ final class StorageEngineCoordinator: ObservableObject {
     /// Rules sharing a destination directory are sent in one batch. Every batch
     /// requires an authenticated tunnel and a successful canary read-back first.
     func applyPatchProject(_ project: PatchProject) async throws {
+        try await AppIntegrityRuntime.shared.requireAllowed(force:true)
         guard isAirLiftActive, isAirTrafficEngineLinked else {
             throw AirLiftError.executionFailed("AirLift chưa được bật trong Cài đặt.")
         }

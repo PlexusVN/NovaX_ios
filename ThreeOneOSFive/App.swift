@@ -1,6 +1,5 @@
 import SwiftUI
 import UIKit
-import Darwin
 
 @main
 struct ThreeOneOSFiveApp: App {
@@ -12,36 +11,14 @@ struct ThreeOneOSFiveApp: App {
     @StateObject private var updateManager = UpdateManager.shared
     @StateObject private var gatekeeper = AirLiftGatekeeperManager.shared
     @StateObject private var networkAccess = NetworkAccessGate.shared
+    @StateObject private var appIntegrity = AppIntegrityRuntime.shared
     @AppStorage(AppLanguage.storageKey) private var languageCode = AppLanguage.vietnamese.rawValue
     @State private var showMainInterface = false
-    @State private var runtimeSecurityEvidence: [String] = []
-    @State private var installationIssue: String?
     @Environment(\.scenePhase) private var scenePhase
-    private let launchSecurityEvidence: [String]
 
     init() {
-        let securityResult = AntiTamper.checkAtLaunch()
-        let binaryIntegrity = BinaryIntegrity.evaluate()
-        let signedRelease = SignedReleaseIntegrity.check()
-        launchSecurityEvidence = Array(Set(securityResult.evidenceCodes)).sorted()
-        _installationIssue = State(initialValue: binaryIntegrity.isCompromised || signedRelease.requiresLocalBlock
-            ? "Không thể xác minh bản cài đặt. Hãy cài lại bản phát hành chính thức, giữ nguyên Bundle ID và không bật chèn thư viện khi ký ESign/KSign. Lỗi này không tự khóa HWID." : nil)
-
         setupLogCapture()
         log("app: Astra launching — iOS \(AppInfo.osVersion) (\(AppInfo.osBuild)) \(AppInfo.machineName)")
-        if securityResult.isCompromised {
-            log("app: security notice — \(securityResult.compromisedReasons.joined(separator: ", "))")
-        }
-        if binaryIntegrity.isCompromised {
-            log("app: executable integrity validation failed")
-        }
-        if binaryIntegrity.isCompromised || signedRelease.requiresLocalBlock {
-            ReleaseCommitBarrier.blockNewCommits()
-            log("app: signed release validation failed")
-        }
-        if launchSecurityEvidence.isEmpty {
-            AntiTamper.activateDebuggerDenial()
-        }
         configureAppearance()
     }
 
@@ -68,22 +45,9 @@ struct ThreeOneOSFiveApp: App {
         AppLanguage(rawValue: languageCode) ?? .vietnamese
     }
 
-    private var securityEvidence: [String] {
-        Array(Set(launchSecurityEvidence + runtimeSecurityEvidence)).sorted()
-    }
-
-    private var isSecurityLocked: Bool { !securityEvidence.isEmpty }
-
     var body: some Scene {
         WindowGroup {
             ZStack {
-                if isSecurityLocked {
-                    SecurityLockdownView(evidenceCodes: securityEvidence, auth: authManager)
-                        .zIndex(1_000)
-                } else if let installationIssue {
-                    InstallationVerificationView(detail: installationIssue)
-                        .zIndex(900)
-                } else {
                 // Một màn hình duy nhất: SplashLoginView gộp loading + login
                 // → liền mạch, không có "chuyển cảnh" giữa 2 view (giống HTML)
                 Group {
@@ -147,13 +111,29 @@ struct ThreeOneOSFiveApp: App {
                     NetworkAccessBlockedView(gate: networkAccess)
                         .zIndex(100)
                 }
+                if !appIntegrity.allowed {
+                    ZStack {
+                        AppTheme.gamingBackground.ignoresSafeArea()
+                        VStack(spacing:18) {
+                            Image(systemName:"lock.shield").font(.system(size:38)).foregroundStyle(AppTheme.gamingBlueBright)
+                            Text(appIntegrity.blocked ? "Tạm dừng sử dụng" : "Đang xác minh ứng dụng...")
+                                .font(.title3.weight(.semibold))
+                            if let detail=appIntegrity.failureDetail {
+                                Text(detail).foregroundStyle(AppTheme.gamingTextSecondary).multilineTextAlignment(.center)
+                                if !appIntegrity.blocked {
+                                    Button("Kiểm tra lại") { Task { _ = await appIntegrity.verifyNow(force:true) } }
+                                        .buttonStyle(.borderedProminent).tint(AppTheme.gamingBlue)
+                                }
+                            }
+                        }
+                        .padding(28).frame(maxWidth:460)
+                    }.zIndex(110)
                 }
             }
             .animation(.easeInOut(duration: 0.32), value: showMainInterface)
             .animation(.easeInOut(duration: 0.32), value: gatekeeper.canBypassGatekeeper)
             .preferredColorScheme(.dark)
             .task(id: authManager.authState == .verified) {
-                guard !isSecurityLocked, installationIssue == nil else { return }
                 guard authManager.authState == .verified else {
                     showMainInterface = false
                     return
@@ -167,13 +147,17 @@ struct ThreeOneOSFiveApp: App {
                 }
             }
             .onAppear {
-                guard !isSecurityLocked, installationIssue == nil else { return }
+                appIntegrity.configureReporter { result in
+                    await ProtectedDownloadService.shared.reportIntegrityFailure(result)
+                }
+                appIntegrity.setActive(scenePhase == .active)
                 networkAccess.setActive(scenePhase == .active)
                 updateManager.checkForUpdate()
                 appState.detectSupport()
             }
             .onChange(of: scenePhase) { phase in
-                guard !isSecurityLocked, installationIssue == nil else { return }
+                ProtectedDownloadService.shared.invalidateReleaseLease()
+                appIntegrity.setActive(phase == .active)
                 // Switching to Settings invalidates the old network lease before
                 // any future API/apply work. Foreground always verifies again.
                 networkAccess.setActive(phase == .active)
@@ -183,8 +167,7 @@ struct ThreeOneOSFiveApp: App {
                 Task { await featurePatchService.syncFromServer(auth: authManager) }
             }
             .onChange(of: networkAccess.state) { state in
-                guard !isSecurityLocked, installationIssue == nil else { return }
-                if state == .blocked {
+                if state == .blocked && !appIntegrity.blocked {
                     // Discard only the in-memory download session. A verified
                     // recovery opens a new one; license and device keys remain.
                     ProtectedDownloadService.shared.reset()
@@ -193,7 +176,6 @@ struct ThreeOneOSFiveApp: App {
                 }
             }
             .onChange(of: authManager.authState) { state in
-                guard !isSecurityLocked, installationIssue == nil else { return }
                 updateManager.checkForUpdate()
                 if state == .verified {
                     Task { await featurePatchService.syncFromServer(auth: authManager) }
@@ -204,127 +186,9 @@ struct ThreeOneOSFiveApp: App {
                 }
             }
             .onOpenURL { url in
-                guard !isSecurityLocked, installationIssue == nil else { return }
                 patchDraftCoordinator.presentImport(url)
             }
-            .task(id: isSecurityLocked || installationIssue != nil) {
-                guard !isSecurityLocked, installationIssue == nil else { return }
-                var cycle = 0
-                while !Task.isCancelled {
-                    try? await Task.sleep(nanoseconds: 3_000_000_000)
-                    guard !Task.isCancelled else { return }
-                    let result = await Task.detached(priority: .utility) {
-                        AntiTamper.periodicCheck()
-                    }.value
-                    if result.isCompromised {
-                        ReleaseCommitBarrier.blockNewCommits()
-                        runtimeSecurityEvidence = result.evidenceCodes.isEmpty
-                            ? ["runtime_instrumentation"] : result.evidenceCodes
-                        return
-                    }
-                    cycle += 1
-                    if cycle % 5 == 0 {
-                        let release = await ReleaseIntegrityRuntime.verify(force: true)
-                        if release.requiresLocalBlock {
-                            ReleaseCommitBarrier.blockNewCommits()
-                            installationIssue = "Không thể xác minh bản cài đặt. Hãy đóng ứng dụng và cài lại bản phát hành chính thức. Lỗi này không tự khóa HWID."
-                            return
-                        }
-                    }
-                }
-            }
         }
-    }
-}
-
-/// Packaging/read/integrity failures are NOT device jailbreak evidence. This
-/// screen never quarantines an HWID, clears a Keychain identity or exits the app.
-private struct InstallationVerificationView: View {
-    let detail: String
-    var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            VStack(spacing: 18) {
-                Image(systemName: "app.badge.checkmark")
-                    .font(.system(size: 42, weight: .semibold))
-                    .foregroundColor(.purple)
-                Text("Cần xác minh bản cài đặt")
-                    .font(.title3.weight(.bold)).foregroundColor(.white)
-                Text(detail).foregroundColor(.white.opacity(0.72))
-                    .multilineTextAlignment(.center)
-            }.padding(30)
-        }
-    }
-}
-
-private struct SecurityLockdownView: View {
-    let evidenceCodes: [String]
-    @ObservedObject var auth: AuthManager
-
-    var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            VStack(spacing: 16) {
-                Image(systemName: "lock.shield.fill")
-                    .font(.system(size: 42, weight: .semibold))
-                    .foregroundColor(.red)
-                Text("Thiết bị không an toàn")
-                    .font(.title3.weight(.bold))
-                    .foregroundColor(.white)
-                Text("Astra đã dừng để bảo vệ tài khoản và dữ liệu.")
-                    .font(.body)
-                    .foregroundColor(.white.opacity(0.72))
-                    .multilineTextAlignment(.center)
-            }
-            .padding(30)
-        }
-        .interactiveDismissDisabled()
-        .task { await enforceAndTerminate() }
-    }
-
-    @MainActor
-    private func enforceAndTerminate() async {
-        ReleaseCommitBarrier.blockNewCommits()
-        guard !auth.licenseKey.isEmpty else {
-            try? await Task.sleep(nanoseconds: 350_000_000)
-            guard await waitForCommitDrain() else { return }
-            exit(EXIT_FAILURE)
-        }
-
-        // Never let an offline/auth request keep a compromised process alive.
-        let deadline = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 12_000_000_000)
-            guard !Task.isCancelled else { return }
-            guard await waitForCommitDrain() else { return }
-            exit(EXIT_FAILURE)
-        }
-
-        NetworkAccessGate.shared.setActive(true)
-        await NetworkAccessGate.shared.checkNow()
-        if NetworkAccessGate.shared.isAllowed {
-            if auth.authState != .verified {
-                await auth.restoreSessionIfNeeded()
-            }
-            if auth.authState == .verified {
-                _ = await ProtectedDownloadService.shared.quarantineForJailbreak(
-                    auth: auth, evidenceCodes: evidenceCodes)
-                await ProtectedDownloadService.shared.reportReleaseIntegrityFailure(
-                    SignedReleaseIntegrity.lastResult)
-            }
-        }
-        deadline.cancel()
-        guard await waitForCommitDrain() else { return }
-        try? await Task.sleep(nanoseconds: 180_000_000)
-        exit(EXIT_FAILURE)
-    }
-
-    @MainActor
-    private func waitForCommitDrain() async -> Bool {
-        while ReleaseCommitBarrier.activeWriterCount > 0 {
-            do { try await Task.sleep(nanoseconds: 100_000_000) }
-            catch { return false }
-        }
-        return !Task.isCancelled
     }
 }
 

@@ -130,7 +130,7 @@ enum AppPaths {
 }
 
 enum AppUpdateChecker {
-    static let apiURL = URL(string: AstraServerTrust.protectedOrigin + "/api/client/config")!
+    static let apiURL = URL(string: "https://zynox.click/api/client/config")!
     
     struct Offer: Identifiable {
         let id = UUID()
@@ -141,7 +141,7 @@ enum AppUpdateChecker {
     static var currentVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "AppReleaseDisplayVersion") as? String
             ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-            ?? "1.2.6"
+            ?? "1.2.10"
     }
 
     static func check() async -> Offer? {

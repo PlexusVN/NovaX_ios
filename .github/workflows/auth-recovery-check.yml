@@ -1,0 +1,38 @@
+name: Astra Device Auth Recovery Checks
+
+on:
+  workflow_dispatch:
+
+jobs:
+  auth-recovery:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify existing identity behavior
+        run: |
+          swiftc ThreeOneOSFive/helpers/AppSecurityConfiguration.swift \
+            ThreeOneOSFive/helpers/DeviceIdentityService.swift \
+            Tests/DeviceIdentitySelfCheck.swift -o "$RUNNER_TEMP/identity-check"
+          "$RUNNER_TEMP/identity-check"
+      - name: Verify recovery storage interruption safety
+        run: |
+          swiftc ThreeOneOSFive/helpers/AppSecurityConfiguration.swift \
+            ThreeOneOSFive/helpers/DeviceIdentityService.swift \
+            Tests/DeviceRecoverySelfCheck.swift -o "$RUNNER_TEMP/recovery-storage-check"
+          "$RUNNER_TEMP/recovery-storage-check"
+      - name: Verify recovery authorization contract
+        run: |
+          python3 Tests/extract_recovery_contract.py \
+            ThreeOneOSFive/helpers "$RUNNER_TEMP/RecoveryContract.swift"
+          swiftc "$RUNNER_TEMP/RecoveryContract.swift" \
+            Tests/ProtectedRecoverySelfCheck.swift -o "$RUNNER_TEMP/recovery-contract-check"
+          "$RUNNER_TEMP/recovery-contract-check"
+      - name: Verify actual recovery methods with isolated transport
+        run: |
+          python3 Tests/extract_recovery_flow.py \
+            ThreeOneOSFive/helpers "$RUNNER_TEMP/RecoveryFlow.swift"
+          swiftc ThreeOneOSFive/helpers/AppSecurityConfiguration.swift \
+            ThreeOneOSFive/helpers/DeviceIdentityService.swift \
+            "$RUNNER_TEMP/RecoveryFlow.swift" \
+            Tests/ProtectedRecoveryFlowSelfCheck.swift -o "$RUNNER_TEMP/recovery-flow-check"
+          "$RUNNER_TEMP/recovery-flow-check"

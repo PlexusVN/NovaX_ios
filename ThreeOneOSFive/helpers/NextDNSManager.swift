@@ -31,19 +31,6 @@ class NextDNSManager: ObservableObject {
     private let pathMonitor = NWPathMonitor()
     private let monitorQueue = DispatchQueue(label: "com.novax.dns.pathmonitor", qos: .utility)
     private let userWantsEnabledKey = "nextdns_user_wants_enabled"
-    private let serverSession: URLSession = {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.httpShouldSetCookies = false
-        configuration.httpCookieAcceptPolicy = .never
-        configuration.urlCredentialStorage = nil
-        configuration.urlCache = nil
-        configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        configuration.timeoutIntervalForRequest = 8
-        configuration.timeoutIntervalForResource = 12
-        return URLSession(configuration: configuration,
-                          delegate: CertPinningDelegate.shared,
-                          delegateQueue: nil)
-    }()
     
     /// Máy chủ Bootstrap Anycast toàn cầu tối ưu cho Apple DoH (IPv4 & IPv6 đa tầng)
     /// Bổ sung các IP Anycast dự phòng chính thức nhằm tránh bị nhà mạng di động chặn IP kết thúc bằng .0
@@ -69,7 +56,6 @@ class NextDNSManager: ObservableObject {
     
     deinit {
         pathMonitor.cancel()
-        serverSession.invalidateAndCancel()
         NotificationCenter.default.removeObserver(self)
     }
         
@@ -106,16 +92,14 @@ class NextDNSManager: ObservableObject {
     
     /// Đồng bộ cấu hình DNS do Admin phân phối từ Server Zynox
     func fetchServerConfig() {
-        guard let url = URL(string: AstraServerTrust.protectedOrigin + "/api/client/config") else { return }
+        guard let url = URL(string: "https://zynox.click/api/client/config") else { return }
         var request = URLRequest(url: url)
         request.timeoutInterval = 8
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         
-        serverSession.dataTask(with: request) { [weak self] data, response, error in
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let data = data,
-                  let http = response as? HTTPURLResponse,
-                  http.url?.host?.caseInsensitiveCompare(AstraServerTrust.protectedHost) == .orderedSame,
-                  (200..<300).contains(http.statusCode) else { return }
+                  let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return }
             
             if let decoded = try? JSONDecoder().decode(NextDNSConfigResponse.self, from: data),
                decoded.success,

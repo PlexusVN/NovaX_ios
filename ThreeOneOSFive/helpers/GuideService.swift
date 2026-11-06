@@ -75,7 +75,7 @@ final class GuideService: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var likedGuideIDs: Set<Int> = []
 
-    private let baseURL = AstraServerTrust.protectedOrigin
+    private let baseURL = "https://zynox.click"
     private let likedStorageKey = "novax_liked_guide_ids_v1"
 
     init() {

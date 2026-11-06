@@ -117,14 +117,13 @@ struct FeaturesView: View {
                 HStack {
                     Spacer()
                     VStack(spacing: 8) {
-                        if service.isLoading {
+                        if protectedDownloads.accessNotice == nil {
                             ProgressView()
                                 .tint(AppTheme.gamingBlueBright)
                         }
-                        Text(service.isLoading ? "Đang chuẩn bị..." :
-                            (service.catalogError ?? protectedDownloads.accessNotice ?? "Chưa có danh mục được phát hành."))
+                        Text(protectedDownloads.accessNotice ?? "Đang chuẩn bị...")
                             .font(.system(size: 12, design: .monospaced))
-                            .foregroundColor(AppTheme.gamingText.opacity(0.75))
+                            .foregroundColor(AppTheme.gamingText.opacity(protectedDownloads.accessNotice == nil ? 0.3 : 0.8))
                             .multilineTextAlignment(.center)
                     }
                     .padding(.vertical, 16)
@@ -447,15 +446,8 @@ struct FeaturesView: View {
                 .foregroundColor(AppTheme.gamingText.opacity(0.5))
             Text(service.catalogError ?? "Đang chuẩn bị chức năng...")
                 .font(.system(size: 12, design: .monospaced))
-                .foregroundColor(AppTheme.gamingText.opacity(0.7))
+                .foregroundColor(AppTheme.gamingText.opacity(0.25))
                 .multilineTextAlignment(.center)
-            if service.catalogError != nil {
-                Button("Thử lại") {
-                    Task { await service.syncFromServer(auth: authManager) }
-                }.disabled(service.isLoading)
-                    .buttonStyle(.borderedProminent)
-                    .tint(AppTheme.gamingViolet)
-            }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 40)
@@ -475,7 +467,8 @@ struct PatchCardView: View {
     let patch: PatchItem
     @ObservedObject var service: FeaturePatchService
     @ObservedObject var auth: AuthManager
-    @State private var isApplied = false
+    private var applicationState: PatchApplicationState { service.patchApplicationState(patch) }
+    private var isApplied: Bool { applicationState.requiresRestore }
     @State private var isWorking = false
     @Binding var activeToast: ToastInfo?
     @State private var glowPulse = false
@@ -494,7 +487,7 @@ struct PatchCardView: View {
                     Circle()
                         .fill(isApplied ? AppTheme.statusSuccess : AppTheme.gamingTextSecondary)
                         .frame(width: 6, height: 6)
-                    Text(isApplied ? "Chức năng đang bật" : "Sẵn sàng")
+                    Text(applicationState == .recoveryRequired ? "Cần khôi phục" : (isApplied ? "Chức năng đang bật" : "Sẵn sàng"))
                         .font(.system(size: 10, weight: .semibold, design: .rounded))
                 }
                 .foregroundColor(isApplied ? AppTheme.statusSuccess : AppTheme.gamingTextSecondary)
@@ -538,7 +531,6 @@ struct PatchCardView: View {
             .shadow(color: isApplied ? AppTheme.gamingBlueBright.opacity(0.25) : .clear, radius: 16, y: 4)
         )
         .onAppear {
-            isApplied = service.isPatchApplied(patch)
             if isApplied { startGlow() }
         }
         .onChange(of: isApplied) { applied in
@@ -657,30 +649,33 @@ struct PatchCardView: View {
             if isApplied {
                 do {
                     try await service.restorePatch(patch, auth: auth)
-                    isApplied = false
                     Haptics.success()
 
-                    activeToast = ToastInfo(
-                        title: "Tắt chức năng thành công",
-                        message: "Đã khôi phục dữ liệu gốc từ bản sao lưu.",
-                        isSuccess: true
-                    )
+                    if AppInfo.versionTuple.major >= 27 {
+                        activeToast = ToastInfo(
+                            title: "Đã tắt chức năng",
+                            message: "iOS 27 không thể khôi phục file gốc, hãy xoá game tải lại để đảm bảo an toàn.",
+                            isSuccess: true
+                        )
+                    } else {
+                        activeToast = ToastInfo(
+                            title: "Tắt chức năng thành công",
+                            message: "Đã khôi phục file gốc từ máy.",
+                            isSuccess: true
+                        )
+                    }
                 } catch {
                     Haptics.error()
                     activeToast = ToastInfo(
                         title: "Không thể tắt chức năng",
-                        message: (error as? PatchRestoreError)?.errorDescription
-                            ?? (error as? ProtectedDownloadError)?.errorDescription
-                            ?? (error as? NetworkAccessError)?.errorDescription
-                            ?? (error as? AirLiftError)?.errorDescription
-                            ?? "Vui lòng thử lại sau.",
+                        message: (error as? LocalizedError)?.errorDescription
+                            ?? "Không thể khôi phục dữ liệu (mã \((error as NSError).code)).",
                         isSuccess: false
                     )
                 }
             } else {
                 do {
                     try await service.applyPatch(patch, auth: auth)
-                    isApplied = true
                     Haptics.success()
                     activeToast = ToastInfo(
                         title: "Bật chức năng thành công",
@@ -691,11 +686,8 @@ struct PatchCardView: View {
                     Haptics.error()
                     activeToast = ToastInfo(
                         title: "Không thể bật chức năng",
-                        message: (error as? PatchRestoreError)?.errorDescription
-                            ?? (error as? ProtectedDownloadError)?.errorDescription
-                            ?? (error as? NetworkAccessError)?.errorDescription
-                            ?? (error as? AirLiftError)?.errorDescription
-                            ?? "Vui lòng thử lại sau.",
+                        message: (error as? LocalizedError)?.errorDescription
+                            ?? "Không thể hoàn tất thao tác (mã \((error as NSError).code)).",
                         isSuccess: false
                     )
                 }

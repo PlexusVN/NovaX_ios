@@ -359,7 +359,7 @@ final class FeaturePatchService: ObservableObject {
     @Published private(set) var codepatchModAvailable: [GamePatchVariant: Bool] = [:]
     @Published private(set) var codepatchOriginalAvailable: [GamePatchVariant: Bool] = [:]
 
-    private let baseURL = AstraServerTrust.protectedOrigin
+    private let baseURL = AppSecurityConfiguration.apiOrigin
 
     private let pinnedSession: URLSession = {
         let config = URLSessionConfiguration.ephemeral
@@ -388,7 +388,8 @@ final class FeaturePatchService: ObservableObject {
     }()
 
     private let defaults = UserDefaults.standard
-    private let appliedPrefix = "patch_applied_"
+    private let catalogApplications = CatalogPatchApplicationRegistry(defaults: .standard)
+    @Published private(set) var applicationRevision: UInt64 = 0
     private var catalogSyncRevision: UInt64 = 0
     private var nativeSessionToken = ""
     private var nativeSessionExpiresAt: Date?
@@ -525,7 +526,7 @@ final class FeaturePatchService: ObservableObject {
                 print("[FeaturePatch] sync: server returned success=false")
                 return
             }
-            
+
             guard response.patches.allSatisfy({ $0.artifactID != nil && $0.password == nil && $0.fileUrl.isEmpty }) else {
                 throw ProtectedDownloadError.invalidResponse
             }
@@ -556,14 +557,16 @@ final class FeaturePatchService: ObservableObject {
         }
 
         let data = try await ProtectedDownloadService.shared.download(patch, auth: auth)
-        var dir = FileManager.default.temporaryDirectory.appendingPathComponent("AstraProtectedStaging", isDirectory: true)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true,
-            attributes: [.protectionKey: FileProtectionType.complete])
-        var values = URLResourceValues(); values.isExcludedFromBackup = true
-        try dir.setResourceValues(values)
-        let file = dir.appendingPathComponent(UUID().uuidString + ".3105")
-        try data.write(to: file, options: [.atomic, .completeFileProtection])
-        return file
+        do {
+            var dir = FileManager.default.temporaryDirectory.appendingPathComponent("AstraProtectedStaging", isDirectory: true)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true,
+                attributes: [.protectionKey: FileProtectionType.complete])
+            var values = URLResourceValues(); values.isExcludedFromBackup = true
+            try dir.setResourceValues(values)
+            let file = dir.appendingPathComponent(UUID().uuidString + ".3105")
+            try data.write(to: file, options: [.atomic, .completeFileProtection])
+            return file
+        } catch { throw PatchOperationError.wrap(error, at: .staging) }
     }
 
     // MARK: - Apply / Restore
@@ -574,70 +577,114 @@ final class FeaturePatchService: ObservableObject {
         }
 
         let authRevision = auth.authenticationRevision
-        print("[FeaturePatch] applying patch: \(patch.name) (slug: \(patch.slug))")
-        // Remove only this catalog item's old reusable download from pre-v2.
-        try? FileManager.default.removeItem(at: localPatchURL(patch))
-        let cachedURL = try await downloadPatch(patch, auth: auth)
-        defer { try? FileManager.default.removeItem(at: cachedURL) }
-        guard auth.authState == .verified, auth.authenticationRevision == authRevision else { throw FeaturePatchError.notAuthenticated }
-
-        let slug = patchStorageSlug(patch)
-        let data = try Data(contentsOf: cachedURL)
-        let decoded = try PatchPackageCodec.decode(data, password: nil)
-        var project = decoded.project
-        project.isPrivate = true
-        let expectedBundleID = patch.artifactVariant == "ffth" ? "com.dts.freefireth" : "com.dts.freefiremax"
-        guard ["ffth", "ffmax"].contains(patch.artifactVariant ?? ""),
-              !project.allBundleIdentifiers.isEmpty,
-              project.allBundleIdentifiers.allSatisfy({ $0 == expectedBundleID }) else {
-            throw ProtectedDownloadError.invalidResponse
+        defer { applicationRevision &+= 1 }
+        var stage = PatchOperationStage.download
+        do {
+            print("[FeaturePatch] applying patch: \(patch.name) (slug: \(patch.slug))")
+            // Remove only this catalog item's old reusable download from pre-v2.
+            try? FileManager.default.removeItem(at: localPatchURL(patch))
+            let cachedURL = try await downloadPatch(patch, auth: auth)
+            defer { try? FileManager.default.removeItem(at: cachedURL) }
+            guard auth.authState == .verified, auth.authenticationRevision == authRevision else { throw FeaturePatchError.notAuthenticated }
+            let slug = patchStorageSlug(patch)
+            stage = .decode
+            let data = try Data(contentsOf: cachedURL)
+            let decoded = try PatchPackageCodec.decode(data, password: nil)
+            var project = decoded.project
+            project.isPrivate = true
+            stage = .target
+            guard let expectedBundleID = AppSecurityConfiguration.protectedBundleID(forVariant: patch.artifactVariant ?? ""),
+                  !project.allBundleIdentifiers.isEmpty,
+                  project.allBundleIdentifiers.allSatisfy({ $0 == expectedBundleID }) else {
+                throw ProtectedDownloadError.invalidResponse
+            }
+            stage = .access
+            let networkGeneration = try await NetworkAccessGate.shared.requireAllowed()
+            try Task.checkCancellation()
+            try NetworkAccessGate.shared.validateGeneration(networkGeneration)
+            guard auth.authState == .verified, auth.authenticationRevision == authRevision else { throw FeaturePatchError.notAuthenticated }
+            stage = .write
+            try await AppIntegrityRuntime.shared.requireAllowed(force:true)
+            // Store the verified project association before writing so an app
+            // interruption cannot leave a journal that the OFF switch ignores.
+            catalogApplications.associate(project.id, with: slug)
+            if StorageEngineCoordinator.shared.isAirLiftActive {
+                try await StorageEngineCoordinator.shared.applyPatchProject(project)
+            } else {
+                if let receipt = DevicePatchService.latestReceipt(projectID: project.id) {
+                    catalogApplications.markRecoveryRequired(slug)
+                    guard try DevicePatchService.inspectExistingApplication(receipt: receipt, project: project) == .applied else {
+                        throw PatchRestoreError.recoveryRequired
+                    }
+                } else {
+                    _ = try IntegrityCommitBarrier.withCommit { try DevicePatchService.apply(project: project) }
+                }
+            }
+            catalogApplications.markApplied(slug)
+            print("[FeaturePatch] protected patch applied successfully")
+        } catch {
+            let failure = PatchOperationError.wrap(error, at: stage)
+            log("feature apply failed stage=\(failure.stage.rawValue), error=\(String(reflecting: type(of: failure.underlying)))")
+            throw failure
         }
-
-        let networkGeneration = try await NetworkAccessGate.shared.requireAllowed()
-        try Task.checkCancellation()
-        try NetworkAccessGate.shared.validateGeneration(networkGeneration)
-        guard auth.authState == .verified, auth.authenticationRevision == authRevision else { throw FeaturePatchError.notAuthenticated }
-        try ReleaseCommitBarrier.requireAllowed()
-        if StorageEngineCoordinator.shared.isAirLiftActive {
-            try await StorageEngineCoordinator.shared.applyPatchProject(project)
-        } else {
-            _ = try DevicePatchService.apply(project: project)
-        }
-
-        defaults.set(project.id.uuidString, forKey: appliedPrefix + slug + "_projectID")
-        defaults.set(true, forKey: appliedPrefix + slug)
-        print("[FeaturePatch] protected patch applied successfully")
     }
 
     func restorePatch(_ patch: PatchItem, auth: AuthManager) async throws {
         guard auth.authState == .verified else { throw FeaturePatchError.notAuthenticated }
         let authRevision = auth.authenticationRevision
+        defer { applicationRevision &+= 1 }
         let slug = patchStorageSlug(patch)
-        guard let storedID = defaults.string(forKey: appliedPrefix + slug + "_projectID"),
-              let projectID = UUID(uuidString: storedID) else { throw PatchRestoreError.missingReceipt }
-        guard !StorageEngineCoordinator.shared.isAirLiftActive,
-              !StorageEngineCoordinator.shared.isProjectAppliedThroughAirLift(projectID) else {
-            // Keep the ON state and all tracking: no original bytes were restored.
-            throw PatchRestoreError.airLiftRestoreUnsupported
+        let destURL = patchProjectsDir.appendingPathComponent("\(slug).3105")
+        var projectID = catalogApplications.projectID(for: slug)
+        if projectID == nil && FileManager.default.fileExists(atPath: destURL.path),
+           let data = try? Data(contentsOf: destURL),
+           let summary = try? PatchPackageCodec.inspect(data) {
+            projectID = summary.projectID
         }
-        guard let receipt = DevicePatchService.latestReceipt(projectID: projectID) else {
-            throw PatchRestoreError.missingReceipt
+
+        let isAirLift = StorageEngineCoordinator.shared.isAirLiftActive ||
+            (projectID != nil && StorageEngineCoordinator.shared.isProjectAppliedThroughAirLift(projectID!)) ||
+            AppInfo.versionTuple.major >= 27
+
+        if isAirLift {
+            // Trên iOS 27 qua AirLift: Xoá cờ trạng thái áp dụng để tắt toggle bình thường.
+            // Không khôi phục ngược file gốc do giới hạn của ATAirlock sandbox escape.
+            if let pid = projectID {
+                UserDefaults.standard.removeObject(forKey: "airlift.applied.\(pid.uuidString)")
+            }
+            catalogApplications.clear(slug)
+            try? FileManager.default.removeItem(at: destURL)
+            print("[FeaturePatch] restored (toggled off) via AirLift on iOS 27")
+            return
         }
+
+        // iOS 16 - 26.6.1: Ghi trực tiếp -> Vẫn khôi phục file gốc từ bản sao lưu trên máy
+        guard let validProjectID = projectID else { throw PatchRestoreError.missingReceipt }
+        let receipt = DevicePatchService.latestReceipt(projectID: validProjectID)
         let networkGeneration = try await NetworkAccessGate.shared.requireAllowed()
         try Task.checkCancellation()
         try NetworkAccessGate.shared.validateGeneration(networkGeneration)
         guard auth.authState == .verified, auth.authenticationRevision == authRevision else { throw FeaturePatchError.notAuthenticated }
-        try ReleaseCommitBarrier.requireAllowed()
-        try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
-        let destURL = patchProjectsDir.appendingPathComponent("\(slug).3105")
+        if let receipt {
+            try await AppIntegrityRuntime.shared.requireAllowed(force:true)
+            try IntegrityCommitBarrier.withCommit { try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true) }
+        } else if DevicePatchService.recordedApplicationState(projectID: validProjectID) != .off {
+            throw PatchRestoreError.missingReceipt
+        }
         try? FileManager.default.removeItem(at: destURL)
-        defaults.removeObject(forKey: appliedPrefix + slug)
-        defaults.removeObject(forKey: appliedPrefix + slug + "_projectID")
+        catalogApplications.clear(slug)
         print("[FeaturePatch] restored via DevicePatchService")
     }
 
     func isPatchApplied(_ patch: PatchItem) -> Bool {
-        defaults.bool(forKey: appliedPrefix + patchStorageSlug(patch))
+        patchApplicationState(patch).requiresRestore
+    }
+
+    func patchApplicationState(_ patch: PatchItem) -> PatchApplicationState {
+        catalogApplications.state(for: patchStorageSlug(patch)) { projectID in
+            if StorageEngineCoordinator.shared.isProjectAppliedThroughAirLift(projectID) { return .applied }
+            return DevicePatchService.recordedApplicationState(projectID: projectID)
+        }
     }
 
     func isPatchDownloaded(_ patch: PatchItem) -> Bool {
@@ -744,7 +791,7 @@ final class FeaturePatchService: ObservableObject {
     // MARK: - NovaX Native Patch Menu
 
     private var novaProductSecret: String {
-        Obf.s([254, 223, 198, 209, 232, 157, 209, 197, 196, 216, 157, 219, 213, 201], 0xB0)
+        AppSecurityConfiguration.productSecret
     }
 
     private func parseISODate(_ value: String) -> Date? {
@@ -1294,28 +1341,22 @@ final class FeaturePatchService: ObservableObject {
         try Task.checkCancellation()
         try NetworkAccessGate.shared.validateGeneration(networkGeneration)
         guard auth.authState == .verified, auth.authenticationRevision == authRevision else { throw FeaturePatchError.notAuthenticated }
-        try ReleaseCommitBarrier.requireAllowed()
         patchStepMessage = kind == .mod ? "Đang ghi dữ liệu vào game..." : "Đang khôi phục dữ liệu gốc..."
         do {
             if useAirLift {
                 try await StorageEngineCoordinator.shared.writeFile(data: fileData, toPath: destination.path)
-            } else {
-                try ReleaseCommitBarrier.withCommit {
-                    if FileManager.default.fileExists(atPath: destination.path) {
-                        do {
-                            _ = try FileReplacementService.replace(
-                                target: destination, with: downloaded.temporaryURL)
-                        } catch {
-                            // Do not let a generic replacement fallback bypass
-                            // a network invalidation or task cancellation.
-                            try Task.checkCancellation()
-                            try NetworkAccessGate.shared.validateGeneration(networkGeneration)
-                            try fileData.write(to: destination, options: .atomic)
-                        }
-                    } else {
-                        try fileData.write(to: destination, options: .atomic)
-                    }
+            } else if FileManager.default.fileExists(atPath: destination.path) {
+                do {
+                    _ = try FileReplacementService.replace(target: destination, with: downloaded.temporaryURL)
+                } catch {
+                    // Do not let a generic replacement fallback bypass a gate
+                    // invalidation or task cancellation.
+                    try Task.checkCancellation()
+                    try NetworkAccessGate.shared.validateGeneration(networkGeneration)
+                    try fileData.write(to: destination, options: .atomic)
                 }
+            } else {
+                try fileData.write(to: destination, options: .atomic)
             }
         } catch let error as AirLiftError {
             if error.requiresRePairing {
@@ -1346,12 +1387,15 @@ final class FeaturePatchService: ObservableObject {
 enum PatchRestoreError: LocalizedError {
     case airLiftRestoreUnsupported
     case missingReceipt
+    case recoveryRequired
     var errorDescription: String? {
         switch self {
         case .airLiftRestoreUnsupported:
             return "Chưa thể khôi phục file gốc qua AirLift. Chức năng vẫn được đánh dấu đang bật. Để trở về bản gốc, hãy cài lại game hoặc dùng bản khôi phục chính thức phù hợp."
         case .missingReceipt:
             return "Không tìm thấy bản sao lưu để khôi phục. Trạng thái đang bật được giữ nguyên; hãy kiểm tra dữ liệu hoặc liên hệ hỗ trợ."
+        case .recoveryRequired:
+            return "Có giao dịch cũ hoặc dữ liệu đã thay đổi. Chức năng được đánh dấu cần khôi phục; hãy tắt để khôi phục bản gốc trước khi bật lại."
         }
     }
 }

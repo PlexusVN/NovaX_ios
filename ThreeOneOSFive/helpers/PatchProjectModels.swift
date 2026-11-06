@@ -241,6 +241,56 @@ extension PatchPackageError: LocalizedError {
     }
 }
 
+enum PatchOperationStage: String {
+    case download = "P01", staging = "P02", decode = "P03", target = "P04", access = "P05", write = "P06"
+    var title: String {
+        switch self {
+        case .download: return "Tải và giải mã bảo mật"
+        case .staging: return "Chuẩn bị file tạm"
+        case .decode: return "Đọc gói chức năng"
+        case .target: return "Kiểm tra ứng dụng đích"
+        case .access: return "Kiểm tra quyền sử dụng"
+        case .write: return "Ghi file và tạo bản khôi phục"
+        }
+    }
+}
+
+struct PatchOperationError: LocalizedError {
+    let stage: PatchOperationStage
+    let underlying: Error
+    static func wrap(_ error: Error, at stage: PatchOperationStage) -> PatchOperationError {
+        (error as? PatchOperationError) ?? PatchOperationError(stage: stage, underlying: error)
+    }
+    var errorDescription: String? {
+        let detail: String
+        if let package = underlying as? PatchPackageError {
+            switch package {
+            case .targetAppUnavailable:
+                detail = "Chưa truy cập được container ứng dụng đích. Hãy cài/mở ứng dụng đích và chạy lại bước cấp quyền trong Astra."
+            case .applyFailed:
+                detail = "Không ghi được file hoặc tạo bản sao lưu. Hãy kiểm tra quyền truy cập container và dung lượng trống."
+            case .invalidPasswordOrCorruptedPackage:
+                detail = "Không đọc được dữ liệu bên trong gói chức năng. Gói cần được kiểm tra lại trên máy chủ."
+            default: detail = package.errorDescription ?? "Gói chức năng không hợp lệ."
+            }
+        } else if underlying is CancellationError {
+            detail = "Thao tác đã bị gián đoạn. Hãy giữ app hoạt động rồi thử lại."
+        } else if let localized = underlying as? LocalizedError, let text = localized.errorDescription {
+            detail = text
+        } else {
+            let error = underlying as NSError
+            switch (error.domain, error.code) {
+            case (NSCocoaErrorDomain, NSFileWriteNoPermissionError), (NSCocoaErrorDomain, NSFileReadNoPermissionError):
+                detail = "Chưa có quyền đọc/ghi file. Hãy chạy lại bước cấp quyền truy cập rồi thử lại."
+            case (NSCocoaErrorDomain, NSFileWriteOutOfSpaceError):
+                detail = "Thiết bị không đủ dung lượng trống để tạo bản sao lưu."
+            default: detail = "Không hoàn tất được bước này (mã \(error.code))."
+            }
+        }
+        return "\(stage.title) [\(stage.rawValue)]: \(detail)"
+    }
+}
+
 enum PatchPackageLimits {
     static let maximumPathBytes = 4_096
     static let maximumAuthorBytes = 160

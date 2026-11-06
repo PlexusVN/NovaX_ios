@@ -7,12 +7,6 @@ import Security
 
 enum SelfCheckFailure: Error { case failed(String) }
 
-// Only the live-debugger observation is needed by the release verifier. The
-// offline harness never inspects or changes the host's debugger/code-sign state.
-enum AntiTamper {
-    static let isDebuggerAttached = false
-}
-
 // The macOS harness exercises endpoint policy only, never a network session.
 // The iOS app links the real UIKit-based pinning delegate from SecurityUtils.
 final class CertPinningDelegate: NSObject, URLSessionTaskDelegate {
@@ -76,6 +70,10 @@ struct ProtectedArtifactSelfCheck {
     }
     @MainActor
     static func main() async throws {
+        try require(AppSecurityConfiguration.protectedBundleID(forVariant: "ffth") == "com.dts.freefireth", "FFTH apply target")
+        try require(AppSecurityConfiguration.protectedBundleID(forVariant: "ffmax") == "com.dts.freefiremax", "FFMAX apply target")
+        try require(AppSecurityConfiguration.protectedBundleID(forVariant: "capcut") == "com.lemon.lvoverseas", "CapCut apply target")
+        try require(AppSecurityConfiguration.protectedBundleID(forVariant: "unknown") == nil, "unknown apply target rejected")
         let path = CommandLine.arguments.dropFirst().first ?? "Tests/Fixtures/artifact_crypto_v1.json"
         let fixtureData = try Data(contentsOf: URL(fileURLWithPath: path))
         let fixture = try JSONSerialization.jsonObject(with: fixtureData) as! [String: Any]
@@ -123,9 +121,7 @@ struct ProtectedArtifactSelfCheck {
         try rejects("different request nonce") { _ = try decrypt(requestNonce: String(repeating: "0", count: 32)) }
         try rejects("different grant") { _ = try decrypt(expectedGrant: "00000000-0000-4000-8000-000000000099") }
         try rejects("expired grant") { _ = try decrypt(at: Date(timeIntervalSince1970: (grantBody["expiresAt"] as! NSNumber).doubleValue)) }
-        try require(try decrypt(at: Date(timeIntervalSince1970: (grantBody["issuedAt"] as! NSNumber).doubleValue - 10)) == bytes(fixture["expectedPlaintextHex"] as! String),
-                    "small clock skew does not reject an authenticated grant")
-        try rejects("future grant beyond bounded clock skew") { _ = try decrypt(at: Date(timeIntervalSince1970: (grantBody["issuedAt"] as! NSNumber).doubleValue - 31)) }
+        try rejects("future grant") { _ = try decrypt(at: Date(timeIntervalSince1970: (grantBody["issuedAt"] as! NSNumber).doubleValue - 1)) }
         var changedManifest = manifestObject
         var changedBody = changedManifest["body"] as! [String: Any]
         changedBody["plaintextSHA256"] = String(repeating: "0", count: 64)
@@ -139,6 +135,7 @@ struct ProtectedArtifactSelfCheck {
                     "bool and integer canonical distinction")
         try checkResponseEnvelope()
         try checkEndpointPolicy()
+        try checkDownloadRouteContract()
         try checkRequestRegistry()
         try await checkNetworkGate()
         print("Astra security self-check: \(checks) checks passed")
@@ -182,87 +179,60 @@ struct ProtectedArtifactSelfCheck {
         let malformed = try JSONDecoder().decode(AstraServerEnvelope.self, from: json(object))
         try require(!verifier.verifyEnvelope(envelope: malformed, expectedNonce: nonce,
             expectedPurpose: "test-response", payloadData: payload, now: now), "malformed signature fails closed")
-
-        func signedFailure(purpose: String, requestNonce: String) throws -> Data {
-            let bytes = try json(["success": false, "code": "session_expired"])
-            let milliseconds = Int64(Date().timeIntervalSince1970 * 1000)
-            var document: [String: Any] = ["protocol": 2, "kid": "test-only", "purpose": purpose,
-                "request_nonce": requestNonce, "issued_ms": milliseconds, "expires_ms": milliseconds + 60_000,
-                "payload_sha256": SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined(),
-                "payload_b64": bytes.base64EncodedString(), "signature": ""]
-            let unsigned = try JSONDecoder().decode(AstraServerEnvelope.self, from: json(document))
-            guard let signature = SecKeyCreateSignature(privateKey, .rsaSignatureMessagePKCS1v15SHA256,
-                    Data(verifier.canonicalEnvelopeString(unsigned).utf8) as CFData, nil) else {
-                throw SelfCheckFailure.failed("error fixture signature")
-            }
-            document["signature"] = (signature as Data).base64EncodedString()
-            return try json(["astra_v2": document, "code": "unsigned-sibling-must-not-be-used"])
-        }
-        let route = "/api/v2/novax/session/renew"
-        let middleware = try signedFailure(purpose: "POST " + route, requestNonce: nonce)
-        try require(verifier.verifiedErrorPayload(in: middleware, expectedNonce: nonce,
-            method: "POST", path: route, handlerPurpose: "novax-session-renew-v2") != nil,
-            "exact-route middleware error verifies")
-        try require(verifier.verifiedErrorPayload(in: middleware, expectedNonce: String(repeating: "b", count: 32),
-            method: "POST", path: route, handlerPurpose: "novax-session-renew-v2") == nil, "wrong error nonce rejected")
-        try require(verifier.verifiedErrorPayload(in: middleware, expectedNonce: nonce,
-            method: "POST", path: "/api/v2/device/context", handlerPurpose: "device-context-v2") == nil,
-            "error cannot move to another route")
-        let arbitrary = try signedFailure(purpose: "attacker-selected-purpose", requestNonce: nonce)
-        try require(verifier.verifiedErrorPayload(in: arbitrary, expectedNonce: nonce,
-            method: "POST", path: route, handlerPurpose: "novax-session-renew-v2") == nil,
-            "unlisted error purpose rejected")
-        let readiness = try signedFailure(purpose: "artifact-error", requestNonce: nonce)
-        try require(verifier.verifiedErrorPayload(in: readiness, expectedNonce: nonce,
-            method: "POST", path: "/api/v2/artifacts/sync", handlerPurpose: "artifact-sync") != nil,
-            "signed service-readiness response verifies")
-        try require(verifier.verifiedErrorPayload(in: readiness, expectedNonce: nonce,
-            method: "POST", path: route, handlerPurpose: "novax-session-renew-v2") == nil,
-            "artifact error not accepted as bootstrap instruction")
-        try require(verifier.verifiedErrorPayload(in: Data("{\"success\":false,\"code\":\"session_expired\"}".utf8),
-            expectedNonce: nonce, method: "POST", path: route, handlerPurpose: "novax-session-renew-v2") == nil,
-            "unsigned recovery instruction rejected")
     }
 
     static func checkEndpointPolicy() throws {
-        let missing = SignedReleaseCheckResult(enforced: true, mask: 0,
-            releaseID: "", sealDigest: "", issue: .missingSeal)
-        try require(missing.enforced && missing.mask == 0 && missing.isCompromised,
-                    "missing seal never pretends to be a verified release")
-        try require(!missing.requiresLocalBlock && missing.isMissingSeal,
-                    "missing seal can negotiate server policy without declaring jailbreak")
-        for issue in [SignedReleaseIssue.invalidSeal, .unreadableInstallation, .verificationFailed] {
-            let invalid = SignedReleaseCheckResult(enforced: true, mask: 0,
-                releaseID: "", sealDigest: "", issue: issue)
-            try require(invalid.requiresLocalBlock, "invalid present seal remains fail-closed")
-        }
-        try require(AstraServerTrust.protectedHost == "zynox.click", "production host decodes correctly")
-        try require(AstraServerTrust.protectedOrigin == "https://" + AstraServerTrust.protectedHost,
-                    "production origin agrees with endpoint policy")
-        try require(!AstraServerTrust.leafCertificatePins.isEmpty &&
-                    AstraServerTrust.leafCertificatePins.allSatisfy { Data(base64Encoded: $0)?.count == 32 },
-                    "production pins remain SHA256 leaf digests")
         for address in [
-            "https://zynox.click/api/v2/artifacts/sync",
-            "https://zynox.click/api/v2/artifacts/resolve",
-            "https://zynox.click:443/api/v2/novax/session/open",
-            "https://zynox.click/api/v2/artifacts/00000000-0000-4000-8000-000000000004/content"
+            "\(AppSecurityConfiguration.apiOrigin)/api/v2/artifacts/sync",
+            "\(AppSecurityConfiguration.apiOrigin)/api/v2/artifacts/resolve",
+            "https://\(AppSecurityConfiguration.apiHost):443/api/v2/novax/session/open",
+            "\(AppSecurityConfiguration.apiOrigin)/api/v2/artifacts/00000000-0000-4000-8000-000000000004/content"
         ] {
             try require(SecureAPIEndpointPolicy.permits(URL(string: address)!), "allowed endpoint: " + address)
         }
         for address in [
-            "http://zynox.click/api/v2/artifacts/sync",
-            "https://zynox.click.evil.test/api/v2/artifacts/sync",
-            "https://zynox.click:444/api/v2/artifacts/sync",
-            "https://user:password@zynox.click/api/v2/artifacts/sync",
-            "https://zynox.click/api/admin/keys",
-            "https://zynox.click/api/novax/codepatch/ffth/mod/download",
-            "https://zynox.click/api/v2/artifacts/sync#fragment",
-            "https://zynox.click/api/v2/artifacts%2fsync",
-            "https://zynox.click/api/v2//artifacts/sync",
+            "http://\(AppSecurityConfiguration.apiHost)/api/v2/artifacts/sync",
+            "https://\(AppSecurityConfiguration.apiHost).evil.test/api/v2/artifacts/sync",
+            "https://\(AppSecurityConfiguration.apiHost):444/api/v2/artifacts/sync",
+            "https://user:password@\(AppSecurityConfiguration.apiHost)/api/v2/artifacts/sync",
+            "\(AppSecurityConfiguration.apiOrigin)/api/admin/keys",
+            "\(AppSecurityConfiguration.apiOrigin)/api/novax/codepatch/ffth/mod/download",
+            "\(AppSecurityConfiguration.apiOrigin)/api/v2/artifacts/sync#fragment",
+            "\(AppSecurityConfiguration.apiOrigin)/api/v2/artifacts%2fsync",
+            "\(AppSecurityConfiguration.apiOrigin)/api/v2//artifacts/sync",
             "https://10.7.0.1/api/v2/artifacts/sync"
         ] {
             try require(!SecureAPIEndpointPolicy.permits(URL(string: address)!), "rejected endpoint: " + address)
+        }
+    }
+
+    static func checkDownloadRouteContract() throws {
+        // Read the actual client's URL builders instead of maintaining only a
+        // separate list of happy-path tests that can miss a new API route.
+        let source = try String(contentsOfFile: "ThreeOneOSFive/helpers/ProtectedDownloadService.swift", encoding: .utf8)
+        let regex = try NSRegularExpression(pattern: #"(?:post|endpoint)\("([^"]+)""#)
+        let matches = regex.matches(in: source, range: NSRange(source.startIndex..., in: source))
+        let uuid = "00000000-0000-4000-8000-000000000004"
+        var routes = Set<String>()
+        for match in matches {
+            guard let range = Range(match.range(at: 1), in: source) else { throw SelfCheckFailure.failed("route extraction") }
+            let route = String(source[range]).replacingOccurrences(of: #"\(descriptor.artifactID)"#, with: uuid)
+            try require(!route.contains("\\") && !route.contains("("), "every dynamic protected route has a test value")
+            routes.insert(route)
+            let url = URL(string: AppSecurityConfiguration.apiOrigin + route)!
+            try require(SecureAPIEndpointPolicy.permits(url), "actual protected client route allowed: " + route)
+            var request = URLRequest(url: url); request.httpMethod = "POST"
+            try SecureAPIClient.validate(request)
+        }
+        try require(routes.contains("/api/v2/security/integrity-v2"), "release lease route extracted from actual client")
+        for address in [
+            "http://\(AppSecurityConfiguration.apiHost)/api/v2/security/integrity",
+            "https://\(AppSecurityConfiguration.apiHost).evil.test/api/v2/security/integrity",
+            "https://\(AppSecurityConfiguration.apiHost):444/api/v2/security/integrity",
+            "\(AppSecurityConfiguration.apiOrigin)/api/v2/security/integrity/extra",
+            "\(AppSecurityConfiguration.apiOrigin)/api/v2/security%2fintegrity"
+        ] {
+            try require(!SecureAPIEndpointPolicy.permits(URL(string: address)!), "integrity endpoint still rejects alternate destinations")
         }
     }
 

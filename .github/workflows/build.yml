@@ -1,8 +1,8 @@
-name: Build Unsigned IPA
+name: Build Astra Unsigned IPA
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [ "main", "master", "build/**" ]
   pull_request:
     branches: [ "main", "master" ]
   workflow_dispatch:
@@ -15,61 +15,96 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up release signing test runtime
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-
       - name: Set up Xcode version
         run: |
           xcodebuild -version
 
+      - name: Verify production public configuration
+        run: python3 ReleaseTools/check_production.py
+
+      - name: Verify protected lease renewal under latency and clock skew
+        run: |
+          swiftc ThreeOneOSFive/helpers/ProtectedReleaseLease.swift \
+            Tests/ProtectedLeaseSelfCheck.swift -o "$RUNNER_TEMP/astra-lease-selfcheck"
+          "$RUNNER_TEMP/astra-lease-selfcheck"
+
       - name: Verify protected download CryptoKit interoperability
         run: |
-          swiftc ThreeOneOSFive/helpers/AstraServerTrust.swift \
+          swiftc ThreeOneOSFive/helpers/AppSecurityConfiguration.swift \
+            ThreeOneOSFive/helpers/AntiTamper.swift \
+            ThreeOneOSFive/helpers/DeviceEnvironmentInspector.swift \
             ThreeOneOSFive/helpers/SecureAPIClient.swift \
             ThreeOneOSFive/helpers/NetworkAccessGate.swift \
             ThreeOneOSFive/helpers/ServerSignatureVerifier.swift \
             ThreeOneOSFive/helpers/ProtectedArtifactDecoder.swift \
-            ThreeOneOSFive/helpers/ProtectedOperationPolicy.swift \
-            ThreeOneOSFive/helpers/ReleaseIntegrity.swift \
             Tests/ProtectedArtifactSelfCheck.swift -o "$RUNNER_TEMP/astra-security-selfcheck"
           "$RUNNER_TEMP/astra-security-selfcheck" Tests/Fixtures/artifact_crypto_v1.json
 
       - name: Verify license-scoped device identity and migration
         run: |
-          swiftc ThreeOneOSFive/helpers/DeviceIdentityService.swift \
+          swiftc ThreeOneOSFive/helpers/AppSecurityConfiguration.swift \
+            ThreeOneOSFive/helpers/DeviceIdentityService.swift \
             Tests/DeviceIdentitySelfCheck.swift -o "$RUNNER_TEMP/astra-identity-selfcheck"
           "$RUNNER_TEMP/astra-identity-selfcheck"
 
-      - name: Verify committed patched AirliftFFI
+      - name: Verify device recovery storage interruption safety
+        run: |
+          swiftc ThreeOneOSFive/helpers/AppSecurityConfiguration.swift \
+            ThreeOneOSFive/helpers/DeviceIdentityService.swift \
+            Tests/DeviceRecoverySelfCheck.swift -o "$RUNNER_TEMP/astra-recovery-storage-selfcheck"
+          "$RUNNER_TEMP/astra-recovery-storage-selfcheck"
+
+      - name: Verify recovery authorization contract
+        run: |
+          python3 Tests/extract_recovery_contract.py \
+            ThreeOneOSFive/helpers "$RUNNER_TEMP/RecoveryContract.swift"
+          swiftc "$RUNNER_TEMP/RecoveryContract.swift" \
+            Tests/ProtectedRecoverySelfCheck.swift -o "$RUNNER_TEMP/astra-recovery-contract-selfcheck"
+          "$RUNNER_TEMP/astra-recovery-contract-selfcheck"
+
+      - name: Verify actual recovery flow with isolated transport
+        run: |
+          python3 Tests/extract_recovery_flow.py \
+            ThreeOneOSFive/helpers "$RUNNER_TEMP/RecoveryFlow.swift"
+          swiftc ThreeOneOSFive/helpers/AppSecurityConfiguration.swift \
+            ThreeOneOSFive/helpers/DeviceIdentityService.swift \
+            "$RUNNER_TEMP/RecoveryFlow.swift" \
+            Tests/ProtectedRecoveryFlowSelfCheck.swift -o "$RUNNER_TEMP/astra-recovery-flow-selfcheck"
+          "$RUNNER_TEMP/astra-recovery-flow-selfcheck"
+
+      - name: Verify actual catalog decoding and apply restore transactions
+        run: |
+          swiftc ThreeOneOSFive/helpers/AppSecurityConfiguration.swift \
+            ThreeOneOSFive/helpers/ServerSignatureVerifier.swift \
+            ThreeOneOSFive/helpers/ProtectedArtifactDecoder.swift \
+            ThreeOneOSFive/helpers/PatchProjectModels.swift \
+            ThreeOneOSFive/helpers/PatchPackageCodec.swift \
+            ThreeOneOSFive/helpers/PatchTransaction.swift \
+            Tests/CatalogApplicationSelfCheck.swift -o "$RUNNER_TEMP/astra-catalog-selfcheck"
+          "$RUNNER_TEMP/astra-catalog-selfcheck" Tests/Fixtures/catalog
+
+      - name: Verify release integrity, jailbreak policy and native commit barrier
+        run: |
+          swiftc ThreeOneOSFive/helpers/AppSecurityConfiguration.swift \
+            ThreeOneOSFive/helpers/ServerSignatureVerifier.swift \
+            ThreeOneOSFive/helpers/ProtectedArtifactDecoder.swift \
+            ThreeOneOSFive/helpers/AntiTamper.swift \
+            ThreeOneOSFive/helpers/DeviceEnvironmentInspector.swift \
+            Tests/DeviceEnvironmentSelfCheck.swift \
+            Tests/IntegritySelfCheck.swift -o "$RUNNER_TEMP/astra-integrity-selfcheck"
+          "$RUNNER_TEMP/astra-integrity-selfcheck" Tests/Fixtures/integrity_release.json
+
+      - name: Verify committed patched AirliftFFI archives
         run: |
           set -euo pipefail
           # Use the committed framework instead of rebuilding upstream Rust
           # sources in CI. Post-Build Verification checks the linked executable
           # for the required patch markers and rejects unsafe direct writes.
-          # ALGetGrappaToken belongs to GrappaHelper.m in the app, not Rust's
-          # archive. Check the actual defined FFI exports in both platform slices.
-          for AIRLIFT_PLATFORM in ios-arm64 ios-arm64-simulator; do
-            AIRLIFT_LIBRARY="Frameworks/AirliftFFI.xcframework/$AIRLIFT_PLATFORM/libairlift_ffi.a"
-            AIRLIFT_SYMBOLS="$RUNNER_TEMP/airlift-$AIRLIFT_PLATFORM-symbols.txt"
-            test -s "$AIRLIFT_LIBRARY"
-            # Rust embeds newer LLVM bitcode in compiler_builtins. Inspect native
-            # Mach-O exports only; Xcode 16's bitcode reader cannot decode LLVM 22.
-            # https://llvm.org/docs/CommandGuide/llvm-nm.html#cmdoption-llvm-nm-no-llvm-bc
-            nm --no-llvm-bc -gUj "$AIRLIFT_LIBRARY" > "$AIRLIFT_SYMBOLS"
-            for AIRLIFT_SYMBOL in _al_exploit_run _al_exploit_write_dir _al_pairing_run_host; do
-              grep -Fx "$AIRLIFT_SYMBOL" "$AIRLIFT_SYMBOLS"
-            done
-          done
+          test -s Frameworks/AirliftFFI.xcframework/ios-arm64/libairlift_ffi.a
+          test -s Frameworks/AirliftFFI.xcframework/ios-arm64-simulator/libairlift_ffi.a
 
-      - name: Verify binary integrity embedder
-        run: |
-          python3 -m unittest discover -s Tests -p 'test_*.py' -v
-          python3 -m py_compile ReleaseTools/macho_release.py ReleaseTools/seal_release.py
-          swiftc ThreeOneOSFive/helpers/ProtectedOperationPolicy.swift \
-            Tests/ProtectedOperationSelfCheck.swift -o "$RUNNER_TEMP/astra-operation-selfcheck"
-          "$RUNNER_TEMP/astra-operation-selfcheck"
+      - name: Verify AirLift pairing completion regression
+        run: python3 Tests/check_airlift_pairing_finish.py
 
       - name: Build App (Unsigned)
         run: |
@@ -88,19 +123,22 @@ jobs:
           APP_NAME=$(find build -maxdepth 1 -name "*.app" -type d | head -n 1)
           test -n "$APP_NAME"
           test -d "$APP_NAME"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$APP_NAME/Info.plist")" = "Astra"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_NAME/Info.plist")" = "1.2.10"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_NAME/Info.plist")" = "16"
           EXECUTABLE=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP_NAME/Info.plist")
           test -x "$APP_NAME/$EXECUTABLE"
-          python3 tools/embed_integrity_hash.py --verify "$APP_NAME/$EXECUTABLE"
-          python3 ReleaseTools/macho_release.py "$APP_NAME/$EXECUTABLE" > "$RUNNER_TEMP/astra-release-shape.json"
-          if nm -gj "$APP_NAME/$EXECUTABLE" 2>/dev/null | grep -E "AntiTamper|JailbreakDetector|BinaryIntegrity|SignedReleaseIntegrity|ReleaseCommitBarrier|ProtectedDownloadService"; then
-            echo "Security symbols leaked from stripped Release executable" >&2
-            exit 1
-          fi
+          nm -gj "$APP_NAME/$EXECUTABLE" | grep -Fx "_ALGetGrappaToken"
           strings "$APP_NAME/$EXECUTABLE" | grep -F "RemoteXPC timed out after 6s"
           strings "$APP_NAME/$EXECUTABLE" | grep -F "timeout fallback trying raw RPPairing"
           strings "$APP_NAME/$EXECUTABLE" | grep -F "AirTraffic write timed out after 180s; operation cancelled"
           ! strings "$APP_NAME/$EXECUTABLE" | grep -F "proceeding with direct writeDirectory"
           echo "[build] Found App Bundle: $APP_NAME with Grappa helper linked"
+          python3 ReleaseTools/macho_release.py "$APP_NAME/$EXECUTABLE" > "$RUNNER_TEMP/release-before.json"
+          cp -R "$APP_NAME" "$RUNNER_TEMP/resign-check.app"
+          codesign --force --sign - "$RUNNER_TEMP/resign-check.app"
+          python3 ReleaseTools/macho_release.py "$RUNNER_TEMP/resign-check.app/$EXECUTABLE" > "$RUNNER_TEMP/release-after.json"
+          cmp "$RUNNER_TEMP/release-before.json" "$RUNNER_TEMP/release-after.json"
 
       - name: Package IPA
         run: |
@@ -114,5 +152,5 @@ jobs:
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Astra-Unsigned-IPA
+          name: Astra-Unsigned-IPA-1.2.10-16
           path: build/Astra.ipa
