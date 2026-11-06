@@ -1223,10 +1223,9 @@ final class AirLiftGatekeeperManager: ObservableObject {
     }
 
     var requiresPairingForCurrentDevice: Bool {
-        // Chỉ các build iOS 27 nằm trong allowlist mới được phép chạy
-        // RPPairing trực tiếp. Không chặn nhầm iOS 27.2 beta 3+ hoặc iOS mới
-        // chưa được xác minh bằng một màn hình thiết lập không thể hoàn tất.
-        ExploitSupportPolicy.currentPairingMode == .onDeviceOrImportedFile
+        // Cả iOS 27 (.onDeviceOrImportedFile) và iOS 18.7.2 - 18.10 (.importedFile)
+        // đều sử dụng AirLift để patch file và yêu cầu ghép đôi / nhập file pairing.
+        ExploitSupportPolicy.currentStorageMode == .airLift
     }
 
     var isAirLiftFullyReady: Bool {
@@ -1405,13 +1404,15 @@ struct IOS27PairingSetupView: View {
                 HStack(spacing: 5) {
                     Image(systemName: "shield.checkered")
                         .font(.system(size: 10, weight: .semibold))
-                    Text("BẮT BUỘC TRÊN IOS 27")
+                    Text(ExploitSupportPolicy.currentPairingMode == .onDeviceOrImportedFile ? "BẮT BUỘC TRÊN IOS 27" : "BẮT BUỘC TRÊN IOS 18.7.2 - 18.10")
                         .font(.system(size: 10, weight: .bold, design: .monospaced))
                         .tracking(0.45)
                 }
                 .foregroundColor(AppTheme.gamingBlueBright)
 
-                Text("Hoàn thành một lần để Astra có thể sử dụng kết nối an toàn khi áp dụng chức năng.")
+                Text(ExploitSupportPolicy.currentPairingMode == .onDeviceOrImportedFile
+                    ? "Hoàn thành một lần để Astra có thể sử dụng kết nối an toàn khi áp dụng chức năng."
+                    : "Nhập file pairing trích xuất từ máy tính để Astra có thể patch file qua AirLift.")
                     .font(.system(size: 11.5))
                     .foregroundColor(AppTheme.gamingTextSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1619,17 +1620,31 @@ struct IOS27PairingSetupView: View {
                         }
                     }
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("1. Mở Cài đặt › Quyền riêng tư & Bảo mật › Chế độ nhà phát triển.")
-                        Text("2. Chọn Astra trong danh sách ghép đôi.")
-                        Text("3. Nhập mã PIN đang hiển thị.")
+                    if ExploitSupportPolicy.currentPairingMode == .onDeviceOrImportedFile {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("1. Mở Cài đặt › Quyền riêng tư & Bảo mật › Chế độ nhà phát triển.")
+                            Text("2. Chọn Astra trong danh sách ghép đôi.")
+                            Text("3. Nhập mã PIN đang hiển thị.")
+                        }
+                        .font(.system(size: 11))
+                        .foregroundColor(AppTheme.gamingTextSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(10)
+                        .background(AppTheme.gamingBackgroundRaised)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    } else {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("1. Kết nối iPhone với máy tính qua USB hoặc Wi-Fi.")
+                            Text("2. Trích xuất file pairing (.plist) từ máy tính.")
+                            Text("3. Bấm 'Nhập file pair' bên dưới để lưu vào Astra.")
+                        }
+                        .font(.system(size: 11))
+                        .foregroundColor(AppTheme.gamingTextSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(10)
+                        .background(AppTheme.gamingBackgroundRaised)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     }
-                    .font(.system(size: 11))
-                    .foregroundColor(AppTheme.gamingTextSecondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(10)
-                    .background(AppTheme.gamingBackgroundRaised)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
                 .padding(12)
                 .background(AppTheme.statusInfo.opacity(0.06))
@@ -1667,9 +1682,9 @@ struct IOS27PairingSetupView: View {
                     Label("Nhập file pair", systemImage: "square.and.arrow.down")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(AppTheme.gamingText)
-                        .frame(width: 126)
+                        .frame(maxWidth: ExploitSupportPolicy.currentPairingMode == .onDeviceOrImportedFile ? 126 : .infinity)
                         .padding(.vertical, 10)
-                        .background(AppTheme.gamingSurfaceRaised)
+                        .background(ExploitSupportPolicy.currentPairingMode == .onDeviceOrImportedFile ? AnyView(AppTheme.gamingSurfaceRaised) : AnyView(AppTheme.gamingAccentGradient))
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(AppTheme.gamingViolet.opacity(0.28), lineWidth: 1))
                 }
