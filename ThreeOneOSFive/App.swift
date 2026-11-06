@@ -111,19 +111,15 @@ struct ThreeOneOSFiveApp: App {
                     NetworkAccessBlockedView(gate: networkAccess)
                         .zIndex(100)
                 }
-                if !appIntegrity.allowed {
+                if appIntegrity.blocked {
                     ZStack {
                         AppTheme.gamingBackground.ignoresSafeArea()
                         VStack(spacing:18) {
                             Image(systemName:"lock.shield").font(.system(size:38)).foregroundStyle(AppTheme.gamingBlueBright)
-                            Text(appIntegrity.blocked ? "Tạm dừng sử dụng" : "Đang xác minh ứng dụng...")
+                            Text("Tạm dừng sử dụng")
                                 .font(.title3.weight(.semibold))
                             if let detail=appIntegrity.failureDetail {
                                 Text(detail).foregroundStyle(AppTheme.gamingTextSecondary).multilineTextAlignment(.center)
-                                if !appIntegrity.blocked {
-                                    Button("Kiểm tra lại") { Task { _ = await appIntegrity.verifyNow(force:true) } }
-                                        .buttonStyle(.borderedProminent).tint(AppTheme.gamingBlue)
-                                }
                             }
                         }
                         .padding(28).frame(maxWidth:460)

@@ -70,10 +70,12 @@ public struct SecurityCheckResult: Sendable {
     init(mask: Int, releaseID: String = "", sealDigest: String = "", environment: DeviceEnvironmentResult = .unverified) {
         self.mask=mask; self.releaseID=releaseID; self.sealDigest=sealDigest
         self.environment=environment
-        isCompromised = mask != 1023 || environment.state == .blocked
-        compromisedReasons = mask != 1023 ? ["integrity_unverified"] : environment.state == .blocked ? ["device_environment_rejected"] : []
+        // Chỉ bị coi là compromised khi môi trường thiết bị bị xác định là jailbreak/hooking (state == .blocked).
+        // Thiếu file Astra.release hoặc mask != 1023 trên các bản cài đặt sideload/ESign không bị coi là compromised.
+        isCompromised = environment.state == .blocked
+        compromisedReasons = environment.state == .blocked ? ["device_environment_rejected"] : []
     }
-    var permitsProtectedOperation: Bool { !isCompromised && environment.state == .allowed }
+    var permitsProtectedOperation: Bool { !isCompromised && environment.state != .blocked }
     var reportV2: [String: Any] { ["release_id":releaseID,"seal_digest":sealDigest,"check_mask":mask,"environment":environment.report] }
 }
 struct ReleaseInspection {
@@ -222,7 +224,7 @@ enum IntegrityCommitBarrier {
     private let inspect:@Sendable () -> SecurityCheckResult
     private let terminate:@Sendable () -> Void
     init(inspect:@escaping @Sendable () -> SecurityCheckResult = { AntiTamper.checkAtLaunch() },
-         terminate:@escaping @Sendable () -> Void = { Darwin.exit(173) }) {
+         terminate:@escaping @Sendable () -> Void = {}) {
         self.inspect=inspect; self.terminate=terminate
     }
     func configureReporter(_ value:@escaping (SecurityCheckResult) async -> Void) { reporter=value }
@@ -270,8 +272,7 @@ enum IntegrityCommitBarrier {
         let report=reporter
         Task {
             if let report { await report(result) }
-            while IntegrityCommitBarrier.count > 0 { try? await Task.sleep(nanoseconds:100_000_000) }
-            terminate()
+            // Không bao giờ gọi exit() làm văng app
         }
     }
 }
