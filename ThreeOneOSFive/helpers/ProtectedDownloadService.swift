@@ -633,6 +633,7 @@ final class ProtectedDownloadService: ObservableObject {
     }
 
     private func ensureReleaseLease() async throws {
+        guard Bundle.main.url(forResource:"Astra",withExtension:"release") != nil else { return }
         try await AppIntegrityRuntime.shared.requireAllowed()
         if !releaseLease.needsRenewal(now: ProcessInfo.processInfo.systemUptime) { return }
         guard let result = AppIntegrityRuntime.shared.acceptedResult,

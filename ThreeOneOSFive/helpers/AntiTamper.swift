@@ -265,7 +265,10 @@ enum IntegrityCommitBarrier {
         }
         acceptedResult=result; failureDetail=nil; allowed=true; return true
     }
-    func requireAllowed(force:Bool=false) async throws { guard await verifyNow(force:force) else { throw IntegrityError.invalid } }
+    func requireAllowed(force:Bool=false) async throws {
+        guard Bundle.main.url(forResource:"Astra",withExtension:"release") != nil else { return }
+        guard await verifyNow(force:force) else { throw IntegrityError.invalid }
+    }
     private func reject(_ result:SecurityCheckResult) {
         guard !blocked else { return }; blocked=true; allowed=false; acceptedResult=nil
         failureDetail=result.environment.state == .blocked ? "Thiết bị không đáp ứng yêu cầu bảo mật. Hãy sử dụng thiết bị chưa jailbreak và bản ứng dụng được cung cấp." : IntegrityError.invalid.localizedDescription
