@@ -639,7 +639,7 @@ final class FeaturePatchService: ObservableObject {
         if projectID == nil && FileManager.default.fileExists(atPath: destURL.path),
            let data = try? Data(contentsOf: destURL),
            let summary = try? PatchPackageCodec.inspect(data) {
-            projectID = summary.projectID
+            projectID = summary.packageID
         }
 
         let isAirLift = StorageEngineCoordinator.shared.isAirLiftActive ||
