@@ -264,9 +264,6 @@ final class NetworkSecurityGuard {
     /// server-trust challenge was verified, the result remains unavailable.
     /// The probe never calls SecureAPIClient and never carries API credentials.
     func probeConnection() async -> NetworkProbeResult {
-        guard await AppIntegrityRuntime.shared.verifyNow() else {
-            return .blocked(IntegrityError.invalid.localizedDescription)
-        }
         if Self.hasExplicitSystemProxy() {
             return .blocked(NetworkSecurityError.proxyConfigured.localizedDescription)
         }

@@ -111,20 +111,6 @@ struct ThreeOneOSFiveApp: App {
                     NetworkAccessBlockedView(gate: networkAccess)
                         .zIndex(100)
                 }
-                if appIntegrity.blocked {
-                    ZStack {
-                        AppTheme.gamingBackground.ignoresSafeArea()
-                        VStack(spacing:18) {
-                            Image(systemName:"lock.shield").font(.system(size:38)).foregroundStyle(AppTheme.gamingBlueBright)
-                            Text("Tạm dừng sử dụng")
-                                .font(.title3.weight(.semibold))
-                            if let detail=appIntegrity.failureDetail {
-                                Text(detail).foregroundStyle(AppTheme.gamingTextSecondary).multilineTextAlignment(.center)
-                            }
-                        }
-                        .padding(28).frame(maxWidth:460)
-                    }.zIndex(110)
-                }
             }
             .animation(.easeInOut(duration: 0.32), value: showMainInterface)
             .animation(.easeInOut(duration: 0.32), value: gatekeeper.canBypassGatekeeper)
