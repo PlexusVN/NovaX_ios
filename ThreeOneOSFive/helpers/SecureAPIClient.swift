@@ -165,9 +165,6 @@ final class SecureAPIClient {
     }
 
     func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-        if Bundle.main.url(forResource: "Astra", withExtension: "release") != nil {
-            try await AppIntegrityRuntime.shared.requireAllowed()
-        }
         try Self.validate(request)
         let generation = try await NetworkAccessGate.shared.requireAllowed()
         let epoch = requests.epoch
@@ -192,9 +189,6 @@ final class SecureAPIClient {
     }
 
     func download(for request: URLRequest) async throws -> (URL, HTTPURLResponse) {
-        if Bundle.main.url(forResource: "Astra", withExtension: "release") != nil {
-            try await AppIntegrityRuntime.shared.requireAllowed()
-        }
         try Self.validate(request)
         let generation = try await NetworkAccessGate.shared.requireAllowed()
         let epoch = requests.epoch

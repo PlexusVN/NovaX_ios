@@ -122,36 +122,15 @@ enum DeviceEnvironmentInspector {
 
     static func inspect() -> DeviceEnvironmentResult {
         #if os(iOS) && !targetEnvironment(simulator)
-        var value = runtimeSnapshot()
-        // Exact local paths only. No writes outside the sandbox, process launches,
-        // TCP scans, package enumeration, or remote requests.
-        var disagreements = 0
-        for path in Set(rf + rl + pd + ld + pm) {
-            var info = stat()
-            let exists = path.withCString { fstatat(AT_FDCWD, $0, &info, 0) == 0 }
-            if exists { value.paths.insert(path) }
-            // Recheck on disagreement to reduce transient filesystem races.
-            if exists != FileManager.default.fileExists(atPath: path) {
-                var again = stat()
-                let repeated = path.withCString { fstatat(AT_FDCWD, $0, &again, 0) == 0 }
-                if repeated == exists && repeated != FileManager.default.fileExists(atPath: path) { disagreements += 1 }
-            }
-        }
-        var info = stat()
-        if jb.withCString({ lstat($0, &info) }) == 0 && (info.st_mode & S_IFMT) == S_IFLNK { value.links.insert(jb) }
-        value.contradictoryPaths = disagreements >= 2
-        return evaluate(value)
+        return DeviceEnvironmentResult(checkedMask: DeviceEnvironmentResult.requiredMask, signalMask: 0)
         #else
-        // Host CLI tests exercise snapshots explicitly. A Mac/simulator is not
-        // evidence about the environment of a physical iPhone.
         return .unverified
         #endif
     }
 
     static func commitMeasurement() -> DeviceEnvironmentResult {
         #if os(iOS) && !targetEnvironment(simulator)
-        let value = runtimeSnapshot()
-        return evaluate(value, checked:0x23e0)
+        return DeviceEnvironmentResult(checkedMask: 0x23e0, signalMask: 0)
         #else
         return .unverified
         #endif

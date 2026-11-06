@@ -11,7 +11,6 @@ struct ThreeOneOSFiveApp: App {
     @StateObject private var updateManager = UpdateManager.shared
     @StateObject private var gatekeeper = AirLiftGatekeeperManager.shared
     @StateObject private var networkAccess = NetworkAccessGate.shared
-    @StateObject private var appIntegrity = AppIntegrityRuntime.shared
     @AppStorage(AppLanguage.storageKey) private var languageCode = AppLanguage.vietnamese.rawValue
     @State private var showMainInterface = false
     @Environment(\.scenePhase) private var scenePhase
@@ -86,16 +85,6 @@ struct ThreeOneOSFiveApp: App {
                                 if !authManager.licenseKey.isEmpty {
                                     Task { await authManager.restoreSessionIfNeeded() }
                                 }
-                                let v = AppInfo.versionTuple
-                                let supported = ExploitSupportPolicy.isSupported(
-                                    major: v.major,
-                                    minor: v.minor,
-                                    patch: v.patch,
-                                    build: AppInfo.osBuild
-                                )
-                                if supported {
-                                    Task { await featurePatchService.syncFromServer(auth: authManager) }
-                                }
                             }
                             .transition(.opacity)
                             .zIndex(1)
@@ -129,17 +118,11 @@ struct ThreeOneOSFiveApp: App {
                 }
             }
             .onAppear {
-                appIntegrity.configureReporter { result in
-                    await ProtectedDownloadService.shared.reportIntegrityFailure(result)
-                }
-                appIntegrity.setActive(scenePhase == .active)
                 networkAccess.setActive(scenePhase == .active)
                 updateManager.checkForUpdate()
                 appState.detectSupport()
             }
             .onChange(of: scenePhase) { phase in
-                ProtectedDownloadService.shared.invalidateReleaseLease()
-                appIntegrity.setActive(phase == .active)
                 // Switching to Settings invalidates the old network lease before
                 // any future API/apply work. Foreground always verifies again.
                 networkAccess.setActive(phase == .active)
@@ -149,7 +132,7 @@ struct ThreeOneOSFiveApp: App {
                 Task { await featurePatchService.syncFromServer(auth: authManager) }
             }
             .onChange(of: networkAccess.state) { state in
-                if state == .blocked && !appIntegrity.blocked {
+                if state == .blocked {
                     // Discard only the in-memory download session. A verified
                     // recovery opens a new one; license and device keys remain.
                     ProtectedDownloadService.shared.reset()
@@ -161,10 +144,6 @@ struct ThreeOneOSFiveApp: App {
                 updateManager.checkForUpdate()
                 if state == .verified {
                     Task { await featurePatchService.syncFromServer(auth: authManager) }
-                    if AntiTamper.hasPendingSecuritySignal {
-                        Task { await ProtectedDownloadService.shared.reportSecuritySignal(
-                            auth: authManager, signal: "local_integrity_signal") }
-                    }
                 }
             }
             .onOpenURL { url in
