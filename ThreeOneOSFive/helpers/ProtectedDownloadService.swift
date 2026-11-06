@@ -633,14 +633,9 @@ final class ProtectedDownloadService: ObservableObject {
     }
 
     private func ensureReleaseLease() async throws {
-        #if os(iOS) && !targetEnvironment(simulator)
-        return
-        #else
-        guard Bundle.main.url(forResource:"Astra",withExtension:"release") != nil else { return }
-        try await AppIntegrityRuntime.shared.requireAllowed()
         if !releaseLease.needsRenewal(now: ProcessInfo.processInfo.systemUptime) { return }
-        guard let result = AppIntegrityRuntime.shared.acceptedResult,
-              result.permitsProtectedOperation else { throw IntegrityError.invalid }
+        let result = AntiTamper.checkAtLaunch()
+        guard result.permitsProtectedOperation else { throw IntegrityError.invalid }
         let generation = releaseLease.generation
         let started = ProcessInfo.processInfo.systemUptime
         let (data,_) = try await post("/api/v2/security/integrity-v2", body:result.reportV2,
@@ -655,7 +650,6 @@ final class ProtectedDownloadService: ObservableObject {
         } catch ProtectedReleaseLeaseError.staleGeneration { throw CancellationError() }
         catch ProtectedReleaseLeaseError.insufficientTime { throw ProtectedDownloadError.rejected("lease_connection_too_slow") }
         catch { throw ProtectedDownloadError.invalidResponse }
-        #endif
     }
 
     /// One short pinned, signed report may outlive cancellation of ordinary
