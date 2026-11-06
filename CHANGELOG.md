@@ -2,6 +2,14 @@
 
 All notable user-facing changes are documented in this file.
 
+## [2.0] - 2026-11-07
+
+### Changed
+
+- Modernized Profile tab UI with Dark Gaming theme (Xanh `#147DFF` — Tím `#5865F2` — Hồng `#EC4899`).
+- Streamlined Settings view.
+- Bumped app version to 2.0.
+
 ## [1.2.10] - 2026-11-06
 
 ### Fixed
