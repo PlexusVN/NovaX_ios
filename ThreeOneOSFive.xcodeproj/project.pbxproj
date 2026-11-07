@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A57E00000000000000000001 /* LicenseVerification.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57E00000000000000000002; };
 		A57A00000000000000000021 /* ProtectedReleaseLease.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57A00000000000000000022; };
 		A57A00000000000000000011 /* DeviceEnvironmentInspector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57A00000000000000000012; };
 		A57A00000000000000000009 /* AppSecurityConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57A0000000000000000000A; };
@@ -87,6 +88,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A57E00000000000000000002 /* LicenseVerification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LicenseVerification.swift; sourceTree = "<group>"; };
 		A57A00000000000000000022 /* ProtectedReleaseLease.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtectedReleaseLease.swift; sourceTree = "<group>"; };
 		A57A00000000000000000012 /* DeviceEnvironmentInspector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceEnvironmentInspector.swift; sourceTree = "<group>"; };
 		A57A0000000000000000000A /* AppSecurityConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSecurityConfiguration.swift; sourceTree = "<group>"; };
@@ -328,6 +330,7 @@
 				A57A00000000000000000006 /* ProtectedDownloadService.swift */,
 				A57A00000000000000000008 /* NetworkAccessGate.swift */,
 				A57A0000000000000000000A /* AppSecurityConfiguration.swift */,
+				A57E00000000000000000002 /* LicenseVerification.swift */,
 				3105N106 /* GrappaHelper.m */,
 				3105N107 /* GrappaHelper.h */,
 			);
@@ -503,6 +506,7 @@
 				A57A00000000000000000005,
 				A57A00000000000000000007,
 				A57A00000000000000000009,
+				A57E00000000000000000001,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -529,7 +533,7 @@
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CODE_SIGN_ENTITLEMENTS = ThreeOneOSFive/ThreeOneOSFive.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 16;
+				CURRENT_PROJECT_VERSION = 17;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -564,7 +568,7 @@
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CODE_SIGN_ENTITLEMENTS = ThreeOneOSFive/ThreeOneOSFive.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 16;
+				CURRENT_PROJECT_VERSION = 17;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;

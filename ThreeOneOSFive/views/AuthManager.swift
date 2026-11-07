@@ -54,35 +54,24 @@ final class AuthManager: ObservableObject {
         let _ = DecoyAuth.verifyKey(licenseKey, device: hwid)
         let _ = DecoyAuth.buildAuthRequest(key: licenseKey, hwid: hwid, secret: "x")
 
-        guard !licenseKey.trimmingCharacters(in: .whitespaces).isEmpty else {
+        guard !licenseKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             authState = .error("Vui lòng nhập key kích hoạt")
             return
         }
 
         authState = .loading("Đang xác thực...")
 
-        let key = licenseKey.trimmingCharacters(in: .whitespaces)
+        let key = licenseKey.trimmingCharacters(in: .whitespacesAndNewlines)
         let hw = hwid
         let devName = DeviceUtils.deviceMarketingName
-        let secret = Obf.s([254, 223, 198, 209, 232, 157, 209, 197, 196, 216, 157, 219, 213, 201], 0xB0)
+        let secret = AppSecurityConfiguration.productSecret
 
-        let urlBase = Obf.s([219, 199, 199, 195, 192, 137, 156, 156, 201, 202, 221, 220, 203, 157, 208, 223, 218, 208, 216, 156, 210, 195, 218, 156, 197, 214, 193, 218, 213, 202, 140, 216, 214, 202, 142], 0xB3)
-        let sepHwid = Obf.s([149, 219, 196, 218, 215, 142], 0xB3)
-        let sepSecret = Obf.s([149, 192, 214, 208, 193, 214, 199, 142], 0xB3)
-        let sepDevName = "&device_name="
-
-        guard let encodedKey = key.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let encodedHw = hw.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let encodedSecret = secret.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let encodedDevName = devName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "\(urlBase)\(encodedKey)\(sepHwid)\(encodedHw)\(sepSecret)\(encodedSecret)\(sepDevName)\(encodedDevName)") else {
+        guard let request = try? LicenseVerification.request(
+            origin: AppSecurityConfiguration.apiOrigin, key: key, hwid: hw,
+            secret: secret, deviceName: devName) else {
             authState = .error("Liên kết không hợp lệ")
             return
         }
-
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 15
-        request.setValue(devName, forHTTPHeaderField: "X-Device-Name")
 
         do {
             let (data, response) = try await SecureAPIClient.shared.data(for: request)
@@ -93,6 +82,10 @@ final class AuthManager: ObservableObject {
                 authState = .error("Không nhận được phản hồi từ máy chủ")
                 return
             }
+            if httpResp.statusCode == 429 || httpResp.statusCode >= 500 {
+                authState = .error(LicenseVerification.message(statusCode: httpResp.statusCode, json: [:]))
+                return
+            }
 
             guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 authState = .error("Phản hồi từ máy chủ không hợp lệ")
@@ -100,31 +93,7 @@ final class AuthManager: ObservableObject {
             }
 
             guard httpResp.statusCode == 200, json["success"] as? Bool == true else {
-                let serverMsg = json["message"] as? String ?? ""
-                let code = json["code"] as? String ?? ""
-
-                let msg: String
-                if !serverMsg.isEmpty {
-                    msg = serverMsg
-                } else if !code.isEmpty {
-                    switch code {
-                    case "key_expired":       msg = "KEY đã hết hạn"
-                    case "key_banned":        msg = "KEY đã bị khóa"
-                    case "key_invalid":       msg = "KEY không hợp lệ"
-                    case "key_max_devices":   msg = "KEY đã đạt số thiết bị tối đa"
-                    case "key_used":          msg = "KEY đã được sử dụng"
-                    case "hwid_mismatch":     msg = "KEY không khớp với thiết bị này"
-                    case "invalid_secret":    msg = "Lỗi xác thực sản phẩm"
-                    default:                  msg = "Xác thực thất bại"
-                    }
-                } else if httpResp.statusCode == 404 {
-                    msg = "Máy chủ xác thực không khả dụng"
-                } else if httpResp.statusCode >= 500 {
-                    msg = "Máy chủ đang bảo trì, vui lòng thử lại sau"
-                } else {
-                    msg = "Xác thực thất bại"
-                }
-                authState = .error(msg)
+                authState = .error(LicenseVerification.message(statusCode: httpResp.statusCode, json: json))
                 return
             }
 
@@ -247,26 +216,24 @@ final class AuthManager: ObservableObject {
         guard !licenseKey.isEmpty else { return .authFailed }
         let revision = authenticationRevision
 
-        let key = licenseKey.trimmingCharacters(in: .whitespaces)
+        let key = licenseKey.trimmingCharacters(in: .whitespacesAndNewlines)
         let hw = hwid
-        let secret = Obf.s([254, 223, 198, 209, 232, 157, 209, 197, 196, 216, 157, 219, 213, 201], 0xB0)
+        let secret = AppSecurityConfiguration.productSecret
 
-        let urlBase = Obf.s([219, 199, 199, 195, 192, 137, 156, 156, 201, 202, 221, 220, 203, 157, 208, 223, 218, 208, 216, 156, 210, 195, 218, 156, 197, 214, 193, 218, 213, 202, 140, 216, 214, 202, 142], 0xB3)
-        let sepHwid = Obf.s([149, 219, 196, 218, 215, 142], 0xB3)
-        let sepSecret = Obf.s([149, 192, 214, 208, 193, 214, 199, 142], 0xB3)
-
-        guard let encodedKey = key.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let encodedHw = hw.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let encodedSecret = secret.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "\(urlBase)\(encodedKey)\(sepHwid)\(encodedHw)\(sepSecret)\(encodedSecret)") else { return .authFailed }
-
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 15
+        guard let request = try? LicenseVerification.request(
+            origin: AppSecurityConfiguration.apiOrigin, key: key, hwid: hw,
+            secret: secret, deviceName: DeviceUtils.deviceMarketingName) else { return .authFailed }
 
         do {
             let (data, response) = try await SecureAPIClient.shared.data(for: request)
             guard authenticationRevision == revision, authState == .verified else { return .authFailed }
             guard let httpResp = response as? HTTPURLResponse else { return .authFailed }
+            // Transient HTTP/server errors must not erase a valid saved key.
+            // Protected operations still require their own live server grants.
+            if httpResp.statusCode == 429 || httpResp.statusCode >= 500 {
+                reVerifyFailCount += 1
+                return .networkError
+            }
             guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { return .authFailed }
 
             if httpResp.statusCode == 200, json["success"] as? Bool == true {
@@ -297,21 +264,12 @@ final class AuthManager: ObservableObject {
                 reVerifyFailCount = 0
                 return .ok
             } else {
-                // Auth failure (key expired/banned) — logout and stop monitor
-                let serverMsg = json["message"] as? String ?? ""
-                let code = json["code"] as? String ?? ""
-                let msg: String
-                if !serverMsg.isEmpty {
-                    msg = serverMsg
-                } else {
-                    switch code {
-                    case "key_expired":     msg = "KEY đã hết hạn"
-                    case "key_banned":      msg = "KEY đã bị khóa"
-                    case "key_invalid":     msg = "KEY không hợp lệ"
-                    case "key_max_devices": msg = "KEY đã đạt số thiết bị tối đa"
-                    default:                msg = "Phiên đăng nhập hết hạn, vui lòng đăng nhập lại"
-                    }
+                if LicenseVerification.isTransient(statusCode: httpResp.statusCode, json: json) {
+                    reVerifyFailCount += 1
+                    return .networkError
                 }
+                // Auth failure (key expired/banned) — logout and stop monitor
+                let msg = LicenseVerification.message(statusCode: httpResp.statusCode, json: json)
                 clearSession()
                 authState = .error(msg)
                 return .authFailed

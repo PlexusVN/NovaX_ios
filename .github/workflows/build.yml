@@ -40,6 +40,12 @@ jobs:
             Tests/ProtectedArtifactSelfCheck.swift -o "$RUNNER_TEMP/astra-security-selfcheck"
           "$RUNNER_TEMP/astra-security-selfcheck" Tests/Fixtures/artifact_crypto_v1.json
 
+      - name: Verify literal license transport and error handling
+        run: |
+          swiftc ThreeOneOSFive/helpers/LicenseVerification.swift \
+            Tests/LicenseVerificationSelfCheck.swift -o "$RUNNER_TEMP/astra-license-selfcheck"
+          "$RUNNER_TEMP/astra-license-selfcheck"
+
       - name: Verify license-scoped device identity and migration
         run: |
           swiftc ThreeOneOSFive/helpers/AppSecurityConfiguration.swift \
@@ -125,7 +131,7 @@ jobs:
           test -d "$APP_NAME"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$APP_NAME/Info.plist")" = "Astra"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_NAME/Info.plist")" = "2.0"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_NAME/Info.plist")" = "16"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_NAME/Info.plist")" = "17"
           EXECUTABLE=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP_NAME/Info.plist")
           test -x "$APP_NAME/$EXECUTABLE"
           nm -gj "$APP_NAME/$EXECUTABLE" | grep -Fx "_ALGetGrappaToken"
@@ -152,5 +158,5 @@ jobs:
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Astra-Unsigned-IPA-2.0-16
+          name: Astra-Unsigned-IPA-2.0-17
           path: build/Astra.ipa

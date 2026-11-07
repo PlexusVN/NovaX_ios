@@ -68,6 +68,8 @@ release-registry.json
 !/Tests/Fixtures/device_environment_v1.json
 
 !/Tests/ProtectedLeaseSelfCheck.swift
+!/Tests/LicenseVerificationSelfCheck.swift
+!/Tests/test_license_verification_wiring.py
 !/Tests/check_airlift_pairing_finish.py
 !/Tests/DeviceRecoverySelfCheck.swift
 !/Tests/ProtectedRecoverySelfCheck.swift
