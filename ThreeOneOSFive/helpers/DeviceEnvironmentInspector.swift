@@ -121,18 +121,12 @@ enum DeviceEnvironmentInspector {
     }
 
     static func inspect() -> DeviceEnvironmentResult {
-        #if os(iOS) && !targetEnvironment(simulator)
-        return DeviceEnvironmentResult(checkedMask: DeviceEnvironmentResult.requiredMask, signalMask: 0)
-        #else
+        // Network-only build: no filesystem/JB/debugger probes are collected.
+        // Do not manufacture an all-clear measurement for the legacy protocol.
         return .unverified
-        #endif
     }
 
     static func commitMeasurement() -> DeviceEnvironmentResult {
-        #if os(iOS) && !targetEnvironment(simulator)
-        return DeviceEnvironmentResult(checkedMask: 0x23e0, signalMask: 0)
-        #else
         return .unverified
-        #endif
     }
 }

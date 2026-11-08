@@ -173,9 +173,6 @@ public enum AntiTamper {
             regularExecutable:attributes?[.type] as? FileAttributeType == .typeRegular,memoryTextHash:memoryHash,loadedImages:images,debugger:isDebuggerAttached)
     }
     public static func checkAtLaunch() -> SecurityCheckResult {
-        #if os(iOS) && !targetEnvironment(simulator)
-        return SecurityCheckResult(mask: 1023, releaseID: "b906fe5c-c908-40e1-b2a9-464d00196957", sealDigest: "db42939bf41f4b04e874029e83b15b13bf88fa9283475dae06efd1151f2b336d", environment: DeviceEnvironmentResult(checkedMask: 0x3fff, signalMask: 0))
-        #else
         let image=current().map { inspect($0,verifier:.shared) } ?? SecurityCheckResult(mask:0)
         let environment=DeviceEnvironmentInspector.inspect()
         lock.lock(); let latched=commitFailure; lock.unlock()
@@ -183,10 +180,11 @@ public enum AntiTamper {
                                        environment:latched ?? environment)
         lock.lock(); latest=result; hasSignal = hasSignal || result.isCompromised; lock.unlock()
         return result
-        #endif
     }
     public static func checkAfterLogin() -> SecurityCheckResult { checkAtLaunch() }
-    public static func checkBeforePatch() -> Bool { checkAtLaunch().permitsProtectedOperation }
+    public static func checkBeforePatch() -> Bool {
+        !AppSecurityConfiguration.localIntegrityEnforced || checkAtLaunch().permitsProtectedOperation
+    }
     @discardableResult public static func periodicCheck() -> SecurityCheckResult { checkAtLaunch() }
     public static func reportCrackAndLockMachine(reason: String, details: [String:Any]) { lock.lock(); hasSignal=true; lock.unlock() }
     static func recordCommitFailure(_ result:DeviceEnvironmentResult) {
@@ -199,27 +197,21 @@ enum IntegrityCommitBarrier {
     static var count:Int { lock.lock(); defer { lock.unlock() }; return writers }
     static func block() { lock.lock(); blocked=true; lock.unlock() }
     static func requireAllowed() throws {
-        #if os(iOS) && !targetEnvironment(simulator)
-        return
-        #else
         lock.lock(); defer { lock.unlock() }; if blocked { throw IntegrityError.invalid }
-        #endif
     }
     static func withCommit<T>(_ action:() throws -> T) throws -> T {
-        #if os(iOS) && !targetEnvironment(simulator)
-        return try action()
-        #else
-        let measurement=DeviceEnvironmentInspector.commitMeasurement()
-        if measurement.state == .blocked {
-            AntiTamper.recordCommitFailure(measurement)
-            block()
-            Task { @MainActor in _ = await AppIntegrityRuntime.shared.verifyNow(force:true) }
-            throw IntegrityError.invalid
+        if AppSecurityConfiguration.localIntegrityEnforced {
+            let measurement=DeviceEnvironmentInspector.commitMeasurement()
+            if measurement.state == .blocked {
+                AntiTamper.recordCommitFailure(measurement)
+                block()
+                Task { @MainActor in _ = await AppIntegrityRuntime.shared.verifyNow(force:true) }
+                throw IntegrityError.invalid
+            }
         }
         lock.lock(); if blocked { lock.unlock(); throw IntegrityError.invalid }; writers += 1; lock.unlock()
         defer { lock.lock(); writers -= 1; lock.unlock() }
         return try action()
-        #endif
     }
 }
 @MainActor final class AppIntegrityRuntime: ObservableObject {
@@ -235,40 +227,37 @@ enum IntegrityCommitBarrier {
     private var lastCheck:TimeInterval=0
     private let inspect:@Sendable () -> SecurityCheckResult
     private let terminate:@Sendable () -> Void
+    private let enforcesIntegrity:Bool
     init(inspect:@escaping @Sendable () -> SecurityCheckResult = { AntiTamper.checkAtLaunch() },
-         terminate:@escaping @Sendable () -> Void = {}) {
-        self.inspect=inspect; self.terminate=terminate
+         terminate:@escaping @Sendable () -> Void = {},
+         enforcesIntegrity:Bool = AppSecurityConfiguration.localIntegrityEnforced) {
+        self.inspect=inspect; self.terminate=terminate; self.enforcesIntegrity=enforcesIntegrity
     }
     func configureReporter(_ value:@escaping (SecurityCheckResult) async -> Void) { reporter=value }
     func setActive(_ value:Bool) {
-        #if os(iOS) && !targetEnvironment(simulator)
-        allowed = true
-        blocked = false
-        #else
         acceptedResult=nil
         epoch &+= 1; pending?.task.cancel(); pending=nil; lastCheck=0
         polling?.cancel(); polling=nil
-        guard !blocked else { return }; allowed=false
-        guard value else { return }
-        guard Bundle.main.url(forResource:"Astra",withExtension:"release") != nil else {
-            allowed = true
+        guard enforcesIntegrity else {
+            allowed=true; blocked=false; failureDetail=nil
             return
         }
+        guard !blocked else { return }; allowed=false
+        guard value else { return }
         polling=Task { [weak self] in
             while !Task.isCancelled {
                 _ = await self?.verifyNow(force:true)
                 do { try await Task.sleep(nanoseconds:5_000_000_000) } catch { return }
             }
         }
-        #endif
     }
     func verifyNow(force:Bool=false) async -> Bool {
-        #if os(iOS) && !targetEnvironment(simulator)
-        allowed = true
-        blocked = false
-        acceptedResult = SecurityCheckResult(mask: 1023, releaseID: "b906fe5c-c908-40e1-b2a9-464d00196957", sealDigest: "db42939bf41f4b04e874029e83b15b13bf88fa9283475dae06efd1151f2b336d", environment: DeviceEnvironmentResult(checkedMask: 0x3fff, signalMask: 0))
-        return true
-        #else
+        guard enforcesIntegrity else {
+            // This is an explicitly disabled policy, NOT a fabricated mask=1023
+            // measurement and never a report sent to the server as attestation.
+            acceptedResult=nil; allowed=true; blocked=false; failureDetail=nil
+            return true
+        }
         guard !blocked else { return false }
         if !force, allowed, acceptedResult != nil, ProcessInfo.processInfo.systemUptime-lastCheck < 2 { return true }
         if pending == nil { let inspect=self.inspect; pending=(UUID(),epoch,Task.detached(priority:.utility) { inspect() }) }
@@ -289,15 +278,10 @@ enum IntegrityCommitBarrier {
             return false
         }
         acceptedResult=result; failureDetail=nil; allowed=true; return true
-        #endif
     }
     func requireAllowed(force:Bool=false) async throws {
-        #if os(iOS) && !targetEnvironment(simulator)
-        return
-        #else
-        guard Bundle.main.url(forResource:"Astra",withExtension:"release") != nil else { return }
+        guard enforcesIntegrity else { return }
         guard await verifyNow(force:force) else { throw IntegrityError.invalid }
-        #endif
     }
     private func reject(_ result:SecurityCheckResult) {
         guard !blocked else { return }; blocked=true; allowed=false; acceptedResult=nil

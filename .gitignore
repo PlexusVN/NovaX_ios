@@ -76,3 +76,5 @@ release-registry.json
 !/Tests/ProtectedRecoveryFlowSelfCheck.swift
 !/Tests/extract_recovery_contract.py
 !/Tests/extract_recovery_flow.py
+!/Tests/CertificatePinSelfCheck.swift
+!/Tests/test_security_flow_wiring.py

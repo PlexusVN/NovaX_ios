@@ -41,7 +41,7 @@ enum ProtectedDownloadError: LocalizedError {
                 return "Máy chủ chưa xác minh được định danh thiết bị. Hãy liên hệ hỗ trợ để kiểm tra quyền thiết bị."
             case "recipient_upgrade_required", "recipient_enrollment_required", "device_environment_upgrade_required", "protocol_required":
                 return "Bản cài đặt chưa đáp ứng giao thức bảo mật hiện tại. Hãy cài đúng bản ứng dụng mới nhất được cung cấp."
-            case "app_integrity_rejected", "integrity_report_invalid":
+            case "app_integrity_rejected", "integrity_report_invalid", "release_upgrade_required":
                 return "Máy chủ chưa chấp nhận bản ứng dụng này. Hãy dùng đúng IPA được cung cấp và liên hệ hỗ trợ nếu vẫn lỗi."
             case "device_environment_rejected", "device_jailbreak_quarantined":
                 return "Máy chủ đang hạn chế quyền thiết bị theo chính sách bảo mật. Hãy liên hệ hỗ trợ để kiểm tra."
@@ -245,7 +245,6 @@ final class ProtectedDownloadService: ObservableObject {
         guard (200..<300).contains(response.statusCode) else {
             // Never retry through legacy endpoints or accept unsigned error data
             // as policy. A fresh user retry can safely obtain a new grant.
-            if response.statusCode == 401 && detachedSession == nil { clearSession() }
             // Artifact failures use a separate signed purpose. Only an exact
             // request nonce and a verified purpose can influence retry/recovery.
             let errorPurposes = ["security-enforcement-v2"] + (path.hasPrefix("/api/v2/artifacts/")
@@ -258,8 +257,14 @@ final class ProtectedDownloadService: ObservableObject {
                    let object = try? JSONSerialization.jsonObject(with: verified) as? [String: Any],
                    let rejection = ProtectedDownloadError.fromVerifiedPayload(object, statusCode: response.statusCode) {
                     if case .rejected(let code) = rejection,
-                       ["release_verification_required", "device_environment_verification_required"].contains(code),
+                       ["release_verification_required", "device_environment_verification_required", "release_upgrade_required"].contains(code),
                        detachedSession == nil { releaseLease.invalidate() }
+                    // Only nonce-bound signed policy may clear a live session.
+                    // A proxy/CDN's unsigned 401 is not a revocation message.
+                    if detachedSession == nil,
+                       response.statusCode == 401 || (object["session_revoked"] as? Bool) == true {
+                        clearSession()
+                    }
                     if detachedSession == nil { accessNotice = rejection.errorDescription }
                     if case .quarantined = rejection, detachedSession == nil {
                         // Keep the license and persistent device identities. A
@@ -633,9 +638,13 @@ final class ProtectedDownloadService: ObservableObject {
     }
 
     private func ensureReleaseLease() async throws {
+        guard AppSecurityConfiguration.localIntegrityEnforced else { return }
         if !releaseLease.needsRenewal(now: ProcessInfo.processInfo.systemUptime) { return }
-        let result = AntiTamper.checkAtLaunch()
-        guard result.permitsProtectedOperation else { throw IntegrityError.invalid }
+        // Inspect on the runtime's detached utility task, not the UI thread;
+        // consume its current-epoch snapshot rather than a global stale result.
+        guard await AppIntegrityRuntime.shared.verifyNow(force:true),
+              let result = AppIntegrityRuntime.shared.acceptedResult,
+              result.permitsProtectedOperation else { throw IntegrityError.invalid }
         let generation = releaseLease.generation
         let started = ProcessInfo.processInfo.systemUptime
         let (data,_) = try await post("/api/v2/security/integrity-v2", body:result.reportV2,
@@ -655,6 +664,7 @@ final class ProtectedDownloadService: ObservableObject {
     /// One short pinned, signed report may outlive cancellation of ordinary
     /// requests. It cannot enroll an identity or open a new session after failure.
     func reportIntegrityFailure(_ result:SecurityCheckResult) async {
+        guard AppSecurityConfiguration.localIntegrityEnforced else { return }
         guard result.isCompromised,let identity,!sessionID.isEmpty,!sessionToken.isEmpty,sessionExpiry > Date(),
               let deviceID=try? identity.persistedEnrollmentID(),!deviceID.isEmpty else { return }
         let id=sessionID,token=sessionToken

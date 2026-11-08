@@ -43,6 +43,29 @@ struct CatalogApplicationSelfCheck {
         try manager.createDirectory(at: temp, withIntermediateDirectories: true)
         defer { try? manager.removeItem(at: temp) }
         let entries = fixture["fixtures"] as! [[String: Any]]
+        let migrationSuite = "astra-identity-migration-" + UUID().uuidString
+        let migrationDefaults = UserDefaults(suiteName: migrationSuite)!
+        defer { migrationDefaults.removePersistentDomain(forName: migrationSuite) }
+        let migration = CatalogPatchApplicationRegistry(defaults: migrationDefaults)
+        let migrationID = UUID()
+        migration.associate(migrationID, with: "old-name_ffth")
+        migration.markApplied("old-name_ffth")
+        migration.markRecoveryRequired("old-name_ffth")
+        migration.migrateIdentity(from: "old-name_ffth", to: "catalog_7_ffth")
+        try check(migration.projectID(for: "catalog_7_ffth") == migrationID, "legacy project association was lost")
+        try check(migration.state(for: "catalog_7_ffth", recordedState: { _ in .applied }) == .recoveryRequired,
+                  "migration lost recovery state")
+        try check(migration.projectID(for: "old-name_ffth") == nil, "legacy preferences were not consumed")
+        migration.clear("catalog_7_ffth")
+        migration.migrateIdentity(from: "old-name_ffth", to: "catalog_7_ffth")
+        try check(migration.state(for: "catalog_7_ffth", recordedState: { _ in nil }) == .off,
+                  "legacy flags resurrected a restored patch")
+        let currentID = UUID()
+        migration.associate(migrationID, with: "legacy_ffmax")
+        migration.associate(currentID, with: "catalog_7_ffmax")
+        migration.migrateIdentity(from: "legacy_ffmax", to: "catalog_7_ffmax")
+        try check(migration.projectID(for: "catalog_7_ffmax") == currentID, "legacy migration replaced a newer association")
+        print("[PASS] stable catalog identity, recovery migration, no resurrection, no association overwrite")
         for entry in entries {
             let sourceID = (entry["sourceId"] as! NSNumber).intValue, variant = entry["variant"] as! String
             do {

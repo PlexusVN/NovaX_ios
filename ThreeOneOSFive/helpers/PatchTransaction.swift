@@ -43,6 +43,20 @@ struct CatalogPatchApplicationRegistry {
     func associate(_ projectID: UUID, with identity: String) {
         defaults.set(projectID.uuidString, forKey: prefix + identity + "_projectID")
     }
+    /// Adopt legacy slug-based preferences without deleting their journal or
+    /// overwriting a newer stable association. Repeat calls are harmless.
+    func migrateIdentity(from legacy: String, to stable: String) {
+        guard legacy != stable else { return }
+        let oldID = projectID(for: legacy), currentID = projectID(for: stable)
+        guard currentID == nil || currentID == oldID else { return }
+        if let oldID { associate(oldID, with: stable) }
+        for suffix in ["", "_recovery"] where defaults.bool(forKey: prefix + legacy + suffix) {
+            defaults.set(true, forKey: prefix + stable + suffix)
+        }
+        // Preference keys only; the transaction journal/backups are untouched.
+        // Leaving old ON flags would resurrect them after a successful restore.
+        clear(legacy)
+    }
     func markApplied(_ identity: String) {
         defaults.set(true, forKey: prefix + identity)
         defaults.removeObject(forKey: prefix + identity + "_recovery")

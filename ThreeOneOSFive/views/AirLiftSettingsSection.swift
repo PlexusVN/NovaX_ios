@@ -742,8 +742,7 @@ struct AirLiftDashboardCard: View {
         isComprehensiveChecking = true
         defer { isComprehensiveChecking = false }
         await tunnelManager.verifyLoopbackService()
-        await pairingManager.verifyPairingWithDevice(silent: true)
-        if tunnelManager.isOperational && pairingManager.status.isPaired {
+        if tunnelManager.isOperational && pairingManager.status.isPaired && pairingManager.status != .revoked {
             _ = await airTrafficClient.checkRealAirLiftHealth()
         }
     }
@@ -1130,8 +1129,7 @@ struct AirLiftSettingsSection: View {
         isComprehensiveChecking = true
         defer { isComprehensiveChecking = false }
         await tunnelManager.verifyLoopbackService()
-        await pairingManager.verifyPairingWithDevice(silent: true)
-        if tunnelManager.isOperational && pairingManager.status.isPaired {
+        if tunnelManager.isOperational && pairingManager.status.isPaired && pairingManager.status != .revoked {
             _ = await airTrafficClient.checkRealAirLiftHealth()
         }
     }
@@ -1232,7 +1230,7 @@ final class AirLiftGatekeeperManager: ObservableObject {
         AirLiftTunnelManager.shared.isOperational &&
         AirLiftPairingManager.shared.status.isPaired &&
         AirLiftPairingManager.shared.status != .revoked &&
-        AirTrafficProtocolClient.shared.engineHealthState.isHealthy
+        (AirTrafficProtocolClient.shared.engineHealthState.isHealthy || AirLiftPairingManager.shared.hasUsablePersistedPairingRecord)
     }
 
     var canBypassGatekeeper: Bool {
@@ -1332,7 +1330,9 @@ struct IOS27PairingSetupView: View {
     var isStep1Done: Bool { tunnelManager.isOperational }
     var isStep2Done: Bool { pairingManager.status.isPaired && pairingManager.status != .revoked }
     var isStep3Done: Bool { airTrafficClient.engineHealthState.isHealthy }
-    var isReadyToProceed: Bool { isStep1Done && isStep2Done && isStep3Done }
+    var isReadyToProceed: Bool {
+        isStep1Done && isStep2Done && (isStep3Done || (!isComprehensiveChecking && airTrafficClient.engineHealthState != .checking))
+    }
 
     var completedStepsCount: Int {
         (isStep1Done ? 1 : 0) + (isStep2Done ? 1 : 0) + (isStep3Done ? 1 : 0)
@@ -1786,6 +1786,9 @@ struct IOS27PairingSetupView: View {
     private var step3StatusMessage: String {
         if isStep3Done { return "Kết nối đã sẵn sàng để sử dụng." }
         if isComprehensiveChecking { return "Astra đang xác minh kết nối an toàn..." }
+        if case .error(let msg) = airTrafficClient.engineHealthState {
+            return msg
+        }
         if !isStep1Done || !isStep2Done { return "Hoàn thành hai bước đầu trước khi kiểm tra." }
         return "Nhấn kiểm tra để hoàn tất thiết lập."
     }
@@ -1840,8 +1843,7 @@ struct IOS27PairingSetupView: View {
         isComprehensiveChecking = true
         defer { isComprehensiveChecking = false }
         await tunnelManager.verifyLoopbackService()
-        await pairingManager.verifyPairingWithDevice(silent: true)
-        if tunnelManager.isOperational && pairingManager.status.isPaired {
+        if tunnelManager.isOperational && pairingManager.status.isPaired && pairingManager.status != .revoked {
             _ = await airTrafficClient.checkRealAirLiftHealth()
         }
     }

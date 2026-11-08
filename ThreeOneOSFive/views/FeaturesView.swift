@@ -651,19 +651,11 @@ struct PatchCardView: View {
                     try await service.restorePatch(patch, auth: auth)
                     Haptics.success()
 
-                    if AppInfo.versionTuple.major >= 27 {
-                        activeToast = ToastInfo(
-                            title: "Đã tắt chức năng",
-                            message: "iOS 27 không thể khôi phục file gốc, hãy xoá game tải lại để đảm bảo an toàn.",
-                            isSuccess: true
-                        )
-                    } else {
-                        activeToast = ToastInfo(
-                            title: "Tắt chức năng thành công",
-                            message: "Đã khôi phục file gốc từ máy.",
-                            isSuccess: true
-                        )
-                    }
+                    activeToast = ToastInfo(
+                        title: "Tắt chức năng thành công",
+                        message: "Đã khôi phục file gốc từ máy.",
+                        isSuccess: true
+                    )
                 } catch {
                     Haptics.error()
                     activeToast = ToastInfo(

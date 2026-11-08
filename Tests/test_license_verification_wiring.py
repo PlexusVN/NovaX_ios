@@ -34,11 +34,11 @@ class LicenseVerificationWiringTests(unittest.TestCase):
 
     def test_next_build_is_consistent_with_ci_gate(self):
         info = plistlib.loads((ROOT / 'ThreeOneOSFive/Info.plist').read_bytes())
-        self.assertEqual(info['CFBundleVersion'], '17')
+        self.assertEqual(info['CFBundleVersion'], '18')
         project = (ROOT / 'ThreeOneOSFive.xcodeproj/project.pbxproj').read_text(encoding='utf-8')
-        self.assertEqual(re.findall(r'CURRENT_PROJECT_VERSION = (\d+);', project), ['17', '17'])
+        self.assertEqual(re.findall(r'CURRENT_PROJECT_VERSION = (\d+);', project), ['18', '18'])
         workflow = (ROOT / '.github/workflows/build.yml').read_text(encoding='utf-8')
-        self.assertIn('Astra-Unsigned-IPA-2.0-17', workflow)
+        self.assertIn('Astra-Unsigned-IPA-2.0-18', workflow)
         self.assertIn('CFBundleVersion', workflow)
         self.assertNotIn('CFBundleVersion\' "$APP_NAME/Info.plist")" = "16"', workflow)
 

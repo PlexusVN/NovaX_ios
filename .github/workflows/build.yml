@@ -20,7 +20,16 @@ jobs:
           xcodebuild -version
 
       - name: Verify production public configuration
-        run: python3 ReleaseTools/check_production.py
+        run: |
+          python3 ReleaseTools/check_production.py
+          python3 Tests/test_license_verification_wiring.py
+          python3 Tests/test_security_flow_wiring.py
+
+      - name: Verify TLS pin allowlist has no trust-only fallback
+        run: |
+          swiftc ThreeOneOSFive/helpers/AppSecurityConfiguration.swift \
+            Tests/CertificatePinSelfCheck.swift -o "$RUNNER_TEMP/astra-pins-selfcheck"
+          "$RUNNER_TEMP/astra-pins-selfcheck"
 
       - name: Verify protected lease renewal under latency and clock skew
         run: |
@@ -89,7 +98,7 @@ jobs:
             Tests/CatalogApplicationSelfCheck.swift -o "$RUNNER_TEMP/astra-catalog-selfcheck"
           "$RUNNER_TEMP/astra-catalog-selfcheck" Tests/Fixtures/catalog
 
-      - name: Verify release integrity, jailbreak policy and native commit barrier
+      - name: Verify network-only policy and legacy integrity regressions
         run: |
           swiftc ThreeOneOSFive/helpers/AppSecurityConfiguration.swift \
             ThreeOneOSFive/helpers/ServerSignatureVerifier.swift \
@@ -131,7 +140,7 @@ jobs:
           test -d "$APP_NAME"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$APP_NAME/Info.plist")" = "Astra"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_NAME/Info.plist")" = "2.0"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_NAME/Info.plist")" = "17"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_NAME/Info.plist")" = "18"
           EXECUTABLE=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP_NAME/Info.plist")
           test -x "$APP_NAME/$EXECUTABLE"
           nm -gj "$APP_NAME/$EXECUTABLE" | grep -Fx "_ALGetGrappaToken"
@@ -158,5 +167,5 @@ jobs:
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Astra-Unsigned-IPA-2.0-17
+          name: Astra-Unsigned-IPA-2.0-18
           path: build/Astra.ipa

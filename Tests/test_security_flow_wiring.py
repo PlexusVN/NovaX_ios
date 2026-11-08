@@ -1,0 +1,65 @@
+"""Source wiring guards complement (do not replace) macOS/iPhone execution."""
+from pathlib import Path
+import unittest
+
+ROOT = Path(__file__).resolve().parents[1]
+def source(name): return (ROOT / 'ThreeOneOSFive' / name).read_text(encoding='utf-8')
+
+class SecurityFlowWiringTests(unittest.TestCase):
+    def test_no_fabricated_release_and_explicit_network_only_policy(self):
+        text = source('helpers/AntiTamper.swift')
+        self.assertNotIn('#if os(iOS)', text)
+        self.assertNotIn('b906fe5c-c908-40e1-b2a9-464d00196957', text)
+        self.assertIn('current().map { inspect($0,verifier:.shared) }', text)
+        self.assertIn('Task.detached(priority:.utility) { inspect() }', text)
+        self.assertIn('DeviceEnvironmentInspector.commitMeasurement()', text)
+        self.assertNotIn('guard Bundle.main.url(forResource:', text)
+        self.assertIn('static let localIntegrityEnforced = false', source('helpers/AppSecurityConfiguration.swift'))
+        self.assertIn('guard enforcesIntegrity else', text)
+        self.assertIn('acceptedResult=nil; allowed=true; blocked=false; failureDetail=nil', text)
+        text = source('helpers/DeviceEnvironmentInspector.swift')
+        probes = text.split('static func inspect()')[1]
+        self.assertNotIn('runtimeSnapshot()', probes)
+        self.assertNotIn('signalMask: 0)', probes)
+        self.assertEqual(probes.count('return .unverified'), 2)
+
+    def test_api_trust_requires_both_system_trust_and_pin(self):
+        text = source('views/SecurityUtils.swift').split('enum AstraServerTrust {')[1].split('final class CertPinningDelegate')[0]
+        self.assertIn('guard SecTrustEvaluateWithError', text)
+        self.assertIn('if leafCertificatePins.contains(pin) { return true }', text)
+        self.assertTrue(text.rstrip().endswith('return false\n    }\n}'))
+        self.assertIn('AppSecurityConfiguration.tlsCertificatePins', text)
+
+    def test_release_snapshot_and_signed_errors_only(self):
+        text = source('helpers/ProtectedDownloadService.swift')
+        lease = text.split('private func ensureReleaseLease()')[1].split('func reportIntegrityFailure')[0]
+        self.assertIn('AppIntegrityRuntime.shared.acceptedResult', lease)
+        self.assertIn('guard AppSecurityConfiguration.localIntegrityEnforced else { return }', lease)
+        self.assertNotIn('AntiTamper.checkAtLaunch()', lease)
+        errors = text.split('guard (200..<300).contains(response.statusCode)')[1].split('let payload: Data')[0]
+        self.assertNotIn('clearSession()', errors.split('for errorPurpose')[0])
+        self.assertIn('(object["session_revoked"] as? Bool) == true', errors)
+
+    def test_airlift_cannot_claim_a_restore_without_writing_originals(self):
+        text = source('helpers/FeaturePatchService.swift')
+        branch = text.split('if isAirLift {')[1].split('// iOS 16')[0]
+        self.assertIn('throw PatchRestoreError.airLiftRestoreUnsupported', branch)
+        self.assertNotIn('removeObject', branch)
+        self.assertNotIn('.clear(', branch)
+
+    def test_catalog_state_uses_id_variant_not_editable_name(self):
+        text = source('helpers/FeaturePatchService.swift')
+        identity = text.split('private func patchStorageSlug(')[1].split('private func cachePath')[0]
+        self.assertIn('catalog_\\(patch.id)_', identity)
+        self.assertIn('migrateIdentity(from: legacy, to: stable)', identity)
+        self.assertIn('for previous in patches { _ = patchStorageSlug(previous) }', text)
+        registry = source('helpers/PatchTransaction.swift').split('enum PatchTransaction {')[0]
+        self.assertIn('clear(legacy)', registry)
+
+    def test_network_only_distribution_needs_no_release_signing_secret(self):
+        flow = (ROOT / '.github/workflows/build.yml').read_text(encoding='utf-8')
+        self.assertNotIn('secrets.ASTRA_RELEASE_SIGNING_KEY', flow)
+        self.assertNotIn('ReleaseTools/seal_release.py', flow)
+        self.assertIn('path: build/Astra.ipa', flow)
+
+if __name__ == '__main__': unittest.main()

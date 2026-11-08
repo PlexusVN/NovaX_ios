@@ -227,18 +227,26 @@ final class AuthManager: ObservableObject {
         do {
             let (data, response) = try await SecureAPIClient.shared.data(for: request)
             guard authenticationRevision == revision, authState == .verified else { return .authFailed }
-            guard let httpResp = response as? HTTPURLResponse else { return .authFailed }
+            guard let httpResp = response as? HTTPURLResponse else {
+                reVerifyFailCount += 1
+                return .networkError
+            }
             // Transient HTTP/server errors must not erase a valid saved key.
             // Protected operations still require their own live server grants.
             if httpResp.statusCode == 429 || httpResp.statusCode >= 500 {
                 reVerifyFailCount += 1
                 return .networkError
             }
-            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { return .authFailed }
+            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                reVerifyFailCount += 1
+                return .networkError
+            }
 
             if httpResp.statusCode == 200, json["success"] as? Bool == true {
                 // HMAC verification — MANDATORY
                 guard let serverHmac = json["hmac"] as? String, !serverHmac.isEmpty else {
+                    clearSession()
+                    authState = .error("Phản hồi thiếu mã xác thực. Hãy thử đăng nhập lại.")
                     return .authFailed
                 }
                 let success = json["success"] as? Bool ?? false
@@ -246,6 +254,8 @@ final class AuthManager: ObservableObject {
                 let expires = json["expires_at"] as? String ?? ""
                 let computed = HMACUtils.compute(key: secret, message: "\(success)|\(rawType)|\(expires)")
                 guard serverHmac == computed else {
+                    clearSession()
+                    authState = .error("Không thể xác minh phản hồi máy chủ. Hãy thử đăng nhập lại.")
                     return .authFailed
                 }
                 if let rawType = json["type"] as? String {

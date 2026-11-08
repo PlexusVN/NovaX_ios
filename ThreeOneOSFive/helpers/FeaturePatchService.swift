@@ -531,6 +531,8 @@ final class FeaturePatchService: ObservableObject {
                 throw ProtectedDownloadError.invalidResponse
             }
 
+            // Preserve old slug associations before adopting renamed metadata.
+            for previous in patches { _ = patchStorageSlug(previous) }
             categories = response.categories
             patches = response.patches
             preloadCategoryImages()
@@ -647,15 +649,8 @@ final class FeaturePatchService: ObservableObject {
             AppInfo.versionTuple.major >= 27
 
         if isAirLift {
-            // Trên iOS 27 qua AirLift: Xoá cờ trạng thái áp dụng để tắt toggle bình thường.
-            // Không khôi phục ngược file gốc do giới hạn của ATAirlock sandbox escape.
-            if let pid = projectID {
-                UserDefaults.standard.removeObject(forKey: "airlift.applied.\(pid.uuidString)")
-            }
-            catalogApplications.clear(slug)
-            try? FileManager.default.removeItem(at: destURL)
-            print("[FeaturePatch] restored (toggled off) via AirLift on iOS 27")
-            return
+            // No original bytes were restored: retain ON and its association.
+            throw PatchRestoreError.airLiftRestoreUnsupported
         }
 
         // iOS 16 - 26.6.1: Ghi trực tiếp -> Vẫn khôi phục file gốc từ bản sao lưu trên máy
@@ -694,7 +689,10 @@ final class FeaturePatchService: ObservableObject {
     // MARK: - Cache Paths
 
     private func patchStorageSlug(_ patch: PatchItem) -> String {
-        safeSlug(patch.slug + "_" + (patch.artifactVariant ?? "legacy"))
+        let stable = safeSlug("catalog_\(patch.id)_" + (patch.artifactVariant ?? "legacy"))
+        let legacy = safeSlug(patch.slug + "_" + (patch.artifactVariant ?? "legacy"))
+        catalogApplications.migrateIdentity(from: legacy, to: stable)
+        return stable
     }
 
     private func cachePath(for patch: PatchItem) -> URL {

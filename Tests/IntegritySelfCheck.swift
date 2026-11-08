@@ -15,6 +15,16 @@ final class DeviceIdentityService {
         print("[PASS] \(name)")
     }
     @MainActor static func main() async throws {
+        let networkOnly = AppIntegrityRuntime(inspect: {
+            fatalError("network-only client must not run IPA/JB/debug inspection")
+        }, enforcesIntegrity:false)
+        networkOnly.setActive(true)
+        let networkOnlyAllowed = await networkOnly.verifyNow(force:true)
+        try check(networkOnlyAllowed && networkOnly.allowed && !networkOnly.blocked,
+                  "network-only client allows stock sideload without a release seal")
+        try check(networkOnly.acceptedResult == nil, "network-only mode never fabricates an integrity report")
+        try await networkOnly.requireAllowed(force:true)
+        networkOnly.setActive(false)
         try DeviceEnvironmentSelfCheck.run(fixtureURL: URL(fileURLWithPath: CommandLine.arguments[1]).deletingLastPathComponent().appendingPathComponent("device_environment_v1.json"))
         let data=try Data(contentsOf:URL(fileURLWithPath:CommandLine.arguments[1]))
         let fixture=try JSONSerialization.jsonObject(with:data) as! [String:Any]
@@ -85,7 +95,7 @@ final class DeviceIdentityService {
         finish.signal();ended.wait()
         try check(IntegrityCommitBarrier.count==0,"shutdown barrier drains only after real native work completes")
         let controlled=ControlledIntegrityInspection()
-        let runtime=AppIntegrityRuntime(inspect:{ controlled.inspect() },terminate:{})
+        let runtime=AppIntegrityRuntime(inspect:{ controlled.inspect() },terminate:{},enforcesIntegrity:true)
         let old=Task { await runtime.verifyNow(force:true) }
         let deadline=Date().addingTimeInterval(5)
         while controlled.calls==0, Date()<deadline { try await Task.sleep(nanoseconds:1_000_000) }
@@ -100,7 +110,7 @@ final class DeviceIdentityService {
         let approved=SecurityCheckResult(mask:1023,releaseID:"00000000-0000-4000-8000-000000000015",
             sealDigest:String(repeating:"a",count:64),environment:DeviceEnvironmentResult(checkedMask:16383,signalMask:0))
         let acceptedInspection=ControlledAcceptedInspection(fresh:approved)
-        let acceptedRuntime=AppIntegrityRuntime(inspect:{ acceptedInspection.inspect() },terminate:{})
+        let acceptedRuntime=AppIntegrityRuntime(inspect:{ acceptedInspection.inspect() },terminate:{},enforcesIntegrity:true)
         let superseded=Task { await acceptedRuntime.verifyNow(force:true) }
         let acceptedDeadline=Date().addingTimeInterval(5)
         while acceptedInspection.calls==0, Date()<acceptedDeadline { try await Task.sleep(nanoseconds:1_000_000) }
@@ -116,7 +126,7 @@ final class DeviceIdentityService {
         acceptedRuntime.setActive(false)
         try check(!acceptedRuntime.allowed && acceptedRuntime.acceptedResult == nil,"foreground invalidation clears the accepted report")
         let invalidatedInspection=ControlledIntegrityInspection()
-        let invalidatedRuntime=AppIntegrityRuntime(inspect:{ invalidatedInspection.inspect() },terminate:{})
+        let invalidatedRuntime=AppIntegrityRuntime(inspect:{ invalidatedInspection.inspect() },terminate:{},enforcesIntegrity:true)
         let invalidatedPending=Task { await invalidatedRuntime.verifyNow(force:true) }
         let invalidatedDeadline=Date().addingTimeInterval(5)
         while invalidatedInspection.calls==0, Date()<invalidatedDeadline { try await Task.sleep(nanoseconds:1_000_000) }
@@ -126,13 +136,13 @@ final class DeviceIdentityService {
         let invalidatedAllowed=await invalidatedPending.value
         try check(!invalidatedAllowed && !invalidatedRuntime.allowed && invalidatedRuntime.acceptedResult == nil,"stale success cannot repopulate an invalidated accepted report")
         let unverifiedInspection=SequencedIntegrityInspection([approved,SecurityCheckResult(mask:1023)])
-        let unverifiedRuntime=AppIntegrityRuntime(inspect:{ unverifiedInspection.inspect() },terminate:{})
+        let unverifiedRuntime=AppIntegrityRuntime(inspect:{ unverifiedInspection.inspect() },terminate:{},enforcesIntegrity:true)
         let beforeUnverified=await unverifiedRuntime.verifyNow(force:true)
         let afterUnverified=await unverifiedRuntime.verifyNow(force:true)
         try check(beforeUnverified && !afterUnverified && !unverifiedRuntime.allowed && !unverifiedRuntime.blocked
             && unverifiedRuntime.acceptedResult == nil,"unverified measurement clears the accepted report without marking a permanent violation")
         let rejectedInspection=SequencedIntegrityInspection([approved,SecurityCheckResult(mask:1022,environment:approved.environment)])
-        let rejectedRuntime=AppIntegrityRuntime(inspect:{ rejectedInspection.inspect() },terminate:{})
+        let rejectedRuntime=AppIntegrityRuntime(inspect:{ rejectedInspection.inspect() },terminate:{},enforcesIntegrity:true)
         let beforeRejection=await rejectedRuntime.verifyNow(force:true)
         let afterRejection=await rejectedRuntime.verifyNow(force:true)
         try check(beforeRejection && !afterRejection && rejectedRuntime.blocked && rejectedRuntime.acceptedResult == nil,"integrity rejection clears a previously accepted report")
