@@ -10,6 +10,9 @@ on:
 jobs:
   build:
     runs-on: macos-15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      CARGO_BUILD_JOBS: 3
 
     steps:
       - name: Checkout repository
@@ -24,12 +27,19 @@ jobs:
           python3 ReleaseTools/check_production.py
           python3 Tests/test_license_verification_wiring.py
           python3 Tests/test_security_flow_wiring.py
+          python3 Tests/test_ios16_compatibility.py
 
       - name: Verify TLS pin allowlist has no trust-only fallback
         run: |
           swiftc ThreeOneOSFive/helpers/AppSecurityConfiguration.swift \
             Tests/CertificatePinSelfCheck.swift -o "$RUNNER_TEMP/astra-pins-selfcheck"
           "$RUNNER_TEMP/astra-pins-selfcheck"
+
+      - name: Verify unchanged iOS 16 and iOS 27 storage pairing routes
+        run: |
+          python3 Tests/extract_support_policy.py ThreeOneOSFive/helpers/KernelExploit.swift "$RUNNER_TEMP/SupportPolicy.swift"
+          swiftc "$RUNNER_TEMP/SupportPolicy.swift" Tests/IOSCompatibilitySelfCheck.swift -o "$RUNNER_TEMP/astra-os-routes-selfcheck"
+          "$RUNNER_TEMP/astra-os-routes-selfcheck"
 
       - name: Verify protected lease renewal under latency and clock skew
         run: |
@@ -109,14 +119,15 @@ jobs:
             Tests/IntegritySelfCheck.swift -o "$RUNNER_TEMP/astra-integrity-selfcheck"
           "$RUNNER_TEMP/astra-integrity-selfcheck" Tests/Fixtures/integrity_release.json
 
-      - name: Verify committed patched AirliftFFI archives
-        run: |
-          set -euo pipefail
-          # Use the committed framework instead of rebuilding upstream Rust
-          # sources in CI. Post-Build Verification checks the linked executable
-          # for the required patch markers and rejects unsafe direct writes.
-          test -s Frameworks/AirliftFFI.xcframework/ios-arm64/libairlift_ffi.a
-          test -s Frameworks/AirliftFFI.xcframework/ios-arm64-simulator/libairlift_ffi.a
+      - name: Cache iOS 16 native compilation
+        uses: actions/cache@v4
+        with:
+          path: build/airlift-ios16-target
+          key: ${{ runner.os }}-${{ runner.arch }}-airlift-ios16-xcode164-${{ hashFiles('patches/airlift-source.lock.json', 'patches/airlift-rsd-timeout-fallback.patch', 'ReleaseTools/build_airlift_compat.sh') }}
+
+      - name: Rebuild pinned AirliftFFI for iOS 16 and preserve iOS 27 engine
+        timeout-minutes: 35
+        run: bash ReleaseTools/build_airlift_compat.sh
 
       - name: Verify AirLift pairing completion regression
         run: python3 Tests/check_airlift_pairing_finish.py
@@ -140,9 +151,10 @@ jobs:
           test -d "$APP_NAME"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$APP_NAME/Info.plist")" = "Astra"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_NAME/Info.plist")" = "2.0"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_NAME/Info.plist")" = "18"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_NAME/Info.plist")" = "19"
           EXECUTABLE=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP_NAME/Info.plist")
           test -x "$APP_NAME/$EXECUTABLE"
+          python3 ReleaseTools/verify_native_compatibility.py --app "$APP_NAME" --max-ios 16.0
           nm -gj "$APP_NAME/$EXECUTABLE" | grep -Fx "_ALGetGrappaToken"
           strings "$APP_NAME/$EXECUTABLE" | grep -F "RemoteXPC timed out after 6s"
           strings "$APP_NAME/$EXECUTABLE" | grep -F "timeout fallback trying raw RPPairing"
@@ -167,5 +179,5 @@ jobs:
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Astra-Unsigned-IPA-2.0-18
+          name: Astra-Unsigned-IPA-2.0-19
           path: build/Astra.ipa

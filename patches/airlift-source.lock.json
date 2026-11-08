@@ -1,0 +1,11 @@
+{
+  "repository": "https://github.com/Mak5er/AirCard-iOS.git",
+  "revision": "40640c4d827aeab8d798285b57d24fcf6be070d0",
+  "rust_toolchain": "1.98.1",
+  "deployment_target": "16.0",
+  "cargo_lock_sha256": "7c06fc86eb4a1be0390ae0fe091532b38ea6f6de2af67bdf48ae2e866fb47293",
+  "header_sha256": "cf33a9e07185273590e025f3e99b8d9ea0d200a9ab44a5e56b70db0118a34c52",
+  "patch": "patches/airlift-rsd-timeout-fallback.patch",
+  "patch_sha256": "763f3fe7c5cec3b444ebf8b5f7a29a70fe9660dc04997dd235ec5b279a6ff010",
+  "patched_exploit_sha256": "842088dc2fad27f1f30a2c6d3142c0c5da463a693fc9a7b7a252168640204873"
+}

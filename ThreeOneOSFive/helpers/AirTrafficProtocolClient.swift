@@ -382,7 +382,7 @@ final class AirTrafficProtocolClient: ObservableObject {
         isBusy = true
         defer { isBusy = false }
         do {
-            let result: FFIStringResult = try await runBlocking(name: "Astra.AirLift.ProbePairing", timeout: 15) {
+            let result: FFIStringResult = try await runBlocking(name: "Astra.AirLift.ProbePairing", timeout: 135) {
                 var output: UnsafeMutablePointer<CChar>?
                 var error: UnsafeMutablePointer<CChar>?
                 let code = pairingPath.withCString { pairing in
@@ -425,7 +425,7 @@ final class AirTrafficProtocolClient: ObservableObject {
         try await verifyTransportAndPairing()
         let pairingPath = try activePairingPath()
 
-        let result: FFIStringResult = try await runBlocking(name: "Astra.AirLift.FindContainer", timeout: 15) {
+        let result: FFIStringResult = try await runBlocking(name: "Astra.AirLift.FindContainer", timeout: 135) {
             var output: UnsafeMutablePointer<CChar>?
             var error: UnsafeMutablePointer<CChar>?
             let code = pairingPath.withCString { pairing in
@@ -505,7 +505,7 @@ final class AirTrafficProtocolClient: ObservableObject {
 
     private func verifyCanary(pairingPath: String, targetDirectory: String) async throws {
         verificationLevel = .none
-        let result: FFIStringResult = try await runBlocking(name: "Astra.AirLift.Canary", timeout: 20) {
+        let result: FFIStringResult = try await runBlocking(name: "Astra.AirLift.Canary", timeout: 195) {
             var json: UnsafeMutablePointer<CChar>?
             var error: UnsafeMutablePointer<CChar>?
             let code = pairingPath.withCString { pairing in
@@ -547,7 +547,7 @@ final class AirTrafficProtocolClient: ObservableObject {
         try Task.checkCancellation()
         try NetworkAccessGate.shared.validateGeneration(networkGeneration)
         try await AppIntegrityRuntime.shared.requireAllowed(force:true)
-        let result: FFIVoidResult = try await runBlocking(name: "Astra.AirLift.Write", timeout: 60) {
+        let result: FFIVoidResult = try await runBlocking(name: "Astra.AirLift.Write", timeout: 195) {
             try IntegrityCommitBarrier.withCommit {
             var error: UnsafeMutablePointer<CChar>?
             let code = pairingPath.withCString { pairing in
@@ -613,10 +613,12 @@ final class AirTrafficProtocolClient: ObservableObject {
                 gate.resume(with: result)
             }
             DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout) {
-                self.ffiWorkState.end()
+                // A deadline only finishes the Swift waiter, not the native
+                // operation. Its serial-queue completion alone releases the
+                // slot; a stale timer must never unlock a newer operation.
                 gate.resume(with: .failure(
                     AirLiftError.socketConnectionFailed(
-                        "Quá thời gian kết nối dịch vụ thiết bị (\(Int(timeout))s)."
+                        "Quá thời gian kết nối dịch vụ thiết bị (\(Int(timeout))s). Hãy chờ phiên trước kết thúc rồi thử lại."
                     )
                 ))
             }
