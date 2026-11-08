@@ -327,6 +327,11 @@ class AppState: ObservableObject {
     }
 
     func runKernelExploitIfNeeded() {
+        let v = AppInfo.versionTuple
+        guard ExploitSupportPolicy.supportsKernelExploit(major: v.major, minor: v.minor, patch: v.patch) else {
+            log("app: kernel exploit not applicable for iOS \(v.major); skipping")
+            return
+        }
         refreshKernelExploitStatus()
         guard !hasSandboxAccess && !hasDirectDirectoryAccess,
               !kernelExploitRunning,

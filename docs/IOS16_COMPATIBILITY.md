@@ -1,6 +1,23 @@
-# Astra 2.0 (19): iOS 16 native compatibility / iOS 27 preservation
+# Astra 2.0 (20): iOS 16 launch stability & kernel exploit auto-run fix / iOS 27 preservation
 
-## What changed
+## What changed in Build 20
+
+Build 19 fixed native library deployment targets, but physical iOS 16 devices
+crashed shortly after launch. Root cause analysis identified that `AppState.detectSupport()`
+automatically invoked `KernelExploit.run() -> kexploit_opa334()` on every startup
+because `supportsKernelExploit` mistakenly included major == 16.
+
+`kexploit_opa334` is the DarkSword kernel exploit targeting iOS 17/18 memory structures.
+On iOS 16, its socket spray (22k ports), 1 GB page mapping, and unaligned offsets cause
+immediate SIGSEGV, mach port limit exhaustion, or Jetsam memory kills.
+
+Build 20 fixes this at three levels:
+1. `ExploitSupportPolicy.supportsKernelExploit`: iOS 16 returns `false` (iOS 16 uses `.direct` mode).
+2. `KernelExploit.run()`: guards against iOS < 17 and returns `(false, false)` without running C code.
+3. `kexploit_opa334.m`: checks `SYSTEM_VERSION_LESS_THAN(@"17.0")` and returns `-ENOSYS` before allocating any surfaces, threads, or sockets.
+4. `AppState.runKernelExploitIfNeeded()`: validates `supportsKernelExploit` before spawning the background task.
+
+## What changed in Build 19
 
 Build 18 linked an iOS-16 app against the old iOS-18 AirliftFFI archives. The
 actual GitHub build emitted deployment mismatch warnings. This is a confirmed
