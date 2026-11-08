@@ -195,30 +195,7 @@ class AppState: ObservableObject {
     @Published var exploitStatus: ExploitStatus = .notStarted
     @Published var unsupportedMessage: String?
     @Published var kernelExploitRunning = false
-    @Published var hasDirectDirectoryAccess: Bool = {
-        #if targetEnvironment(simulator)
-        return true
-        #else
-        let bundleIDs = ["com.dts.freefireth", "com.dts.freefiremax"]
-        for bundleID in bundleIDs {
-            if let path = ContainerStore.resolveAppContainerPath(bundleID: bundleID) {
-                let docPath = (path as NSString).appendingPathComponent("Documents")
-                if FileManager.default.isWritableFile(atPath: docPath) {
-                    return true
-                }
-                let testFile = (docPath as NSString).appendingPathComponent(".novax_test")
-                do {
-                    try "test".write(toFile: testFile, atomically: true, encoding: .utf8)
-                    try? FileManager.default.removeItem(atPath: testFile)
-                    return true
-                } catch {
-                    // fallthrough to next bundle ID
-                }
-            }
-        }
-        return false
-        #endif
-    }()
+    @Published var hasDirectDirectoryAccess: Bool = false
 
     @Published var hasSandboxAccess: Bool = {
         #if targetEnvironment(simulator)
@@ -229,6 +206,47 @@ class AppState: ObservableObject {
     }()
 
     private var autoRunAttempted = false
+    private var isCheckingDirectAccess = false
+
+    func checkDirectDirectoryAccessAsync() {
+        #if targetEnvironment(simulator)
+        DispatchQueue.main.async { self.hasDirectDirectoryAccess = true }
+        #else
+        guard !isCheckingDirectAccess else { return }
+        isCheckingDirectAccess = true
+        DispatchQueue.global(qos: .utility).async {
+            let bundleIDs = ["com.dts.freefireth", "com.dts.freefiremax"]
+            for bundleID in bundleIDs {
+                if let path = ContainerStore.resolveAppContainerPath(bundleID: bundleID) {
+                    let docPath = (path as NSString).appendingPathComponent("Documents")
+                    if FileManager.default.isWritableFile(atPath: docPath) {
+                        DispatchQueue.main.async {
+                            self.hasDirectDirectoryAccess = true
+                            self.isCheckingDirectAccess = false
+                        }
+                        return
+                    }
+                    let testFile = (docPath as NSString).appendingPathComponent(".novax_test")
+                    do {
+                        try "test".write(toFile: testFile, atomically: true, encoding: .utf8)
+                        try? FileManager.default.removeItem(atPath: testFile)
+                        DispatchQueue.main.async {
+                            self.hasDirectDirectoryAccess = true
+                            self.isCheckingDirectAccess = false
+                        }
+                        return
+                    } catch {
+                        // fallthrough to next bundle ID
+                    }
+                }
+            }
+            DispatchQueue.main.async {
+                self.hasDirectDirectoryAccess = false
+                self.isCheckingDirectAccess = false
+            }
+        }
+        #endif
+    }
 
     var kernelExploitApplicable: Bool {
         ExploitSupportPolicy.supportsKernelExploit(
@@ -269,6 +287,7 @@ class AppState: ObservableObject {
     }
 
     func detectSupport() {
+        checkDirectDirectoryAccessAsync()
         let v = AppInfo.versionTuple
         let supported = ExploitSupportPolicy.isSupported(
             major: v.major,

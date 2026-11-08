@@ -54,6 +54,11 @@ final class AirLiftTunnelManager: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
 
     private init() {
+        guard ExploitSupportPolicy.currentStorageMode == .airLift else {
+            status = .disconnected
+            serviceStatus = .unavailable
+            return
+        }
         NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
             .sink { [weak self] _ in
                 Task { @MainActor [weak self] in

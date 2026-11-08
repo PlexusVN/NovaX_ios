@@ -155,6 +155,7 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
 
     private override init() {
         super.init()
+        guard ExploitSupportPolicy.currentStorageMode == .airLift else { return }
         discardPairingStagingFile()
         migrateLegacyPairingFileIfNeeded()
         restorePairingFileFromKeychainIfNeeded()

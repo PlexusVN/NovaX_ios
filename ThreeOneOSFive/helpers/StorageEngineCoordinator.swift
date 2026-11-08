@@ -26,6 +26,7 @@ final class StorageEngineCoordinator: ObservableObject {
                 return
             }
             objectWillChange.send()
+            guard isAirLiftActive else { return }
             AirTrafficProtocolClient.shared.resetSession()
             if useAirLiftForAll {
                 Task {

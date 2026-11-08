@@ -114,6 +114,7 @@ final class AirTrafficProtocolClient: ObservableObject {
     private let ffiWorkState = FFIWorkState()
 
     private init() {
+        guard ExploitSupportPolicy.currentStorageMode == .airLift else { return }
         cleanupOrphanedStagingDirectories()
     }
 
@@ -157,6 +158,7 @@ final class AirTrafficProtocolClient: ObservableObject {
     }
 
     func resetSession() {
+        guard ExploitSupportPolicy.currentStorageMode == .airLift else { return }
         // Keep all access to AirliftFFI's process-global route state on the
         // same serial queue as device operations. This also makes reset safe
         // if the user toggles AirLift while an FFI call is winding down.

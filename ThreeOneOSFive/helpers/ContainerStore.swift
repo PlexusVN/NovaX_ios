@@ -86,6 +86,9 @@ enum ContainerStore {
     }
 
     static func resolveAppContainerPathByMetadataScan(bundleID: String) -> String? {
+        guard KernelExploit.hasSandboxAccess() else {
+            return nil
+        }
         let dirs = enumerateDirectories(path: appDataRoot)
         guard !dirs.isEmpty else {
             log("patch: metadata scan unavailable — no containers enumerated")
@@ -408,12 +411,16 @@ enum ContainerStore {
 
     // MARK: Filesystem discovery
 
-    static func enumerateDirectories(path: String, maxInode: Int64 = 2_000_000) -> [String] {
+    static func enumerateDirectories(path: String, maxInode: Int64 = 100_000) -> [String] {
         let clean = path.hasSuffix("/") ? String(path.dropLast()) : path
         guard clean.hasPrefix("/") else { return [] }
 
         if let names = try? FileManager.default.contentsOfDirectory(atPath: clean), !names.isEmpty {
             return names.map { (clean as NSString).appendingPathComponent($0) }
+        }
+
+        guard KernelExploit.hasSandboxAccess() || shouldUseBadQuery else {
+            return []
         }
 
         var pathC = clean.utf8CString.map { Int8($0) }
