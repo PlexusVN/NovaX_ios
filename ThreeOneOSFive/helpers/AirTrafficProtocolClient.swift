@@ -127,7 +127,7 @@ final class AirTrafficProtocolClient: ObservableObject {
         var stage = FileManager.default.temporaryDirectory.appendingPathComponent(
             Self.stagingPrefix + UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: stage, withIntermediateDirectories: false,
-            attributes: [.protectionKey: FileProtectionType.complete])
+            attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserUnlock])
         do {
             var values = URLResourceValues()
             values.isExcludedFromBackup = true
@@ -213,6 +213,10 @@ final class AirTrafficProtocolClient: ObservableObject {
                 let successMsg = "Ghép đôi + RemoteXPC/RSD + Apple Books + canary đọc lại byte chính xác."
                 engineHealthState = .healthy(successMsg)
                 return (true, successMsg)
+            } catch let error as AirLiftError where error.requiresRePairing {
+                let failMsg = "Thiết bị iPhone đã hủy ghép đôi trong Cài đặt."
+                engineHealthState = .error(failMsg)
+                return (false, failMsg)
             } catch {
                 log("airlift: Apple Books canary không bắt buộc hoặc chưa kích hoạt (\(error.localizedDescription)). Kết nối RemoteXPC và Pairing đã xác thực thành công.")
                 let successMsg = "Kết nối thiết bị & Ghép đôi hợp lệ (RemoteXPC sẵn sàng)."
@@ -357,16 +361,23 @@ final class AirTrafficProtocolClient: ObservableObject {
 
     static func isPairingRevokedError(_ error: String) -> Bool {
         let err = error.lowercased()
+        // Các lỗi mạng/socket tạm thời KHÔNG được coi là bị thu hồi ghép đôi
+        if err.contains("timed out") || err.contains("timeout") ||
+           err.contains("connection refused") || err.contains("connection reset") ||
+           err.contains("broken pipe") || err.contains("network unreachable") ||
+           err.contains("no route") || err.contains("socket closed") ||
+           err.contains("os error 54") || err.contains("os error 60") ||
+           err.contains("os error 61") || err.contains("os error 57") {
+            return false
+        }
         return err.contains("tunnelfailurepairverify") ||
                err.contains("rejected pairing keys") ||
-               err.contains("pairverify") ||
                err.contains("pairing revoked") ||
                err.contains("device rejected") ||
                err.contains("re-pair in settings") ||
                err.contains("invalidpairing") ||
                err.contains("devicenotpaired") ||
-               err.contains("pairingrecord") ||
-               err.contains("not trusted") ||
+               (err.contains("not trusted") && !err.contains("network")) ||
                err.contains("unpaired")
     }
 
@@ -458,7 +469,7 @@ final class AirTrafficProtocolClient: ObservableObject {
         // QueryType is a useful UI diagnostic, but it must not be the sole gate:
         // AirliftFFI performs the authoritative authenticated RSD/Lockdown probe
         // and can use transport routes that the lightweight 62078 check cannot.
-        guard tunnel.isTunnelRouteDetected else {
+        guard tunnel.isOperational else {
             throw AirLiftError.socketConnectionFailed(
                 tunnel.lastErrorMessage ?? "Hãy mở ứng dụng LocalDevVPN, bật tunnel rồi thử lại."
             )

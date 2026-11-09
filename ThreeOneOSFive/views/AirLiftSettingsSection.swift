@@ -1331,7 +1331,7 @@ struct IOS27PairingSetupView: View {
     var isStep2Done: Bool { pairingManager.status.isPaired && pairingManager.status != .revoked }
     var isStep3Done: Bool { airTrafficClient.engineHealthState.isHealthy }
     var isReadyToProceed: Bool {
-        isStep1Done && isStep2Done && (isStep3Done || (!isComprehensiveChecking && airTrafficClient.engineHealthState != .checking))
+        isStep1Done && isStep2Done && isStep3Done && !isComprehensiveChecking
     }
 
     var completedStepsCount: Int {

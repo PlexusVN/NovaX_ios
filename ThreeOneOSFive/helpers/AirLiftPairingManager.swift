@@ -519,6 +519,11 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
         let label = deviceName.isEmpty ? "iPhone" : deviceName
         resolve(.success(pairingFileURL.path))
         alertMessage = "Đã ghép đôi với \(label)."
+        if AirLiftTunnelManager.shared.isOperational {
+            Task { @MainActor [weak self] in
+                await self?.verifyPairingWithDevice(silent: true)
+            }
+        }
     }
 
     /// Native pairing writes to staging first. A valid existing record is
