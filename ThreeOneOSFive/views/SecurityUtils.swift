@@ -371,12 +371,12 @@ struct DeviceUtils {
     }
 
     static var deviceModel: String {
-        var systemInfo = utsname()
-        uname(&systemInfo)
-        let mirror = Mirror(reflecting: systemInfo.machine)
-        let bytes = mirror.children.compactMap { $0.value as? Int8 }
-        guard !bytes.isEmpty else { return "Unknown" }
-        return String(cString: bytes).trimmingCharacters(in: .whitespaces)
+        var s = utsname()
+        uname(&s)
+        return Mirror(reflecting: s.machine).children.reduce("") { id, e in
+            guard let v = e.value as? Int8, v != 0 else { return id }
+            return id + String(UnicodeScalar(UInt8(v)))
+        }
     }
 
     /// Tên thương mại thân thiện của thiết bị (vd: iPhone 18 Pro Max, iPhone 16 Pro, iPad Pro,...)

@@ -1019,10 +1019,6 @@ struct SplashLoginView: View {
 extension View {
     @ViewBuilder
     fileprivate func adaptiveScrollBounceBehavior() -> some View {
-        if #available(iOS 16.4, *) {
-            self.scrollBounceBehavior(.basedOnSize)
-        } else {
-            self
-        }
+        self
     }
 }
