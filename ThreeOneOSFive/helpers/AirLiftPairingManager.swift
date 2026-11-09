@@ -179,15 +179,12 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
             .sink { [weak self] _ in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
-                    guard !AirTrafficProtocolClient.shared.isBusy else { return }
+                    guard !AirTrafficProtocolClient.shared.isBusy, !self.isVerifyingPairing else { return }
                     self.checkPairingStatus()
                     if self.pairingThreadActive,
                        self.pendingPublication != nil,
                        !self.isBroadcastingBonjour {
                         self.retryBonjourAdvertisement(userInitiated: false)
-                    }
-                    if AirLiftTunnelManager.shared.isOperational && self.status.isPaired {
-                        await self.verifyPairingWithDevice(silent: true)
                     }
                 }
             }
@@ -197,36 +194,22 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
             .receive(on: DispatchQueue.main)
             .sink { [weak self] tunnelStatus in
                 guard let self else { return }
-                guard !AirTrafficProtocolClient.shared.isBusy else { return }
-                if tunnelStatus == .connected && self.status.isPaired && !self.isVerifyingPairing {
+                guard !AirTrafficProtocolClient.shared.isBusy, !self.isVerifyingPairing else { return }
+                if tunnelStatus == .connected && self.status == .ready {
                     Task { @MainActor [weak self] in
+                        try? await Task.sleep(nanoseconds: 500_000_000)
                         await self?.verifyPairingWithDevice(silent: true)
                     }
                 }
             }
             .store(in: &cancellables)
-
-        startContinuousPairingMonitor()
     }
 
     func startContinuousPairingMonitor() {
+        // Debounced foreground checks replace background timer polling
+        // to prevent socket contention on iOS 27 loopback services.
         verificationTimer?.cancel()
-        // A full RemoteXPC/InstallationProxy probe is intentionally not run
-        // every few seconds: repeated handshakes can contend with an inject on
-        // slower iOS 27 devices. Foreground/manual checks still run immediately.
-        verificationTimer = Timer.publish(every: 60.0, on: .main, in: .common)
-            .autoconnect()
-            .sink { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    guard UIApplication.shared.applicationState == .active else { return }
-                    guard !AirTrafficProtocolClient.shared.isBusy else { return }
-                    self.checkPairingStatus()
-                    if self.status.isPaired && AirLiftTunnelManager.shared.isOperational && !self.isVerifyingPairing {
-                        await self.verifyPairingWithDevice(silent: true)
-                    }
-                }
-            }
+        verificationTimer = nil
     }
 
     func checkPairingStatus() {
@@ -301,7 +284,7 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
         } else {
             status = (previousStatus == .verifying) ? .ready : previousStatus
             if !silent {
-                notify(message: "Không thể kiểm tra ghép đôi: \(outcome.message)")
+                notify(message: outcome.message)
             }
         }
     }

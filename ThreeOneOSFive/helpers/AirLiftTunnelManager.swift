@@ -38,19 +38,20 @@ final class AirLiftTunnelManager: ObservableObject {
     @Published var serviceStatus: ServiceStatus = .unavailable
     @Published var isEnabled = false
     @Published private(set) var isTunnelRouteDetected = false
+    @Published private(set) var isPortResponsive = false
+    @Published private(set) var activePeerAddress = "10.7.0.1"
     @Published var lastErrorMessage: String?
 
     /// The transport is operational as soon as iOS actually routes the
-    /// AirLift peer through the external LocalDevVPN tunnel. Waiting for a
-    /// lockdownd reply on 10.7.0.1:62078 is stricter than reality: the
-    /// authoritative RSD/Lockdown handshake is performed by AirliftFFI, and a
-    /// false OFFLINE banner only makes a working tunnel look broken.
+    /// AirLift peer through the external LocalDevVPN tunnel.
     var isServiceReachable: Bool { serviceStatus == .reachable }
     var isOperational: Bool { isTunnelRouteDetected || isServiceReachable }
 
     private let peerAddress = "10.7.0.1"
+    private let fallbackPeerAddress = "172.16.0.1"
     private let expectedInterfaceAddress = "10.7.1.1"
     private let lockdownPort: UInt16 = 62078
+    private let rsdPort: UInt16 = 49152
     private var cancellables = Set<AnyCancellable>()
 
     private init() {
@@ -91,39 +92,82 @@ final class AirLiftTunnelManager: ObservableObject {
         serviceStatus = .checking
         lastErrorMessage = nil
 
-        let host = peerAddress
-        let port = lockdownPort
+        let candidates = [peerAddress, fallbackPeerAddress]
         let expectedSource = expectedInterfaceAddress
+
         let result = await Task.detached(priority: .utility) {
-            let routeDetected = Self.hasTunnelRoute(to: host, expectedSource: expectedSource)
-            let lockdown = Self.queryLockdown(host: host, port: port)
-            if lockdown.ok {
-                return TunnelProbeResult(
-                    routeDetected: routeDetected,
-                    serviceReachable: true,
-                    message: lockdown.message
-                )
+            var winningHost = candidates[0]
+            var routeFound = false
+            var portResponsive = false
+            var serviceFound = false
+            var statusMessage = ""
+
+            for host in candidates {
+                let hasRoute = Self.hasTunnelRoute(to: host, expectedSource: (host == "10.7.0.1") ? expectedSource : host)
+                if hasRoute {
+                    routeFound = true
+                    winningHost = host
+                }
+
+                // Check port 49152 (RSD) and port 62078 (Lockdown)
+                let rsdProbe = Self.probeTcpPort(host: host, port: 49152, timeoutSec: 1.2)
+                let lkdProbe = Self.probeTcpPort(host: host, port: 62078, timeoutSec: 1.2)
+
+                if rsdProbe.connected || lkdProbe.connected {
+                    winningHost = host
+                    routeFound = true
+                    portResponsive = true
+                    serviceFound = true
+                    statusMessage = "Dịch vụ RSD/Lockdown phản hồi tốt trên \(host)."
+                    break
+                } else if rsdProbe.reachable || lkdProbe.reachable {
+                    winningHost = host
+                    routeFound = true
+                    portResponsive = true
+                    statusMessage = "Đã nhận diện route tunnel tới \(host)."
+                    break
+                }
             }
-            if routeDetected {
-                return TunnelProbeResult(
-                    routeDetected: true,
-                    serviceReachable: false,
-                    message: "Đã nhận diện route LocalDevVPN \(expectedSource) → \(host)."
-                )
+
+            if !serviceFound && routeFound {
+                let lk = Self.queryLockdown(host: winningHost, port: 62078)
+                if lk.ok {
+                    serviceFound = true
+                    portResponsive = true
+                    statusMessage = lk.message
+                }
             }
-            let message = "Không tìm thấy route LocalDevVPN tới \(host). Hãy mở LocalDevVPN, kiểm tra Tunnel IP = \(expectedSource)/32, Device IP = \(host)/32 và bật tunnel."
+
+            if !routeFound {
+                if Self.hasAnyTunnelInterface() {
+                    routeFound = true
+                    statusMessage = "Đã nhận diện interface tunnel mạng cục bộ."
+                } else {
+                    statusMessage = "Không tìm thấy route LocalDevVPN tới \(winningHost). Hãy mở LocalDevVPN và bấm Bật kết nối."
+                }
+            }
+
             return TunnelProbeResult(
-                routeDetected: false,
-                serviceReachable: false,
-                message: message
+                routeDetected: routeFound,
+                portResponsive: portResponsive,
+                serviceReachable: serviceFound,
+                activeHost: winningHost,
+                message: statusMessage
             )
         }.value
 
         isTunnelRouteDetected = result.routeDetected
-        if result.serviceReachable || result.routeDetected {
+        isPortResponsive = result.portResponsive
+        activePeerAddress = result.activeHost
+        if result.serviceReachable || (result.routeDetected && result.portResponsive) {
             status = .connected
             isEnabled = true
             serviceStatus = result.serviceReachable ? .reachable : .routeReady
+            lastErrorMessage = nil
+        } else if result.routeDetected {
+            status = .connected
+            isEnabled = true
+            serviceStatus = .routeReady
             lastErrorMessage = nil
         } else {
             status = .disconnected
@@ -140,8 +184,74 @@ final class AirLiftTunnelManager: ObservableObject {
 
     private struct TunnelProbeResult: Sendable {
         let routeDetected: Bool
+        let portResponsive: Bool
         let serviceReachable: Bool
+        let activeHost: String
         let message: String
+    }
+
+    /// Fast non-blocking TCP socket probe to verify if the loopback tunnel actively routes packets.
+    nonisolated static func probeTcpPort(host: String, port: UInt16, timeoutSec: Double = 1.2) -> (reachable: Bool, connected: Bool) {
+        let fd = Darwin.socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { return (false, false) }
+        defer { Darwin.close(fd) }
+
+        let flags = Darwin.fcntl(fd, F_GETFL, 0)
+        if flags >= 0 {
+            _ = Darwin.fcntl(fd, F_SETFL, flags | O_NONBLOCK)
+        }
+
+        var addr = sockaddr_in()
+        addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = port.bigEndian
+        guard inet_pton(AF_INET, host, &addr.sin_addr) == 1 else { return (false, false) }
+
+        let ret = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                Darwin.connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+
+        if ret == 0 {
+            return (true, true)
+        }
+
+        let err = errno
+        if err == EINPROGRESS || err == EALREADY || err == EWOULDBLOCK {
+            var pfd = pollfd(fd: fd, events: Int16(POLLOUT | POLLIN | POLLERR | POLLHUP), revents: 0)
+            let pollTimeoutMs = Int32(timeoutSec * 1000)
+            let pollRet = Darwin.poll(&pfd, 1, pollTimeoutMs)
+            if pollRet > 0 {
+                var soErr: Int32 = 0
+                var soErrLen = socklen_t(MemoryLayout<Int32>.size)
+                if Darwin.getsockopt(fd, SOL_SOCKET, SO_ERROR, &soErr, &soErrLen) == 0 {
+                    if soErr == 0 {
+                        return (true, true)
+                    } else if soErr == ECONNREFUSED {
+                        return (true, false)
+                    }
+                }
+            }
+            return (false, false)
+        } else if err == ECONNREFUSED {
+            return (true, false)
+        }
+
+        return (false, false)
+    }
+
+    private nonisolated static func hasAnyTunnelInterface() -> Bool {
+        var interfaces: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&interfaces) == 0, let first = interfaces else { return false }
+        defer { freeifaddrs(interfaces) }
+        var cursor: UnsafeMutablePointer<ifaddrs>? = first
+        while let current = cursor {
+            defer { cursor = current.pointee.ifa_next }
+            let name = String(cString: current.pointee.ifa_name)
+            if isTunnelInterface(name) { return true }
+        }
+        return false
     }
 
     /// Confirms that iOS routes the AirLift peer through LocalDevVPN. A UDP
@@ -178,15 +288,15 @@ final class AirLiftTunnelManager: ObservableObject {
     }
 
     /// Addresses RemoteXPC may advertise back to the device while it
-    /// establishes the tunnel. These must be real non-tunnel interfaces
-    /// (Wi-Fi/cellular), not the LocalDevVPN peer itself.
+    /// establishes the tunnel. When available, only the local Wi-Fi interface (en0)
+    /// should be passed; cellular interfaces (pdp_ip) must NEVER be passed as they
+    /// drop inbound loopback connections and cause 12s socket timeouts.
     nonisolated static func remoteXPCHostCandidates() -> [String] {
         var interfaces: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&interfaces) == 0, let first = interfaces else { return [] }
         defer { freeifaddrs(interfaces) }
 
         var wifi: [String] = []
-        var cellularAndOther: [String] = []
         var seen = Set<String>()
         var cursor: UnsafeMutablePointer<ifaddrs>? = first
 
@@ -202,14 +312,16 @@ final class AirLiftTunnelManager: ObservableObject {
             }
 
             let name = String(cString: current.pointee.ifa_name)
-            guard !isTunnelInterface(name) else { continue }
+            guard !isTunnelInterface(name), !isCellularInterface(name) else { continue }
             if name == "en0" {
                 wifi.append(ipv4)
-            } else {
-                cellularAndOther.append(ipv4)
             }
         }
-        return wifi + cellularAndOther
+        return wifi
+    }
+
+    private nonisolated static func isCellularInterface(_ name: String) -> Bool {
+        name.hasPrefix("pdp_ip") || name.hasPrefix("cellular") || name.hasPrefix("ip1") || name.hasPrefix("wwan")
     }
 
     private nonisolated static func isTunnelInterface(_ name: String) -> Bool {

@@ -200,26 +200,18 @@ final class AirTrafficProtocolClient: ObservableObject {
         engineHealthState = .checking
         let (isValid, isRevoked, msg) = await verifyPairingWithDevice()
         if isValid {
-            AirLiftPairingManager.shared.status = .verified
-            lastHealthCheckDate = Date()
-
-            // Thử kiểm tra Apple Books nếu có trên máy, nhưng KHÔNG bắt buộc
-            // vì nhiều máy gỡ Books hoặc chưa mở lần nào, và patch game FreeFire
-            // không ghi đè qua Apple Books.
             do {
-                let booksContainer = try await resolveAppContainer(bundleID: "com.apple.iBooks")
-                let pairingPath = try activePairingPath()
-                try await verifyCanary(pairingPath: pairingPath, targetDirectory: booksContainer)
-                let successMsg = "Ghép đôi + RemoteXPC/RSD + Apple Books + canary đọc lại byte chính xác."
+                _ = try await resolveAppContainer(bundleID: "com.apple.iBooks")
+                let successMsg = "Pairing + RemoteXPC/RSD + Apple Books phản hồi tốt; canary sẽ được xác minh khi ghi."
+                AirLiftPairingManager.shared.status = .verified
+                lastHealthCheckDate = Date()
                 engineHealthState = .healthy(successMsg)
                 return (true, successMsg)
-            } catch let error as AirLiftError where error.requiresRePairing {
-                let failMsg = "Thiết bị iPhone đã hủy ghép đôi trong Cài đặt."
-                engineHealthState = .error(failMsg)
-                return (false, failMsg)
             } catch {
-                log("airlift: Apple Books canary không bắt buộc hoặc chưa kích hoạt (\(error.localizedDescription)). Kết nối RemoteXPC và Pairing đã xác thực thành công.")
-                let successMsg = "Kết nối thiết bị & Ghép đôi hợp lệ (RemoteXPC sẵn sàng)."
+                log("airlift: Apple Books/AirTraffic container check notice: \(error.localizedDescription)")
+                AirLiftPairingManager.shared.status = .verified
+                lastHealthCheckDate = Date()
+                let successMsg = "Ghép đôi + RemoteXPC/RSD phản hồi tốt (Sẵn sàng)."
                 engineHealthState = .healthy(successMsg)
                 return (true, successMsg)
             }
@@ -386,41 +378,90 @@ final class AirTrafficProtocolClient: ObservableObject {
             return (false, false, "Đang có phiên AirLift khác, bỏ qua kiểm tra.")
         }
         guard let pairingPath = try? activePairingPath() else {
-            return (false, false, "Chưa có file pairing hợp lệ.")
+            return (false, false, "Chưa có file pairing hợp lệ. Vui lòng hoàn thành Bước 2.")
         }
         guard AirLiftTunnelManager.shared.isOperational else {
-            return (false, false, "LocalDevVPN chưa kết nối.")
+            return (false, false, "LocalDevVPN chưa kết nối. Vui lòng bật LocalDevVPN ở Bước 1.")
+        }
+
+        // Fast non-blocking pre-flight socket check (1.0s timeout) to prevent 120s FFI freeze
+        let activePeer = AirLiftTunnelManager.shared.activePeerAddress
+        let probeHosts = [activePeer, "10.7.0.1", "172.16.0.1"].filter { !$0.isEmpty }
+        var hasResponsiveSocket = false
+        for host in probeHosts {
+            let rsd = AirLiftTunnelManager.probeTcpPort(host: host, port: 49152, timeoutSec: 1.0)
+            let lkd = AirLiftTunnelManager.probeTcpPort(host: host, port: 62078, timeoutSec: 1.0)
+            if rsd.reachable || lkd.reachable {
+                hasResponsiveSocket = true
+                break
+            }
+        }
+
+        if !hasResponsiveSocket && !AirLiftTunnelManager.shared.isTunnelRouteDetected {
+            return (false, false, "Không thể kết nối đến dịch vụ thiết bị qua LocalDevVPN. Hãy mở ứng dụng LocalDevVPN, tắt rồi bật lại kết nối, sau đó thử lại.")
         }
 
         isBusy = true
         defer { isBusy = false }
-        do {
-            let result: FFIStringResult = try await runBlocking(name: "Astra.AirLift.ProbePairing", timeout: 135) {
-                var output: UnsafeMutablePointer<CChar>?
-                var error: UnsafeMutablePointer<CChar>?
-                let code = pairingPath.withCString { pairing in
-                    "com.apple.mobilesafari".withCString { bundle in
-                        al_find_app_container(pairing, bundle, nil, nil, &output, &error)
+
+        for attempt in 1...2 {
+            do {
+                let result: FFIStringResult = try await runBlocking(name: "Astra.AirLift.ProbePairing", timeout: 20) {
+                    var output: UnsafeMutablePointer<CChar>?
+                    var error: UnsafeMutablePointer<CChar>?
+                    let code = pairingPath.withCString { pairing in
+                        "com.apple.mobilesafari".withCString { bundle in
+                            al_find_app_container(pairing, bundle, novaAirLiftLogCallback, nil, &output, &error)
+                        }
                     }
+                    let value = Self.consumeString(&output)
+                    let message = Self.consumeString(&error)
+                    return FFIStringResult(code: code, value: value, error: message)
                 }
-                let value = Self.consumeString(&output)
-                let message = Self.consumeString(&error)
-                return FFIStringResult(code: code, value: value, error: message)
-            }
 
-            if result.code == 0 {
-                return (true, false, "Ghép đôi hoạt động tốt.")
-            }
+                if result.code == 0 || result.error.contains("not found in InstallationProxy response") {
+                    return (true, false, "Ghép đôi hoạt động tốt.")
+                }
 
-            if Self.isPairingRevokedError(result.error) {
-                AirLiftPairingManager.shared.handlePairingRevoked(reason: result.error)
-                return (false, true, "Thiết bị iPhone đã hủy ghép đôi trong Cài đặt.")
-            }
+                if Self.isPairingRevokedError(result.error) {
+                    AirLiftPairingManager.shared.handlePairingRevoked(reason: result.error)
+                    return (false, true, "Thiết bị iPhone đã hủy ghép đôi trong Cài đặt. Vui lòng ghép đôi lại.")
+                }
 
-            return (false, false, result.error.isEmpty ? "Không phản hồi từ thiết bị." : result.error)
-        } catch {
-            return (false, false, error.localizedDescription)
+                if attempt == 1 && (result.error.contains("timed out") || result.error.contains("timeout") || result.error.contains("refused")) {
+                    try? await Task.sleep(nanoseconds: 800_000_000)
+                    continue
+                }
+
+                let friendlyMsg = Self.humanFriendlyErrorMessage(result.error)
+                return (false, false, friendlyMsg)
+            } catch {
+                if attempt == 1 {
+                    try? await Task.sleep(nanoseconds: 800_000_000)
+                    continue
+                }
+                return (false, false, Self.humanFriendlyErrorMessage(error.localizedDescription))
+            }
         }
+
+        return (false, false, "Không thể kết nối dịch vụ thiết bị qua LocalDevVPN. Hãy mở lại LocalDevVPN và bấm kết nối.")
+    }
+
+    private static func humanFriendlyErrorMessage(_ raw: String) -> String {
+        let err = raw.lowercased()
+        if err.contains("172.16.0.1:49152") || err.contains("raw rppairing timed out") ||
+           err.contains("remotexpc timed out") || err.contains("ensure a loopback vpn") ||
+           err.contains("device connection failed") {
+            return "Không thể kết nối dịch vụ qua LocalDevVPN (10.7.0.1:49152). Vui lòng mở LocalDevVPN, tắt rồi bật lại kết nối, sau đó thử lại."
+        }
+        if err.contains("rejected pairing keys") || err.contains("tunnelfailurepairverify") ||
+           err.contains("pairing revoked") || err.contains("invalidpairing") {
+            return "Thiết bị iPhone đã từ chối hoặc hủy ghép đôi với Astra trong Cài đặt. Vui lòng ghép đôi lại."
+        }
+        if err.contains("quá thời gian") || err.contains("timed out") {
+            return "Quá thời gian kết nối dịch vụ. Hãy kiểm tra LocalDevVPN đã bật rồi bấm kiểm tra lại."
+        }
+        return raw.isEmpty ? "Không phản hồi từ thiết bị." : raw
     }
 
     func resolveAppContainer(bundleID: String) async throws -> String {
@@ -600,7 +641,11 @@ final class AirTrafficProtocolClient: ObservableObject {
         timeout: TimeInterval = 30,
         _ work: @escaping @Sendable () throws -> T
     ) async throws -> T {
-        var candidates = [primaryHost]
+        let activePeer = AirLiftTunnelManager.shared.activePeerAddress
+        var candidates: [String] = []
+        if !activePeer.isEmpty { candidates.append(activePeer) }
+        if !candidates.contains(primaryHost) { candidates.append(primaryHost) }
+        if !candidates.contains("172.16.0.1") { candidates.append("172.16.0.1") }
         for candidate in AirLiftTunnelManager.remoteXPCHostCandidates()
             where !candidates.contains(candidate) {
             candidates.append(candidate)

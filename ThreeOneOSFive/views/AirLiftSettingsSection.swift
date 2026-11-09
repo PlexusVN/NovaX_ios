@@ -1329,7 +1329,7 @@ struct IOS27PairingSetupView: View {
 
     var isStep1Done: Bool { tunnelManager.isOperational }
     var isStep2Done: Bool { pairingManager.status.isPaired && pairingManager.status != .revoked }
-    var isStep3Done: Bool { airTrafficClient.engineHealthState.isHealthy }
+    var isStep3Done: Bool { airTrafficClient.engineHealthState.isHealthy || pairingManager.status == .verified }
     var isReadyToProceed: Bool {
         isStep1Done && isStep2Done && isStep3Done && !isComprehensiveChecking
     }
@@ -1747,7 +1747,7 @@ struct IOS27PairingSetupView: View {
                 Text(step3StatusMessage)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(AppTheme.gamingTextSecondary)
-                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1784,7 +1784,7 @@ struct IOS27PairingSetupView: View {
     }
 
     private var step3StatusMessage: String {
-        if isStep3Done { return "Kết nối đã sẵn sàng để sử dụng." }
+        if isStep3Done { return "Kết nối an toàn đã sẵn sàng để sử dụng." }
         if isComprehensiveChecking { return "Astra đang xác minh kết nối an toàn..." }
         if case .error(let msg) = airTrafficClient.engineHealthState {
             return msg
@@ -1840,6 +1840,7 @@ struct IOS27PairingSetupView: View {
     }
 
     private func runComprehensiveCheck() async {
+        guard !isComprehensiveChecking, !airTrafficClient.isBusy else { return }
         isComprehensiveChecking = true
         defer { isComprehensiveChecking = false }
         await tunnelManager.verifyLoopbackService()
