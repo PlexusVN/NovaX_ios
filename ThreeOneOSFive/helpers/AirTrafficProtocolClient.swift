@@ -127,7 +127,7 @@ final class AirTrafficProtocolClient: ObservableObject {
         var stage = FileManager.default.temporaryDirectory.appendingPathComponent(
             Self.stagingPrefix + UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: stage, withIntermediateDirectories: false,
-            attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserUnlock])
+            attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
         do {
             var values = URLResourceValues()
             values.isExcludedFromBackup = true
@@ -505,7 +505,7 @@ final class AirTrafficProtocolClient: ObservableObject {
 
         let allocated = candidates.map { strdup($0) }
         defer { allocated.forEach { free($0) } }
-        var pointers = allocated.map { UnsafePointer($0) }
+        let pointers = allocated.map { UnsafePointer($0) }
         let candidatesCode: Int32 = pointers.withUnsafeBufferPointer { buffer in
             guard let base = buffer.baseAddress else { return -1 }
             return al_set_target_hosts(base, buffer.count)
