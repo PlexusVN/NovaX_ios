@@ -644,44 +644,55 @@ struct PatchCardView: View {
             isSuccess: true
         )
 
-        Task { @MainActor in
-            defer { isWorking = false }
-            if isApplied {
+        let targetIsApplied = isApplied
+        Task.detached(priority: .userInitiated) {
+            if targetIsApplied {
                 do {
                     try await service.restorePatch(patch, auth: auth)
-                    Haptics.success()
-
-                    activeToast = ToastInfo(
-                        title: "Tắt chức năng thành công",
-                        message: "Đã khôi phục file gốc từ máy.",
-                        isSuccess: true
-                    )
+                    await MainActor.run {
+                        isWorking = false
+                        Haptics.success()
+                        activeToast = ToastInfo(
+                            title: "Tắt chức năng thành công",
+                            message: "Đã khôi phục file gốc từ máy.",
+                            isSuccess: true
+                        )
+                    }
                 } catch {
-                    Haptics.error()
-                    activeToast = ToastInfo(
-                        title: "Không thể tắt chức năng",
-                        message: (error as? LocalizedError)?.errorDescription
-                            ?? "Không thể khôi phục dữ liệu (mã \((error as NSError).code)).",
-                        isSuccess: false
-                    )
+                    await MainActor.run {
+                        isWorking = false
+                        Haptics.error()
+                        activeToast = ToastInfo(
+                            title: "Không thể tắt chức năng",
+                            message: (error as? LocalizedError)?.errorDescription
+                                ?? "Không thể khôi phục dữ liệu (mã \((error as NSError).code)).",
+                            isSuccess: false
+                        )
+                    }
                 }
             } else {
                 do {
                     try await service.applyPatch(patch, auth: auth)
-                    Haptics.success()
-                    activeToast = ToastInfo(
-                        title: "Bật chức năng thành công",
-                        message: "Chức năng đang bật.",
-                        isSuccess: true
-                    )
+                    await MainActor.run {
+                        isWorking = false
+                        Haptics.success()
+                        activeToast = ToastInfo(
+                            title: "Bật chức năng thành công",
+                            message: "Chức năng đang bật.",
+                            isSuccess: true
+                        )
+                    }
                 } catch {
-                    Haptics.error()
-                    activeToast = ToastInfo(
-                        title: "Không thể bật chức năng",
-                        message: (error as? LocalizedError)?.errorDescription
-                            ?? "Không thể hoàn tất thao tác (mã \((error as NSError).code)).",
-                        isSuccess: false
-                    )
+                    await MainActor.run {
+                        isWorking = false
+                        Haptics.error()
+                        activeToast = ToastInfo(
+                            title: "Không thể bật chức năng",
+                            message: (error as? LocalizedError)?.errorDescription
+                                ?? "Không thể hoàn tất thao tác (mã \((error as NSError).code)).",
+                            isSuccess: false
+                        )
+                    }
                 }
             }
         }

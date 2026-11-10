@@ -131,7 +131,7 @@ public final class WorseQueryHelper {
 
     /// Kiểm tra xem đường dẫn có thuộc phạm vi cho phép của worse_query hay không
     public static func isScopeSupported(for path: String) -> Bool {
-        let clean = (path as NSString).standardizingPath
+        let clean = ContainerDiscoveryMerger.canonicalPath(path)
         return clean.hasPrefix("/var/mobile/Containers/Data/Application") ||
                clean.hasPrefix("/private/var/mobile/Containers/Data/Application") ||
                clean.hasPrefix("/var/mobile/Containers/Shared/AppGroup") ||
@@ -142,7 +142,7 @@ public final class WorseQueryHelper {
 
     /// Trích xuất thư mục gốc của container từ đường dẫn bất kỳ (Data/Application, AppGroup, System)
     public static func containerRoot(for path: String) -> String? {
-        let clean = (path as NSString).standardizingPath
+        let clean = ContainerDiscoveryMerger.canonicalPath(path)
         let prefixes = [
             "/var/mobile/Containers/Data/Application/",
             "/private/var/mobile/Containers/Data/Application/",
@@ -170,12 +170,12 @@ public final class WorseQueryHelper {
             .appendingPathComponent("probe_inode_\(UUID().uuidString)")
         try? "probe".data(using: .utf8)?.write(to: probeURL)
         var st = stat()
-        var current: UInt64 = 20_000_000
+        var current: UInt64 = 200_000
         if stat(probeURL.path, &st) == 0 {
-            current = UInt64(st.st_ino) + 50_000
+            current = UInt64(st.st_ino) + 2_000
         }
         try? FileManager.default.removeItem(at: probeURL)
-        return max(current, 10_000_000)
+        return max(current, 100_000)
     }
 
     /// Cấp phát quyền Sandbox Extension cho đường dẫn mục tiêu
@@ -185,7 +185,8 @@ public final class WorseQueryHelper {
         }
 
         // Tự động chuẩn hóa mục tiêu về thư mục gốc container nếu là đường dẫn con
-        let effectiveTarget = containerRoot(for: targetPath) ?? targetPath
+        let canonical = ContainerDiscoveryMerger.canonicalPath(targetPath)
+        let effectiveTarget = containerRoot(for: canonical) ?? canonical
 
         guard isOSSupported else {
             let v = "\(ProcessInfo.processInfo.operatingSystemVersion.majorVersion).\(ProcessInfo.processInfo.operatingSystemVersion.minorVersion)"

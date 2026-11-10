@@ -69,41 +69,50 @@ enum ContainerStore {
         let cacheKey = "astra.resolved_container.\(bundleID)"
 
         // 1. Kiểm tra cache đã lưu trước đó nếu đường dẫn container vẫn tồn tại
-        if let cached = UserDefaults.standard.string(forKey: cacheKey),
-           isApplicationContainerPath(cached),
-           FileManager.default.fileExists(atPath: cached) {
-            log("patch: container resolved from persistent cache for \(bundleID) -> \(cached)")
-            _ = grantContainerAccess(cached)
-            return cached
+        if let cached = UserDefaults.standard.string(forKey: cacheKey) {
+            let cleanCached = ContainerDiscoveryMerger.canonicalPath(cached)
+            if isApplicationContainerPath(cleanCached),
+               FileManager.default.fileExists(atPath: cleanCached) {
+                log("patch: container resolved from persistent cache for \(bundleID) -> \(cleanCached)")
+                _ = grantContainerAccess(cleanCached)
+                return cleanCached
+            }
         }
 
-        // 2. Tra cứu trực tiếp qua LaunchServices (LSApplicationProxy / installedAppInfo)
-        if let lsPath = containerPathForBundleID(bundleID),
-           isApplicationContainerPath(lsPath) {
-            log("patch: LaunchServices resolved \(bundleID) -> \(lsPath)")
-            UserDefaults.standard.set(lsPath, forKey: cacheKey)
-            _ = grantContainerAccess(lsPath)
-            return lsPath
+        // 2. Tra cứu trực tiếp qua LaunchServices (LSApplicationRecord / LSApplicationProxy / installedAppInfo)
+        if let lsPath = containerPathForBundleID(bundleID) {
+            let cleanLS = ContainerDiscoveryMerger.canonicalPath(lsPath)
+            if isApplicationContainerPath(cleanLS) {
+                log("patch: LaunchServices resolved \(bundleID) -> \(cleanLS)")
+                UserDefaults.standard.set(cleanLS, forKey: cacheKey)
+                _ = grantContainerAccess(lsPath)
+                return cleanLS
+            }
         }
 
         // 3. Tra cứu qua MobileContainerManager (iOS <= 18.1 hoặc môi trường hỗ trợ MCM)
         var lookupError: NSString?
-        if let path = MCMActivateContainerPath(2, bundleID, false, &lookupError),
-           isApplicationContainerPath(path) {
-            log("patch: MHA-C2 resolved \(bundleID) -> \(path)")
-            UserDefaults.standard.set(path, forKey: cacheKey)
-            _ = grantContainerAccess(path)
-            return path
+        if let path = MCMActivateContainerPath(2, bundleID, false, &lookupError) {
+            let cleanMCM = ContainerDiscoveryMerger.canonicalPath(path)
+            if isApplicationContainerPath(cleanMCM) {
+                log("patch: MHA-C2 resolved \(bundleID) -> \(cleanMCM)")
+                UserDefaults.standard.set(cleanMCM, forKey: cacheKey)
+                _ = grantContainerAccess(cleanMCM)
+                return cleanMCM
+            }
         }
         let detail = lookupError.map(String.init) ?? "unavailable"
         log("patch: MHA-C2 could not resolve \(bundleID), detail=\(detail)")
 
         // 4. Fallback quét metadata hệ thống qua pathleak / worse_query / bad_query
         if let scanned = resolveAppContainerPathByMetadataScan(bundleID: bundleID) {
-            log("patch: filesystem metadata scan resolved \(bundleID) -> \(scanned)")
-            UserDefaults.standard.set(scanned, forKey: cacheKey)
-            _ = grantContainerAccess(scanned)
-            return scanned
+            let cleanScanned = ContainerDiscoveryMerger.canonicalPath(scanned)
+            if isApplicationContainerPath(cleanScanned) {
+                log("patch: filesystem metadata scan resolved \(bundleID) -> \(cleanScanned)")
+                UserDefaults.standard.set(cleanScanned, forKey: cacheKey)
+                _ = grantContainerAccess(cleanScanned)
+                return cleanScanned
+            }
         }
         return nil
     }
@@ -132,34 +141,40 @@ enum ContainerStore {
         }
 
         for dir in candidateDirs {
-            guard UUID(uuidString: (dir as NSString).lastPathComponent) != nil else { continue }
-            let handle = grantContainerAccess(dir)
-            defer {
-                if handle >= 0 {
-                    if WorseQueryHelper.isAvailable {
-                        WorseQueryHelper.releaseAccess(handle: handle)
-                    } else {
-                        bad_query_release(handle)
+            let cleanDir = ContainerDiscoveryMerger.canonicalPath(dir)
+            guard UUID(uuidString: (cleanDir as NSString).lastPathComponent) != nil else { continue }
+            let handle = grantContainerAccess(cleanDir)
+
+            var matched = false
+            if WorseQueryHelper.isAvailable {
+                var buf = [CChar](repeating: 0, count: 512)
+                let len = getxattr(cleanDir, "com.apple.containermanager.identifier", &buf, 511, 0, 0)
+                if len > 0 {
+                    let id = String(cString: buf)
+                    if id == bundleID {
+                        matched = true
                     }
                 }
             }
 
-            if WorseQueryHelper.isAvailable {
-                var buf = [CChar](repeating: 0, count: 512)
-                let len = getxattr(dir, "com.apple.containermanager.identifier", &buf, 511, 0, 0)
-                if len > 0 {
-                    let id = String(cString: buf)
-                    if id == bundleID {
-                        let canonical = ContainerDiscoveryMerger.canonicalPath(dir)
-                        if isApplicationContainerPath(canonical) { return canonical }
-                    }
+            if !matched, let metadata = readContainerMetadata(containerPath: cleanDir), metadata.bundleID == bundleID {
+                matched = true
+            }
+
+            if matched {
+                let canonical = ContainerDiscoveryMerger.canonicalPath(cleanDir)
+                if isApplicationContainerPath(canonical) {
+                    return canonical
                 }
             }
-            guard let metadata = readContainerMetadata(containerPath: dir),
-                  metadata.bundleID == bundleID else { continue }
-            let canonical = ContainerDiscoveryMerger.canonicalPath(dir)
-            guard isApplicationContainerPath(canonical) else { continue }
-            return canonical
+
+            if handle >= 0 {
+                if WorseQueryHelper.isAvailable {
+                    WorseQueryHelper.releaseAccess(handle: handle)
+                } else {
+                    bad_query_release(handle)
+                }
+            }
         }
         return nil
     }
@@ -462,10 +477,14 @@ enum ContainerStore {
     }
 
     static func isApplicationContainerPath(_ path: String) -> Bool {
+        var clean = ContainerDiscoveryMerger.canonicalPath(path)
+        while clean.count > 1 && clean.hasSuffix("/") {
+            clean.removeLast()
+        }
         let canonicalRoot = ContainerDiscoveryMerger.canonicalPath(appDataRoot)
-        let canonicalPath = ContainerDiscoveryMerger.canonicalPath(path)
-        guard canonicalPath.hasPrefix(canonicalRoot + "/") else { return false }
-        return UUID(uuidString: (canonicalPath as NSString).lastPathComponent) != nil
+        guard clean.hasPrefix(canonicalRoot + "/") else { return false }
+        let lastComponent = (clean as NSString).lastPathComponent
+        return UUID(uuidString: lastComponent) != nil
     }
 
     // MARK: Filesystem discovery
