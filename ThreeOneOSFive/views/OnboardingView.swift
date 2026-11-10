@@ -208,7 +208,7 @@ struct OnboardingView: View {
                         Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
                         Text("iOS 27").font(.subheadline.weight(.semibold))
                         Spacer()
-                        Text("AirLift").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        Text("worse_query / AirLift").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     }
                     ForEach(ExploitSupportPolicy.verifiedIOS27Builds, id: \.build) { v in
                         HStack {

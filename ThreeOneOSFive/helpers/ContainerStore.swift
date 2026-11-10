@@ -86,16 +86,28 @@ enum ContainerStore {
     }
 
     static func resolveAppContainerPathByMetadataScan(bundleID: String) -> String? {
-        guard KernelExploit.hasSandboxAccess() else {
+        guard KernelExploit.hasSandboxAccess() || WorseQueryHelper.isAvailable else {
             return nil
         }
-        let dirs = enumerateDirectories(path: appDataRoot)
-        guard !dirs.isEmpty else {
+        let dirs = enumerateDirectoriesWithTraversalGrant(path: appDataRoot)
+        let candidateDirs = dirs.isEmpty ? enumerateDirectories(path: appDataRoot) : dirs
+        guard !candidateDirs.isEmpty else {
             log("patch: metadata scan unavailable — no containers enumerated")
             return nil
         }
-        for dir in dirs {
+        for dir in candidateDirs {
             guard UUID(uuidString: (dir as NSString).lastPathComponent) != nil else { continue }
+            if WorseQueryHelper.isAvailable {
+                var buf = [CChar](repeating: 0, count: 512)
+                let len = getxattr(dir, "com.apple.containermanager.identifier", &buf, 511, 0, 0)
+                if len > 0 {
+                    let id = String(cString: buf)
+                    if id == bundleID {
+                        let canonical = ContainerDiscoveryMerger.canonicalPath(dir)
+                        if isApplicationContainerPath(canonical) { return canonical }
+                    }
+                }
+            }
             guard let metadata = readContainerMetadata(containerPath: dir),
                   metadata.bundleID == bundleID else { continue }
             let canonical = ContainerDiscoveryMerger.canonicalPath(dir)
@@ -463,16 +475,21 @@ enum ContainerStore {
         let metadataPath = metadataPath(for: containerPath)
 
         var data: Data?
-        if let fd = fopen(metadataPath, "r") {
-            var buffer = [UInt8](repeating: 0, count: 65536)
-            var bytes: [UInt8] = []
-            while true {
-                let n = fread(&buffer, 1, buffer.count, fd)
-                if n <= 0 { break }
-                bytes.append(contentsOf: buffer[0..<n])
+        if WorseQueryHelper.isAvailable && WorseQueryHelper.isScopeSupported(for: containerPath) {
+            data = try? WorseQueryHelper.readFile(at: metadataPath)
+        }
+        if data == nil {
+            if let fd = fopen(metadataPath, "r") {
+                var buffer = [UInt8](repeating: 0, count: 65536)
+                var bytes: [UInt8] = []
+                while true {
+                    let n = fread(&buffer, 1, buffer.count, fd)
+                    if n <= 0 { break }
+                    bytes.append(contentsOf: buffer[0..<n])
+                }
+                fclose(fd)
+                if !bytes.isEmpty { data = Data(bytes) }
             }
-            fclose(fd)
-            if !bytes.isEmpty { data = Data(bytes) }
         }
         if data == nil { data = try? Data(contentsOf: URL(fileURLWithPath: metadataPath)) }
 
@@ -496,8 +513,13 @@ enum ContainerStore {
     }
 
     static func grantContainerAccess(_ containerPath: String) -> Int64 {
-        guard shouldUseBadQuery else { return -1 }
         let clean = containerPath.hasSuffix("/") ? String(containerPath.dropLast()) : containerPath
+        if WorseQueryHelper.isAvailable && WorseQueryHelper.isScopeSupported(for: clean) {
+            if let handle = try? WorseQueryHelper.acquireAccess(for: clean) {
+                return handle
+            }
+        }
+        guard shouldUseBadQuery else { return -1 }
         var pathC = clean.utf8CString.map { Int8($0) }
         return bad_query(&pathC, true, nil, false)
     }

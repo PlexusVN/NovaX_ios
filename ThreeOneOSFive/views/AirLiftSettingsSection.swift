@@ -1404,15 +1404,19 @@ struct IOS27PairingSetupView: View {
                 HStack(spacing: 5) {
                     Image(systemName: "shield.checkered")
                         .font(.system(size: 10, weight: .semibold))
-                    Text(ExploitSupportPolicy.currentPairingMode == .onDeviceOrImportedFile ? "BẮT BUỘC TRÊN IOS 27" : "BẮT BUỘC TRÊN IOS 18.7.2 - 18.10")
+                    Text(ExploitSupportPolicy.currentPairingMode == .none
+                        ? "KHÔNG CẦN GHÉP NỐI (WORSE_QUERY)"
+                        : (ExploitSupportPolicy.currentPairingMode == .onDeviceOrImportedFile ? "BẮT BUỘC TRÊN IOS 27 (DỰ PHÒNG)" : "BẮT BUỘC TRÊN IOS 18.7.2 - 18.10"))
                         .font(.system(size: 10, weight: .bold, design: .monospaced))
                         .tracking(0.45)
                 }
                 .foregroundColor(AppTheme.gamingBlueBright)
 
-                Text(ExploitSupportPolicy.currentPairingMode == .onDeviceOrImportedFile
-                    ? "Hoàn thành một lần để Astra có thể sử dụng kết nối an toàn khi áp dụng chức năng."
-                    : "Nhập file pairing trích xuất từ máy tính để Astra có thể patch file qua AirLift.")
+                Text(ExploitSupportPolicy.currentPairingMode == .none
+                    ? "Thiết bị hỗ trợ ghi dữ liệu trực tiếp qua WorseQuery on-device. Bạn không cần kết nối máy tính hoặc file pairing để patch game."
+                    : (ExploitSupportPolicy.currentPairingMode == .onDeviceOrImportedFile
+                        ? "Hoàn thành một lần để Astra có thể sử dụng kết nối an toàn khi áp dụng chức năng."
+                        : "Nhập file pairing trích xuất từ máy tính để Astra có thể patch file qua AirLift."))
                     .font(.system(size: 11.5))
                     .foregroundColor(AppTheme.gamingTextSecondary)
                     .fixedSize(horizontal: false, vertical: true)

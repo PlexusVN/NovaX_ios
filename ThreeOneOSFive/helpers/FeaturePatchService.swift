@@ -644,9 +644,9 @@ final class FeaturePatchService: ObservableObject {
             projectID = summary.packageID
         }
 
-        let isAirLift = StorageEngineCoordinator.shared.isAirLiftActive ||
+        let isAirLift = !WorseQueryHelper.isAvailable && (StorageEngineCoordinator.shared.isAirLiftActive ||
             (projectID != nil && StorageEngineCoordinator.shared.isProjectAppliedThroughAirLift(projectID!)) ||
-            AppInfo.versionTuple.major >= 27
+            AppInfo.versionTuple.major >= 27)
 
         if isAirLift {
             // No original bytes were restored: retain ON and its association.
@@ -666,7 +666,11 @@ final class FeaturePatchService: ObservableObject {
         } else if DevicePatchService.recordedApplicationState(projectID: validProjectID) != .off {
             throw PatchRestoreError.missingReceipt
         }
-        try? FileManager.default.removeItem(at: destURL)
+        if WorseQueryHelper.isAvailable && WorseQueryHelper.isScopeSupported(for: destURL.path) {
+            try? WorseQueryHelper.removeItem(at: destURL.path)
+        } else {
+            try? FileManager.default.removeItem(at: destURL)
+        }
         catalogApplications.clear(slug)
         print("[FeaturePatch] restored via DevicePatchService")
     }
@@ -1321,7 +1325,12 @@ final class FeaturePatchService: ObservableObject {
         let destinationDirectory: URL
         if useAirLift {
             patchStepMessage = "Đang xác định thư mục \(variant.shortTitle)..."
-            destinationDirectory = try await Self.airLiftCodePatchDirectory(variant: variant)
+            if WorseQueryHelper.isAvailable, let directDir = Self.codePatchDirectory(variant: variant) {
+                // WorseQuery available on iOS 26/27: No need for AirLift pairing!
+                destinationDirectory = directDir
+            } else {
+                destinationDirectory = try await Self.airLiftCodePatchDirectory(variant: variant)
+            }
         } else if let directDirectory = Self.codePatchDirectory(variant: variant) {
             destinationDirectory = directDirectory
         } else {

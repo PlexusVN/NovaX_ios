@@ -61,6 +61,16 @@ final class StorageEngineCoordinator: ObservableObject {
         let networkGeneration = try await NetworkAccessGate.shared.requireAllowed()
         try Task.checkCancellation()
         try NetworkAccessGate.shared.validateGeneration(networkGeneration)
+
+        // 1. Ưu tiên ghi trực tiếp qua WorseQuery trên thiết bị (Không cần pairing máy tính)
+        if WorseQueryHelper.isAvailable && WorseQueryHelper.isScopeSupported(for: destinationPath) {
+            log("storage: routing write via on-device WorseQuery provider for \(destinationPath)")
+            try IntegrityCommitBarrier.withCommit {
+                try WorseQueryHelper.writeFile(data: data, to: destinationPath)
+            }
+            return
+        }
+
         if isAirLiftActive {
             guard isAirTrafficEngineLinked else {
                 throw AirLiftError.executionFailed("AirTraffic engine chưa được liên kết; thao tác ghi đã bị chặn an toàn.")
@@ -87,6 +97,11 @@ final class StorageEngineCoordinator: ObservableObject {
 
     /// Reads a file from a path using the optimal engine.
     func readFile(atPath path: String) async throws -> Data {
+        // 1. Ưu tiên đọc trực tiếp qua WorseQuery trên thiết bị
+        if WorseQueryHelper.isAvailable && WorseQueryHelper.isScopeSupported(for: path) {
+            log("storage: routing read via on-device WorseQuery provider for \(path)")
+            return try WorseQueryHelper.readFile(at: path)
+        }
         if isAirLiftActive {
             guard isAirTrafficEngineLinked else {
                 throw AirLiftError.executionFailed("AirTraffic engine chưa được liên kết; thao tác đọc đã bị chặn an toàn.")
@@ -109,11 +124,32 @@ final class StorageEngineCoordinator: ObservableObject {
     /// requires an authenticated tunnel and a successful canary read-back first.
     func applyPatchProject(_ project: PatchProject) async throws {
         try await AppIntegrityRuntime.shared.requireAllowed(force:true)
+        try PatchPackageCodec.validate(project)
+        guard !project.rules.isEmpty else { throw PatchPackageError.invalidProject }
+
+        // 1. Nếu worse_query sẵn sàng trên máy, áp dụng patch trực tiếp không cần AirLift
+        if WorseQueryHelper.isAvailable {
+            log("storage: applying patch project via on-device WorseQuery engine")
+            for rule in project.rules {
+                let bundleID = try PatchPathValidator.canonicalBundleIdentifier(rule.bundleID)
+                let relativePath = try PatchPathValidator.canonicalRelativePath(rule.relativePath)
+                guard let container = ContainerStore.resolveAppContainerPath(bundleID: bundleID) else {
+                    throw PatchPackageError.targetAppUnavailable(bundleID)
+                }
+                let destination = (container as NSString).appendingPathComponent(relativePath)
+                let networkGeneration = try await NetworkAccessGate.shared.requireAllowed()
+                try Task.checkCancellation()
+                try NetworkAccessGate.shared.validateGeneration(networkGeneration)
+                try WorseQueryHelper.writeFile(data: rule.replacementData, to: destination)
+            }
+            UserDefaults.standard.set(true, forKey: airLiftAppliedKey(project.id))
+            objectWillChange.send()
+            return
+        }
+
         guard isAirLiftActive, isAirTrafficEngineLinked else {
             throw AirLiftError.executionFailed("AirLift chưa được bật trong Cài đặt.")
         }
-        try PatchPackageCodec.validate(project)
-        guard !project.rules.isEmpty else { throw PatchPackageError.invalidProject }
 
         struct BatchKey: Hashable {
             let bundleID: String
