@@ -65,38 +65,85 @@ enum ContainerStore {
         guard (try? PatchPathValidator.canonicalBundleIdentifier(bundleID)) == bundleID else {
             return nil
         }
+
+        let cacheKey = "astra.resolved_container.\(bundleID)"
+
+        // 1. Kiểm tra cache đã lưu trước đó nếu đường dẫn container vẫn tồn tại
+        if let cached = UserDefaults.standard.string(forKey: cacheKey),
+           isApplicationContainerPath(cached),
+           FileManager.default.fileExists(atPath: cached) {
+            log("patch: container resolved from persistent cache for \(bundleID) -> \(cached)")
+            _ = grantContainerAccess(cached)
+            return cached
+        }
+
+        // 2. Tra cứu trực tiếp qua LaunchServices (LSApplicationProxy / installedAppInfo)
+        if let lsPath = containerPathForBundleID(bundleID),
+           isApplicationContainerPath(lsPath) {
+            log("patch: LaunchServices resolved \(bundleID) -> \(lsPath)")
+            UserDefaults.standard.set(lsPath, forKey: cacheKey)
+            _ = grantContainerAccess(lsPath)
+            return lsPath
+        }
+
+        // 3. Tra cứu qua MobileContainerManager (iOS <= 18.1 hoặc môi trường hỗ trợ MCM)
         var lookupError: NSString?
         if let path = MCMActivateContainerPath(2, bundleID, false, &lookupError),
            isApplicationContainerPath(path) {
-            log("patch: MHA-C2 resolved \(bundleID)")
+            log("patch: MHA-C2 resolved \(bundleID) -> \(path)")
+            UserDefaults.standard.set(path, forKey: cacheKey)
+            _ = grantContainerAccess(path)
             return path
         }
         let detail = lookupError.map(String.init) ?? "unavailable"
         log("patch: MHA-C2 could not resolve \(bundleID), detail=\(detail)")
 
-        // Fallback for iOS builds where MCM refuses to hand out sandbox
-        // tokens (e.g. iOS 18.1.x): scan the app-data root with the inode
-        // walk and read each container's MCM metadata plist directly. The
-        // raw reads only succeed when the sandbox escape is active.
+        // 4. Fallback quét metadata hệ thống qua pathleak / worse_query / bad_query
         if let scanned = resolveAppContainerPathByMetadataScan(bundleID: bundleID) {
-            log("patch: filesystem metadata scan resolved \(bundleID)")
+            log("patch: filesystem metadata scan resolved \(bundleID) -> \(scanned)")
+            UserDefaults.standard.set(scanned, forKey: cacheKey)
+            _ = grantContainerAccess(scanned)
             return scanned
         }
         return nil
     }
 
     static func resolveAppContainerPathByMetadataScan(bundleID: String) -> String? {
-        guard KernelExploit.hasSandboxAccess() || WorseQueryHelper.isAvailable else {
+        guard KernelExploit.hasSandboxAccess() || WorseQueryHelper.isAvailable || shouldUseBadQuery else {
             return nil
         }
-        let dirs = enumerateDirectoriesWithTraversalGrant(path: appDataRoot)
-        let candidateDirs = dirs.isEmpty ? enumerateDirectories(path: appDataRoot) : dirs
+
+        // 1. Quét nhanh các container thông qua pathleak (fsgetpath)
+        let maxInode = WorseQueryHelper.currentFilesystemMaxInode()
+        let leakDirs = (pathleak(appDataRoot, maxInode) as? [String]) ?? []
+
+        let candidateDirs: [String]
+        if !leakDirs.isEmpty {
+            candidateDirs = leakDirs
+            log("patch: pathleak enumerated \(candidateDirs.count) candidate containers")
+        } else {
+            let dirs = enumerateDirectoriesWithTraversalGrant(path: appDataRoot)
+            candidateDirs = dirs.isEmpty ? enumerateDirectories(path: appDataRoot, maxInode: Int64(maxInode)) : dirs
+        }
+
         guard !candidateDirs.isEmpty else {
             log("patch: metadata scan unavailable — no containers enumerated")
             return nil
         }
+
         for dir in candidateDirs {
             guard UUID(uuidString: (dir as NSString).lastPathComponent) != nil else { continue }
+            let handle = grantContainerAccess(dir)
+            defer {
+                if handle >= 0 {
+                    if WorseQueryHelper.isAvailable {
+                        WorseQueryHelper.releaseAccess(handle: handle)
+                    } else {
+                        bad_query_release(handle)
+                    }
+                }
+            }
+
             if WorseQueryHelper.isAvailable {
                 var buf = [CChar](repeating: 0, count: 512)
                 let len = getxattr(dir, "com.apple.containermanager.identifier", &buf, 511, 0, 0)

@@ -81,3 +81,4 @@ release-registry.json
 !/Tests/test_ios16_compatibility.py
 !/Tests/extract_support_policy.py
 !/Tests/IOSCompatibilitySelfCheck.swift
+!/Tests/test_worse_query_wiring.py

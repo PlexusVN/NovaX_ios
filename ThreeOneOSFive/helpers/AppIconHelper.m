@@ -576,6 +576,42 @@ NSDictionary *appInfoForBundleID(NSString *bundleID) {
     return result;
 }
 
+NSString * _Nullable containerPathForBundleID(NSString *bundleID) {
+    if (!bundleID || bundleID.length == 0) return nil;
+    ensureLaunchServicesLoaded();
+
+    Class proxyClass = NSClassFromString(@"LSApplicationProxy");
+    if (proxyClass) {
+        SEL appProxySel = NSSelectorFromString(@"applicationProxyForIdentifier:");
+        if ([proxyClass respondsToSelector:appProxySel]) {
+            id proxy = ((id (*)(id, SEL, id))objc_msgSend)(proxyClass, appProxySel, bundleID);
+            if (proxy) {
+                for (NSString *selectorName in @[@"dataContainerURL", @"containerURL"]) {
+                    SEL containerSel = NSSelectorFromString(selectorName);
+                    if (![proxy respondsToSelector:containerSel]) continue;
+                    id value = ((id (*)(id, SEL))objc_msgSend)(proxy, containerSel);
+                    NSString *path = [value isKindOfClass:[NSURL class]] ? [value path] : value;
+                    if ([path isKindOfClass:[NSString class]] && path.length > 0) {
+                        return path;
+                    }
+                }
+            }
+        }
+    }
+
+    NSDictionary<NSString *, NSDictionary *> *all = installedAppInfo();
+    for (NSString *key in all) {
+        if ([key isEqualToString:bundleID] || [key hasSuffix:[@"." stringByAppendingString:bundleID]]) {
+            NSString *c = all[key][@"container"];
+            if ([c isKindOfClass:[NSString class]] && c.length > 0) {
+                return c;
+            }
+        }
+    }
+
+    return nil;
+}
+
 BOOL openApplicationForBundleID(NSString *bundleID) {
     if (bundleID.length == 0) return NO;
     Class workspaceClass = NSClassFromString(@"LSApplicationWorkspace");

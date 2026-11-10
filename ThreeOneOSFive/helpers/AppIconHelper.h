@@ -10,6 +10,9 @@ NSDictionary<NSString *, NSDictionary *> *installedAppInfo(void);
 /// Fetches an icon for a single bundle ID via LSApplicationProxy.
 UIImage * _Nullable iconForBundleID(NSString *bundleID);
 
+/// Resolves container directory path for a bundle ID via LaunchServices / LSApplicationProxy.
+NSString * _Nullable containerPathForBundleID(NSString *bundleID);
+
 /// Returns @{ @"name": NSString, @"icon": UIImage } for a single bundle ID.
 NSDictionary *appInfoForBundleID(NSString *bundleID);
 

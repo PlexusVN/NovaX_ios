@@ -28,6 +28,7 @@ jobs:
           python3 Tests/test_license_verification_wiring.py
           python3 Tests/test_security_flow_wiring.py
           python3 Tests/test_ios16_compatibility.py
+          python3 Tests/test_worse_query_wiring.py
 
       - name: Verify TLS pin allowlist has no trust-only fallback
         run: |

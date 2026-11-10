@@ -140,11 +140,52 @@ public final class WorseQueryHelper {
                clean.hasPrefix("/private/var/containers/Data/System")
     }
 
+    /// Trích xuất thư mục gốc của container từ đường dẫn bất kỳ (Data/Application, AppGroup, System)
+    public static func containerRoot(for path: String) -> String? {
+        let clean = (path as NSString).standardizingPath
+        let prefixes = [
+            "/var/mobile/Containers/Data/Application/",
+            "/private/var/mobile/Containers/Data/Application/",
+            "/var/mobile/Containers/Shared/AppGroup/",
+            "/private/var/mobile/Containers/Shared/AppGroup/",
+            "/var/containers/Data/System/",
+            "/private/var/containers/Data/System/"
+        ]
+
+        for prefix in prefixes {
+            if clean.hasPrefix(prefix) {
+                let remainder = String(clean.dropFirst(prefix.count))
+                let parts = remainder.split(separator: "/")
+                if let first = parts.first, !first.isEmpty {
+                    return prefix + String(first)
+                }
+            }
+        }
+        return nil
+    }
+
+    /// Ước tính số Inode tối đa hiện tại trên phân vùng /private/var thông qua tệp thăm dò tạm thời
+    public static func currentFilesystemMaxInode() -> UInt64 {
+        let probeURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("probe_inode_\(UUID().uuidString)")
+        try? "probe".data(using: .utf8)?.write(to: probeURL)
+        var st = stat()
+        var current: UInt64 = 20_000_000
+        if stat(probeURL.path, &st) == 0 {
+            current = UInt64(st.st_ino) + 50_000
+        }
+        try? FileManager.default.removeItem(at: probeURL)
+        return max(current, 10_000_000)
+    }
+
     /// Cấp phát quyền Sandbox Extension cho đường dẫn mục tiêu
     public static func acquireAccess(for targetPath: String, createDir: Bool = false) throws -> Int64 {
         guard !targetPath.isEmpty else {
             throw WorseQueryError.invalidPath(targetPath)
         }
+
+        // Tự động chuẩn hóa mục tiêu về thư mục gốc container nếu là đường dẫn con
+        let effectiveTarget = containerRoot(for: targetPath) ?? targetPath
 
         guard isOSSupported else {
             let v = "\(ProcessInfo.processInfo.operatingSystemVersion.majorVersion).\(ProcessInfo.processInfo.operatingSystemVersion.minorVersion)"
@@ -156,9 +197,9 @@ public final class WorseQueryHelper {
         }
 
         let major = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
-        let altFlags = (major == 26 && targetPath.contains("/var/mobile/Containers/Shared/AppGroup"))
+        let altFlags = (major == 26 && effectiveTarget.contains("/var/mobile/Containers/Shared/AppGroup"))
 
-        let handle = worse_query(targetPath, group, altFlags, createDir)
+        let handle = worse_query(effectiveTarget, group, altFlags, createDir)
         if handle >= 0 {
             return handle
         }
@@ -177,7 +218,7 @@ public final class WorseQueryHelper {
         case -6:
             throw WorseQueryError.kernelRefusedExtension
         case -255:
-            throw WorseQueryError.targetNotFound(targetPath)
+            throw WorseQueryError.targetNotFound(effectiveTarget)
         default:
             throw WorseQueryError.unknownError(handle)
         }
