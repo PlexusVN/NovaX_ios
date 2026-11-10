@@ -159,9 +159,11 @@ jobs:
           test -x "$APP_NAME/$EXECUTABLE"
           python3 ReleaseTools/verify_native_compatibility.py --app "$APP_NAME" --max-ios 16.0
           nm -gj "$APP_NAME/$EXECUTABLE" | grep -Fx "_ALGetGrappaToken"
-          nm -gj "$APP_NAME/$EXECUTABLE" | grep -Fx "_worse_query"
-          nm -gj "$APP_NAME/$EXECUTABLE" | grep -Fx "_worse_query_release"
-          nm -gj "$APP_NAME/$EXECUTABLE" | grep -Fx "_AstraSignedApplicationGroups"
+          # Release uses hidden C visibility. These bridges are internal app
+          # symbols, so include local symbols rather than requiring exports.
+          nm -j "$APP_NAME/$EXECUTABLE" | grep -Fx "_worse_query"
+          nm -j "$APP_NAME/$EXECUTABLE" | grep -Fx "_worse_query_release"
+          nm -j "$APP_NAME/$EXECUTABLE" | grep -Fx "_AstraSignedApplicationGroups"
           strings "$APP_NAME/$EXECUTABLE" | grep -F "RemoteXPC timed out after 6s"
           strings "$APP_NAME/$EXECUTABLE" | grep -F "timeout fallback trying raw RPPairing"
           strings "$APP_NAME/$EXECUTABLE" | grep -F "AirTraffic write timed out after 180s; operation cancelled"

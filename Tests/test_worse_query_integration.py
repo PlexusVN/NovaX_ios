@@ -62,7 +62,7 @@ class IntegrationContracts(unittest.TestCase):
         self.assertIn('--entitlements ThreeOneOSFive/ThreeOneOSFive.entitlements', workflow[stage:])
         self.assertIn('codesign -d --entitlements :-', workflow[stage:])
         for symbol in ['_worse_query', '_worse_query_release', '_AstraSignedApplicationGroups']:
-            self.assertIn('grep -Fx "' + symbol + '"', workflow)
+            self.assertIn('nm -j "$APP_NAME/$EXECUTABLE" | grep -Fx "' + symbol + '"', workflow)
 
     @unittest.skipUnless(sys.platform == 'darwin' and shutil.which('swiftc'), 'requires macOS Swift compiler')
     def test_actual_swift_helper_and_routing(self):
