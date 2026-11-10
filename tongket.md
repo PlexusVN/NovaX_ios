@@ -95,7 +95,33 @@ Dự án đã tích hợp thành công cơ chế **Sandbox Escape on-device `wor
 ---
 
 ## 6. KẾT QUẢ KIỂM THỬ
-* **`test_worse_query_wiring.py`:** **9/9 PASS** (Kiểm tra file C/Obj-C, Swift Helper, PBXProj, Entitlements, StorageEngineCoordinator, ContainerStore, FeaturePatchService, ExploitSupportPolicy).
+* **`test_worse_query_wiring.py`:** **10/10 PASS** (Kiểm tra file C/Obj-C, Swift Helper, PBXProj, Entitlements, StorageEngineCoordinator, ContainerStore, FeaturePatchService, ExploitSupportPolicy, LaunchServices container resolution).
 * **`test_ios16_compatibility.py`:** **13/13 PASS** (Không gây hồi quy native compatibility).
 * **`test_license_verification_wiring.py`:** **3/3 PASS** (Bảo toàn nguyên vẹn hệ thống xác thực Auth).
+
+---
+
+## 7. CHẨN ĐOÁN & SỬA LỖI [P06] TRÊN THIẾT BỊ THẬT (ẢNH CHỤP NGƯỜI DÙNG)
+
+### 1. Hiện tượng lỗi:
+Khi người dùng bật switch **"Aimlock FFTH"** trong màn hình Chức năng, ứng dụng báo lỗi:
+> `Không thể bật chức năng`
+> `Ghi file và tạo bản khôi phục [P06]: Chưa truy cập được container ứng dụng đích. Hãy cài/mở ứng dụng đích và chạy lại bước cấp quyền trong Astra.`
+
+### 2. Nguyên nhân kỹ thuật:
+1. **MHA-C2 / MCM bị chặn trên iOS 27:** Hàm `MCMActivateContainerPath(2, bundleID, false, &error)` trả về `nil` do sandbox iOS 27 siết chặt.
+2. **Thiếu cơ chế LaunchServices trong hàm phân giải:** Trong `AppIconHelper.m` đã có `LSApplicationProxy` có thể đọc trực tiếp `dataContainerURL` của game Free Fire trong 0.5ms, nhưng `ContainerStore.resolveAppContainerPath` trước đó lại không gọi LaunchServices mà chỉ dựa vào MCM và quét inode.
+3. **Giới hạn Inode 100.000 cũ:** Khi fallback quét metadata, hàm cũ gọi `bad_query_list` bị hardcode trần 100.000 inode, trong khi inode container trên APFS thực tế thường từ 2.000.000 đến 25.000.000.
+4. **Chưa giữ Handle Sandbox Extension trong suốt Transaction:** Quá trình `PatchTransaction.apply` (tạo backup bản sao lưu và ghi file) cần token sandbox extension luôn duy trì trạng thái active cho thư mục container đích.
+
+### 3. Các xử lý đã triển khai:
+* **`AppIconHelper.h` & `AppIconHelper.m`:** Bổ sung API `containerPathForBundleID(bundleID)` đọc trực tiếp `dataContainerURL` từ `LSApplicationProxy` / `installedAppInfo`.
+* **`ContainerStore.swift`:**
+  * Thêm bộ nhớ đệm `UserDefaults` (`astra.resolved_container.<bundleID>`) để truy xuất ngay lập tức trong 0ms.
+  * Tích hợp `containerPathForBundleID` trước khi fallback sang quét metadata.
+  * Tích hợp `pathleak` đa luồng (`dispatch_apply` + `os_unfair_lock`) với trần `currentFilesystemMaxInode()` tự động dò theo tệp thăm dò tạm thời.
+* **`WorseQueryHelper.swift`:** Bổ sung `containerRoot(for:)` tự động trích xuất thư mục gốc của container, giúp quyền sandbox bao trùm toàn bộ các thư mục con (`Documents`, `Library`).
+* **`PatchTransaction.swift`:** Trong `withResolvedContainers`, gọi `ContainerStore.grantContainerAccess` và duy trì token trong toàn bộ thời gian ghi và sao lưu dữ liệu.
+* **`KernelExploit.swift`:** Trong `currentStorageMode`, nếu chạy trên iOS 26/27 mà chứng chỉ ký thiếu App Group (`WorseQueryHelper.isAvailable == false`), tự động chuyển hướng về `.airLift` dự phòng thay vì bị kẹt lỗi trực tiếp.
+
 
