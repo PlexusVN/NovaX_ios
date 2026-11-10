@@ -17,6 +17,9 @@ public enum WorseQueryError: LocalizedError {
     case symlinkCreationFailed
     case queryRejected
     case kernelRefusedExtension
+    case extensionConsumptionFailed
+    case containerDiscoveryFailed(String)
+    case discoveryInProgress
     case unknownError(Int64)
     case unsupportedOS(String)
     case invalidPath(String)
@@ -37,6 +40,12 @@ public enum WorseQueryError: LocalizedError {
             return "containermanagerd đã từ chối query."
         case .kernelRefusedExtension:
             return "Kernel từ chối cấp phát Sandbox Token Extension."
+        case .extensionConsumptionFailed:
+            return "worse_query nhận được token nhưng hệ thống không cho sử dụng quyền truy cập."
+        case .containerDiscoveryFailed(let bundleID):
+            return "Chưa tìm được thư mục dữ liệu của ứng dụng \(bundleID) bằng worse_query. Hãy mở ứng dụng đích một lần rồi thử lại (WQ02)."
+        case .discoveryInProgress:
+            return "Astra đang dò thư mục dữ liệu cho một thao tác khác. Hãy chờ thao tác đó hoàn tất rồi thử lại."
         case .unknownError(let code):
             return "Lỗi worse_query không xác định (mã lỗi: \(code))."
         case .unsupportedOS(let version):
@@ -136,17 +145,32 @@ public final class WorseQueryHelper {
     }
 
     /// Ước tính số Inode tối đa hiện tại trên phân vùng /private/var thông qua tệp thăm dò tạm thời
-    public static func currentFilesystemMaxInode() -> UInt64 {
+    public static func currentFilesystemMaxInode() throws -> UInt64 {
         let probeURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("probe_inode_\(UUID().uuidString)")
-        try? "probe".data(using: .utf8)?.write(to: probeURL)
+        try Data("probe".utf8).write(to: probeURL)
+        defer { try? FileManager.default.removeItem(at: probeURL) }
         var st = stat()
-        var current: UInt64 = 200_000
-        if stat(probeURL.path, &st) == 0 {
-            current = UInt64(st.st_ino) + 2_000
+        guard stat(probeURL.path, &st) == 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
         }
-        try? FileManager.default.removeItem(at: probeURL)
-        return min(max(current, 100_000), 500_000)
+        return try enumerationUpperBound(probeInode: UInt64(st.st_ino))
+    }
+
+    static func enumerationUpperBound(probeInode: UInt64) throws -> UInt64 {
+        let (maximum, overflow) = probeInode.addingReportingOverflow(2_048)
+        guard probeInode > 0, !overflow else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(EOVERFLOW))
+        }
+        return maximum
+    }
+
+    static func enumeratePaths(in path: String, from first: UInt64, through last: UInt64) throws -> [String] {
+        var errorCode: Int32 = 0
+        guard let paths = pathleak_range(path, first, last, &errorCode) as? [String] else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errorCode == 0 ? EIO : errorCode))
+        }
+        return paths
     }
 
     /// Cấp phát quyền Sandbox Extension cho đường dẫn mục tiêu
@@ -190,6 +214,8 @@ public final class WorseQueryHelper {
             throw WorseQueryError.queryRejected
         case -6:
             throw WorseQueryError.kernelRefusedExtension
+        case -7:
+            throw WorseQueryError.extensionConsumptionFailed
         case -255:
             throw WorseQueryError.targetNotFound(effectiveTarget)
         default:

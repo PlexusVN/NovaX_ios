@@ -131,10 +131,11 @@ final class StorageEngineCoordinator: ObservableObject {
         if WorseQueryHelper.isAvailable {
             // Direct access must use the journalled transaction, just like the
             // catalog path. Never mark these writes as an AirLift application.
+            let roots = try await DevicePatchService.prepareContainers(bundleIDs: project.allBundleIdentifiers)
             let networkGeneration = try await NetworkAccessGate.shared.requireAllowed()
             try Task.checkCancellation()
             try NetworkAccessGate.shared.validateGeneration(networkGeneration)
-            _ = try IntegrityCommitBarrier.withCommit { try DevicePatchService.apply(project: project) }
+            _ = try IntegrityCommitBarrier.withCommit { try DevicePatchService.apply(project: project, preparedContainers: roots) }
             return
         }
 

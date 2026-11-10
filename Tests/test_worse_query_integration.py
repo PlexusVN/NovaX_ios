@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from check_airlift_pairing_finish import extract_function
 
 ROOT = Path(__file__).resolve().parents[1]
 HELPERS = ROOT / 'ThreeOneOSFive/helpers'
@@ -28,13 +29,13 @@ class IntegrationContracts(unittest.TestCase):
     def test_transaction_owns_grants_and_direct_writes_keep_the_journal(self):
         transaction = (HELPERS / 'PatchTransaction.swift').read_text(encoding='utf-8')
         body = transaction.split('private static func withResolvedContainers<T>(')[1]
-        self.assertIn('retainAccess: false', body)
+        self.assertIn('ContainerStore.resolveAppContainerForPatch(bundleID: bundleID)', body)
         self.assertIn('handles.append(try WorseQueryHelper.acquireAccess(for: path))', body)
         self.assertIn('defer { handles.reversed().forEach { sandbox_extension_release_handle($0) } }', body)
         self.assertLess(body.index('acquireAccess(for: path)'), body.index('try operation(roots)'))
         coordinator = (HELPERS / 'StorageEngineCoordinator.swift').read_text(encoding='utf-8')
         direct = coordinator.split('func applyPatchProject(')[1].split('guard isAirLiftActive')[0]
-        self.assertIn('DevicePatchService.apply(project: project)', direct)
+        self.assertIn('DevicePatchService.apply(project: project, preparedContainers: roots)', direct)
         self.assertNotIn('UserDefaults.standard.set(true', direct)
 
     def test_native_query_constants_and_symlink_lifecycle(self):
@@ -54,6 +55,49 @@ class IntegrationContracts(unittest.TestCase):
         self.assertNotIn('hasAnyTunnelInterface()', tunnel)
         self.assertIn('guard Self.hasTunnelRoute(to: host) else { continue }', tunnel)
         self.assertNotIn('else if rsdProbe.reachable', tunnel)
+
+    def test_discovery_has_no_artificial_inode_cutoff_or_parent_application_grant(self):
+        helper = (HELPERS / 'WorseQueryHelper.swift').read_text(encoding='utf-8')
+        self.assertNotIn('500_000', helper)
+        self.assertIn('enumerationUpperBound(probeInode: UInt64(st.st_ino))', helper)
+        store = (HELPERS / 'ContainerStore.swift').read_text(encoding='utf-8')
+        scan = extract_function(store, 'private static func resolveContainerWithWorseQuery(')
+        self.assertIn('while first <= maximum', scan)
+        self.assertIn('first = last + 1', scan)
+        self.assertIn('WorseQueryHelper.acquireAccess(for: clean)', scan)
+        self.assertNotIn('grantContainerAccess(appDataRoot)', scan)
+
+    @unittest.skipUnless(sys.platform == 'darwin' and shutil.which('clang'), 'requires macOS Objective-C compiler')
+    def test_native_production_query_and_inode_enumerator(self):
+        with tempfile.TemporaryDirectory() as folder:
+            for name in ['PathLeakSelfCheck', 'WorseQueryNativeSelfCheck']:
+                binary = Path(folder) / name
+                subprocess.run(['clang', '-fobjc-arc', '-framework', 'Foundation',
+                                str(ROOT / 'Tests' / (name + '.m')), '-o', str(binary)], check=True)
+                subprocess.run([str(binary)], check=True)
+
+    @unittest.skipUnless(sys.platform == 'darwin' and shutil.which('swiftc'), 'requires macOS Swift compiler')
+    def test_actual_container_discovery_and_background_preparation(self):
+        store = (HELPERS / 'ContainerStore.swift').read_text(encoding='utf-8')
+        transaction = (HELPERS / 'PatchTransaction.swift').read_text(encoding='utf-8')
+        helper = (HELPERS / 'WorseQueryHelper.swift').read_text(encoding='utf-8')
+        validator = (HELPERS / 'PatchProjectModels.swift').read_text(encoding='utf-8')
+        merger = (HELPERS / 'ContainerBrowserLogic.swift').read_text(encoding='utf-8')
+        code = helper.split('public final class WorseQueryHelper')[0]
+        code += merger.split('enum ContainerAccessPolicy {')[0].replace('import Foundation', '')
+        code += '\nenum PatchPathValidator {\n' + extract_function(validator, 'static func canonicalBundleIdentifier(') + '\n}\n'
+        code += '\nenum ContainerStore {\nstatic let discoveryLock = NSLock()\nstatic let appDataRoot = "/var/mobile/Containers/Data/Application"\n'
+        for signature in ['private static func resolveContainerWithWorseQuery(',
+                          'static func isApplicationContainerPath(', 'static func metadataPath(']:
+            code += extract_function(store, signature) + '\n'
+        code += 'static func resolveAppContainerForPatch(bundleID: String) throws -> String { try resolveContainerWithWorseQuery(bundleID: bundleID) }\n}\n'
+        code += 'enum DevicePatchService {\n' + extract_function(transaction, 'static func prepareContainers(bundleIDs:') + '\n}\n'
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / 'Discovery.swift'; source.write_text(code, encoding='utf-8')
+            binary = Path(folder) / 'discovery-check'
+            subprocess.run(['swiftc', str(source), str(ROOT / 'Tests/ContainerDiscoverySelfCheck.swift'),
+                            '-o', str(binary)], check=True)
+            subprocess.run([str(binary)], check=True)
 
     def test_ipa_keeps_requested_entitlements_and_rejects_missing_native_code(self):
         workflow = (ROOT / '.github/workflows/build.yml').read_text(encoding='utf-8')

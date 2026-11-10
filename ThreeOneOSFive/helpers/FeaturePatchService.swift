@@ -609,21 +609,40 @@ final class FeaturePatchService: ObservableObject {
             try Task.checkCancellation()
             try NetworkAccessGate.shared.validateGeneration(networkGeneration)
             guard auth.authState == .verified, auth.authenticationRevision == authRevision else { throw FeaturePatchError.notAuthenticated }
-            stage = .write
+            let useAirLift = StorageEngineCoordinator.shared.isAirLiftActive
+            let roots: [String: URL]?
+            if useAirLift {
+                roots = nil
+            } else {
+                stage = .target
+                // MainActor service calls hop back to MainActor even when the
+                // View used Task.detached. Discover before entering the commit.
+                roots = try await DevicePatchService.prepareContainers(bundleIDs: project.allBundleIdentifiers)
+                stage = .access
+                try Task.checkCancellation()
+                try NetworkAccessGate.shared.validateGeneration(networkGeneration)
+                guard auth.authState == .verified, auth.authenticationRevision == authRevision else {
+                    throw FeaturePatchError.notAuthenticated
+                }
+            }
             try await AppIntegrityRuntime.shared.requireAllowed(force:true)
+            try Task.checkCancellation()
+            try NetworkAccessGate.shared.validateGeneration(networkGeneration)
+            guard auth.authState == .verified, auth.authenticationRevision == authRevision else { throw FeaturePatchError.notAuthenticated }
+            stage = .write
             // Store the verified project association before writing so an app
             // interruption cannot leave a journal that the OFF switch ignores.
             catalogApplications.associate(project.id, with: slug)
-            if StorageEngineCoordinator.shared.isAirLiftActive {
+            if useAirLift {
                 try await StorageEngineCoordinator.shared.applyPatchProject(project)
             } else {
                 if let receipt = DevicePatchService.latestReceipt(projectID: project.id) {
                     catalogApplications.markRecoveryRequired(slug)
-                    guard try DevicePatchService.inspectExistingApplication(receipt: receipt, project: project) == .applied else {
+                    guard try DevicePatchService.inspectExistingApplication(receipt: receipt, project: project, preparedContainers: roots) == .applied else {
                         throw PatchRestoreError.recoveryRequired
                     }
                 } else {
-                    _ = try IntegrityCommitBarrier.withCommit { try DevicePatchService.apply(project: project) }
+                    _ = try IntegrityCommitBarrier.withCommit { try DevicePatchService.apply(project: project, preparedContainers: roots) }
                 }
             }
             catalogApplications.markApplied(slug)
@@ -666,7 +685,15 @@ final class FeaturePatchService: ObservableObject {
         guard auth.authState == .verified, auth.authenticationRevision == authRevision else { throw FeaturePatchError.notAuthenticated }
         if let receipt {
             try await AppIntegrityRuntime.shared.requireAllowed(force:true)
-            try IntegrityCommitBarrier.withCommit { try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true) }
+            let roots = try await DevicePatchService.prepareContainers(receipt: receipt)
+            try Task.checkCancellation()
+            try NetworkAccessGate.shared.validateGeneration(networkGeneration)
+            guard auth.authState == .verified, auth.authenticationRevision == authRevision else {
+                throw FeaturePatchError.notAuthenticated
+            }
+            try IntegrityCommitBarrier.withCommit {
+                try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true, preparedContainers: roots)
+            }
         } else if DevicePatchService.recordedApplicationState(projectID: validProjectID) != .off {
             throw PatchRestoreError.missingReceipt
         }
@@ -1152,7 +1179,12 @@ final class FeaturePatchService: ObservableObject {
         if StorageEngineCoordinator.shared.isAirLiftActive {
             try await StorageEngineCoordinator.shared.applyPatchProject(decoded.project)
         } else {
-            _ = try DevicePatchService.apply(project: decoded.project)
+            let revision = auth.authenticationRevision
+            let roots = try await DevicePatchService.prepareContainers(bundleIDs: decoded.project.allBundleIdentifiers)
+            let generation = try await NetworkAccessGate.shared.requireAllowed()
+            try NetworkAccessGate.shared.validateGeneration(generation)
+            guard auth.authState == .verified, auth.authenticationRevision == revision else { throw FeaturePatchError.notAuthenticated }
+            _ = try IntegrityCommitBarrier.withCommit { try DevicePatchService.apply(project: decoded.project, preparedContainers: roots) }
         }
         defaults.set(release.id, forKey: "native_patch_release_\(variant.rawValue)")
         defaults.set(decoded.project.id.uuidString, forKey: "native_patch_project_\(variant.rawValue)")
@@ -1226,7 +1258,7 @@ final class FeaturePatchService: ObservableObject {
         let baseDir: String
         let bundleID = codePatchBundleID(for: variant)
         // Ưu tiên container path từ ContainerStore (hỗ trợ cả AirLift và direct)
-        if let container = ContainerStore.resolveAppContainerPath(bundleID: bundleID) {
+        if let container = ContainerStore.resolveAppContainerPath(bundleID: bundleID, allowMetadataScan: false) {
             baseDir = container
         } else {
             #if targetEnvironment(simulator)
@@ -1335,6 +1367,12 @@ final class FeaturePatchService: ObservableObject {
             } else {
                 destinationDirectory = try await Self.airLiftCodePatchDirectory(variant: variant)
             }
+        } else if WorseQueryHelper.isAvailable {
+            patchStepMessage = "Đang xác định thư mục \(variant.shortTitle)..."
+            let bundleID = Self.codePatchBundleID(for: variant)
+            let roots = try await DevicePatchService.prepareContainers(bundleIDs: [bundleID])
+            guard let root = roots[bundleID] else { throw WorseQueryError.containerDiscoveryFailed(bundleID) }
+            destinationDirectory = root.appendingPathComponent(Self.codePatchDirectoryPath, isDirectory: true)
         } else if let directDirectory = Self.codePatchDirectory(variant: variant) {
             destinationDirectory = directDirectory
         } else {

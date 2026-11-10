@@ -39,6 +39,7 @@ func worse_query(_ path: String, _ group: String, _ alt: Bool, _ create: Bool) -
 }
 func worse_query_release(_ handle: Int64) { NativeFixture.released.append(handle) }
 func pathleak(_ path: String, _ maximum: UInt64) -> NSArray? { nil }
+func pathleak_range(_ path: String, _ first: UInt64, _ last: UInt64, _ code: UnsafeMutablePointer<Int32>?) -> NSArray? { [] }
 enum FixtureFailure: Error { case operation }
 
 @main struct WorseQueryHelperSelfCheck {
@@ -47,6 +48,10 @@ enum FixtureFailure: Error { case operation }
         let canonicalRoot = "/private" + root
         precondition(WorseQueryHelper.resolveActiveAppGroup() == "group.esign.rewritten")
         precondition(WorseQueryHelper.isAvailable)
+        ProcessInfo.processInfo.operatingSystemVersion = OperatingSystemVersion(majorVersion: 27, minorVersion: 0, patchVersion: 1)
+        precondition(WorseQueryHelper.isOSSupported)
+        let maximum = try WorseQueryHelper.enumerationUpperBound(probeInode: 5_000_000)
+        precondition(maximum == 5_002_048)
         precondition(WorseQueryHelper.containerRoot(for: root + "/Documents/a") == canonicalRoot)
         precondition(WorseQueryHelper.isScopeSupported(for: root))
         precondition(WorseQueryHelper.isScopeSupported(for: canonicalRoot))
@@ -72,6 +77,11 @@ enum FixtureFailure: Error { case operation }
             _ = try WorseQueryHelper.acquireAccess(for: root)
             preconditionFailure("query rejection was swallowed")
         } catch WorseQueryError.queryRejected {}
+        NativeFixture.result = -7
+        do {
+            _ = try WorseQueryHelper.acquireAccess(for: root)
+            preconditionFailure("token consumption failure was ignored")
+        } catch WorseQueryError.extensionConsumptionFailed {}
         precondition(NativeFixture.released == [42, 42])
         FileManager.default.groupAvailable = false
         precondition(!WorseQueryHelper.isAvailable)

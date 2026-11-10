@@ -5,6 +5,7 @@ import CryptoKit
 enum ContainerStore {
     static func isApplicationContainerPath(_ path: String) -> Bool { false }
     static func resolveAppContainerPath(bundleID: String, allowMetadataScan: Bool = true, retainAccess: Bool = true) -> String? { nil }
+    static func resolveAppContainerForPatch(bundleID: String) throws -> String { throw CatalogCheckError.failed("device resolution must not be used") }
     static func grantContainerAccess(_ path: String) -> Int64 { 0 }
 }
 enum WorseQueryHelper {

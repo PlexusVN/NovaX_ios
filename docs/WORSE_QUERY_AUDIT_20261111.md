@@ -1,89 +1,46 @@
-# Rà soát worse_query và lỗi P06 — 11/11/2026
+# Rà soát worse_query và lỗi tìm container — 11/11/2026
 
-## Kết luận và mức xác nhận
+## Kết luận
 
-Source Astra đã liên kết lõi `worse_query`, nhưng phần tích hợp trước lượt sửa này
-chưa hoàn chỉnh. Có mã nguồn không đồng nghĩa IPA sau build/ký đã dùng được nó.
-Chưa kiểm chứng chạy exploit, build Xcode hay ký ESign trên iPhone trong lượt này.
+Astra đã tích hợp lõi native worse_query, nhưng phần tìm container trước build 24 chưa theo đủ logic của bản gốc. Đã tìm thấy và sửa lỗi giới hạn 500.000 inode; lỗi này có thể bỏ sót ứng dụng khi cache/LaunchServices/MCM không trả được đường dẫn. Ảnh P06 trên iOS 27.0.1 không có log inode/token, nên chưa đủ để khẳng định đây là nguyên nhân duy nhất trên điện thoại đó.
 
-Ảnh `P06: AirLift ... raw RPPairing timed out after 6s` xác nhận thao tác đã vào
-nhánh AirLift. Người dùng xác nhận không bật LocalDevVPN. Đây là nguyên nhân
-trực tiếp khiến kết nối nhánh đó thất bại; ảnh không chứa kết quả gọi worse_query.
+Đối chiếu bản upstream có sẵn trong workspace: `worse_query-main/worse_query/{worse_query.m,pathleak.m,ContentView.swift}`.
 
-Với source hiện tại trên iOS 27.0–27.1 và hai build 27.2 beta được liệt kê:
+## Chuỗi upstream và tích hợp
 
-1. `WorseQueryHelper.isAvailable` yêu cầu OS được hỗ trợ và App Group truy cập được.
-2. Khi thiếu điều kiện đó và không có sandbox access, `currentStorageMode` chọn AirLift.
-3. Trước đây lý do chuyển engine không được giải thích trong lỗi P06.
+1. Cần App Group thực sự truy cập được trong bản đã ký. Astra đọc entitlement runtime trước rồi thử tên dự phòng. Khai báo nhóm trong source không tự cấp quyền; ESign/profile vẫn phải giữ quyền hợp lệ.
+2. Query dùng class 7, part 3; symlink `AppGroup/Library/Caches` trỏ đến container đích. Flag `0x0000000800000000` chỉ cho AppGroup trên iOS 26; các đích khác, gồm Data/Application trên iOS 27.0.1, dùng `0x0000008000000000`.
+3. Nhận token, consume, dọn query/library/symlink; giữ handle khi đọc/ghi rồi release. Astra tuần tự hóa thay symlink để các tác vụ không đè lên nhau.
+4. Trên iOS 27, grant cho thư mục cha Application không thay thế việc dò UUID. Upstream tạo tệp baseline mới, lấy inode, quét từ 1 đến baseline bằng fsgetpath, cấp token cho TỪNG UUID rồi đọc xattr định danh.
+5. Astra ưu tiên cache/LaunchServices/MCM. Fallback build 24 làm theo bước 4, dùng baseline + 2.048 và các đoạn liên tiếp 250.000 inode, dừng khi tìm đúng bundle ID. Kích thước đoạn chỉ để hủy/ghi log; không giới hạn tổng phạm vi.
 
-Chưa có entitlements/log của bản **đã ký và đang cài** để kết luận chắc chắn
-ESign đã bỏ quyền, đã đổi tên nhóm, hay thiết bị dùng build OS ngoài phạm vi.
-Không coi việc người dùng nói đang dùng bản mới nhất là bằng chứng họ dùng IPA cũ.
+## Sửa chữa ở build 24
 
-## Đối chiếu mã gốc trong workspace
+- Bỏ trần 500.000 và sàn giả 100.000 của baseline nhánh worse_query. Lỗi tạo/stat baseline được trả về thay vì chuyển thành danh sách rỗng.
+- pathleak_range giữ biên đầu/cuối, chuẩn hóa /var và /private/var, lọc con trực tiếp, chống lặp và tràn vòng lặp.
+- Nếu statfs thư mục bảo vệ bị từ chối, lấy fsid từ home Astra trên cùng Data volume. Phân biệt lỗi thiết lập với đoạn quét chưa có kết quả.
+- Cấp token từng UUID trước khi đọc xattr; đọc metadata plist trong cùng phạm vi token làm dự phòng; cache định danh hợp lệ và release cả khi return sớm.
+- Loại bundleContainerURL/.app khỏi kết quả data container. Các đường dẫn phải là con UUID trực tiếp của Data/Application.
+- Giữ lỗi query/token/consume; consume thất bại có mã riêng -7 để tránh báo nhầm thiếu group. Quét hết không tìm thấy có mã WQ02.
+- Chạy discovery trong Task.detached. Task.detached ở View trước đây chưa đủ vì FeaturePatchService có MainActor. Apply/restore chuẩn bị roots trước commit, kiểm tra lại auth/network/cancellation rồi lấy lại token và giữ suốt transaction.
+- Giữ xác thực, integrity, journal, backup/rollback và khôi phục. Tăng build 23 lên 24 trong Info.plist, Xcode và CI.
 
-`worse_query-main/worse_query/worse_query.m` và `ContentView.swift`:
+## Những sửa chữa đã có
 
-- Class 7, part 3, symlink `AppGroup/Library/Caches`, lấy token rồi consume/release:
-  phần lõi Astra dùng đúng chuỗi thao tác này.
-- Flag `0x0000000800000000` chỉ dùng với đích AppGroup trên iOS 26; các đích khác
-  dùng `0x0000008000000000`: wrapper Astra khớp bản gốc.
-- App Group được OS cho truy cập là điều kiện bắt buộc của bản gốc. Tự ký hoặc
-  khai báo trong source không tự cấp quyền này. Xem [upstream](https://github.com/forcequitOS/worse_query).
+Runtime pairing đi theo storage mode thực tế. Thiếu group và dùng AirLift thì cần VPN/pairing thật. VPN bất kỳ hoặc TCP refused không chứng minh đường AirLift hợp lệ. CI giữ entitlement trong chữ ký ad-hoc, kiểm tra native bridge/group trước khi đóng IPA. Chữ ký ad-hoc không thay thế profile cài đặt và không bảo đảm quyền còn tồn tại sau ESign.
 
-## Các lỗi tích hợp đã sửa trong source
+Ảnh cũ `AirLift ... RPPairing timed out after 6s` xác nhận nhánh AirLift. Ảnh mới `Chưa truy cập được container ứng dụng đích` phản ánh lỗi tìm container cũ; chưa chứng minh daemon worse_query đã cấp token.
 
-- Đọc App Group từ signed entitlements của tiến trình bằng binding Security tùy chọn,
-  rồi mới thử các tên dự phòng. Nhận diện được tên nhóm mà công cụ ký lại đã đổi.
-- Đồng bộ `currentPairingMode` với `currentStorageMode` thực tế: thiếu group dẫn
-  tới AirLift thì giao diện phải cho cấu hình pairing tương ứng.
-- Bỏ so sánh build bằng chuỗi; dùng chung chính sách OS cho helper và router.
-  iOS 27.2 beta 3+ / build 27.2 không được liệt kê không tự chuyển sang AirLift
-  vì đường AirTraffic đó cũng đã vá theo chính sách tương thích của dự án.
-- `DevicePatchService` lấy token bằng lời gọi có thể throw, giữ token trong suốt
-  transaction và giải phóng khi thành công hoặc thất bại. Không còn dựa vào các
-  lời gọi grant bị bỏ kết quả trong resolver của luồng transaction.
-- Nhánh WorseQuery trong `applyPatchProject` dùng transaction có journal/backup;
-  không đánh dấu các lần ghi trực tiếp là một lần áp dụng qua AirLift.
-- Ghi CodePatch qua helper khi WorseQuery khả dụng; sửa ranh giới đường dẫn và
-  chuẩn hóa `/var` ↔ `/private/var` cho scope/container root.
-- Tuần tự hóa thao tác thay symlink dùng chung giữa background scan và patch.
-  Giữ ngoại lệ cho `lstat` bị sandbox từ chối; các lỗi khác không bị coi là thành công.
-- Giải phóng token của metadata scan cả khi trả về sớm; kiểm tra cache container
-  sau khi lấy quyền thay vì loại cache vì `fileExists` bị sandbox chặn.
-- VPN bất kỳ hoặc TCP connection refused không còn đủ để báo route AirLift hợp lệ.
-  Nếu OS hỗ trợ WorseQuery nhưng thiếu group và không có VPN, lỗi giải thích đúng
-  điều kiện bản ký thay vì đi vào native RPPairing rồi timeout.
+## Kiểm chứng
 
-## Build và bản phát hành
+Windows: phát hiện 56 test, 53 thành công và 3 cần macOS được bỏ qua rõ ràng. Cấu hình production offline hợp lệ.
 
-CI trước đây build với `CODE_SIGNING_ALLOWED=NO` rồi zip trực tiếp. File source
-`.entitlements` chưa được đưa vào một chữ ký ad-hoc để công cụ ký lại đọc.
-Đã thêm bước ad-hoc sign bằng entitlements dự kiến, đọc lại group để kiểm tra,
-và kiểm tra executable có ba symbol native mới trước khi đóng gói.
-IPA vẫn cần ký bằng chứng chỉ/profile Apple hợp lệ để cài; ad-hoc signature không
-cấp App Group được profile cho phép và công cụ ký lại vẫn có thể bỏ quyền.
+CI macOS biên dịch/chạy PathLeakSelfCheck.m và WorseQueryNativeSelfCheck.m với mã native production, thay riêng OS boundary bằng fixture. Bao gồm inode 500.001/2.000.000, denied statfs, path aliases/boundaries, class/part/flags, symlink lifecycle, lỗi -1 đến -7/-255, zero handle, release và tuần tự hóa truy vấn đồng thời.
 
-IPA duy nhất trong `release/` là `1.2.10 (16)`; kiểm tra binary không thấy
-`worse_query`/`WorseQueryHelper`. Đây là baseline đã lưu, không phải bằng chứng
-về bản app người dùng đang cài. Không thay thế hoặc tuyên bố đã build IPA mới.
+ContainerDiscoverySelfCheck dùng resolver và async preparation trích trực tiếp từ production: toàn bộ đoạn inode, token còn sống khi đọc xattr, release khi return, giữ lỗi và scan ngoài main thread. Helper/routing có iOS 27.0.1. Xcode build và kiểm tra IPA trên CI là điều kiện phát hành; kết quả run cụ thể được báo khi hoàn tất.
 
-## Kiểm tra và giới hạn
+## Giới hạn và thử trên điện thoại
 
-- Kết quả tại Windows: 31 test Python PASS, 1 test chạy Swift được bỏ qua do
-  thiếu macOS/compiler. 10 điều kiện kiểm tra completion pairing cũ cũng PASS.
-- Các test Python liên quan kiểm tra wiring, cấu trúc nguồn, tương thích archive,
-  chính sách deadline cũ và license. Chúng không chứng minh exploit chạy trên máy.
-- Thêm `WorseQueryHelperSelfCheck.swift`: biên dịch helper production với cầu nối
-  native và OS/group giả lập, kiểm tra tên group đổi, scope, flags, lifetime token
-  và lỗi daemon. CI macOS chạy cùng test routing production; Windows bỏ qua rõ ràng.
-- Chưa chạy Xcode, CI macOS, ESign hoặc iPhone trong lượt sửa này.
-- `pathleak` fallback vẫn giới hạn 500.000 inode trong helper hiện tại. Nếu cache,
-  LaunchServices và MCM đều không tìm được container, trần này có thể bỏ sót game;
-  cần log máy thật để xác nhận nhánh này. Không gọi đây là dò container đầy đủ.
-- Các caller duyệt file cũ ngoài transaction vẫn có thể giữ grant trong tiến trình;
-  lượt sửa này quản lý token theo phạm vi cho transaction patch và metadata scan.
+Fixture không gọi daemon iPhone. Chưa có kết quả chạy build 24 trên iOS 27.0.1 ký ESign nên chưa thể tuyên bố lỗi đã hết trên máy đó. isAvailable chỉ xác nhận OS + group, không bảo đảm exploit thành công. Quét inode lần đầu có thể lâu theo thiết kế upstream; chạy nền/cache giảm ảnh hưởng, không bảo đảm bật tức thì. Baseline là ước lượng upstream, không phải API liệt kê mọi inode có thể tồn tại hoặc tạo đồng thời.
 
-Khi kiểm tra máy thật, cần xác nhận log `patch engine` ghi `appGroup=true`,
-`storage=direct`, sau đó apply/restore thực sự thành công khi VPN tắt.
-`isAvailable=true` chỉ xác nhận điều kiện đầu vào, không bảo đảm daemon cấp token.
+Thử build 24: giữ App Group khi ký, mở app đích một lần, bật chức năng trong Astra và chờ hoàn tất. Không cần VPN/pairing nếu worse_query hoạt động. Kiểm tra bật, tắt/khôi phục, đóng/mở lại Astra và thử lại khi VPN tắt. Log cần có `patch engine ... appGroup=true storage=direct`, `worse_query discovery: start ... baseline upper bound=...`, `matched ...` hoặc lỗi query cụ thể.

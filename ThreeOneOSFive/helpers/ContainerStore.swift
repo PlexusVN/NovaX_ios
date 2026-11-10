@@ -36,6 +36,7 @@ struct FileEntry: Identifiable, Hashable {
 // MARK: - Store
 
 enum ContainerStore {
+    private static let discoveryLock = NSLock()
     static let appDataRoot = "/var/mobile/Containers/Data/Application"
     static let systemDataRoot = "/var/mobile/Containers/Data/System"
     private static var shouldUseBadQuery: Bool {
@@ -129,13 +130,93 @@ enum ContainerStore {
         return nil
     }
 
+    /// Patch callers must retain discovery errors rather than turn every failed
+    /// query or filesystem setup into the same "app unavailable" message.
+    static func resolveAppContainerForPatch(bundleID: String) throws -> String {
+        _ = try PatchPathValidator.canonicalBundleIdentifier(bundleID)
+        if let path = resolveAppContainerPath(bundleID: bundleID, allowMetadataScan: false, retainAccess: false) {
+            return path
+        }
+        if WorseQueryHelper.isAvailable {
+            return try resolveContainerWithWorseQuery(bundleID: bundleID)
+        }
+        if let path = resolveAppContainerPath(bundleID: bundleID, retainAccess: false) { return path }
+        throw PatchPackageError.targetAppUnavailable(bundleID)
+    }
+
+    private static func resolveContainerWithWorseQuery(bundleID: String) throws -> String {
+        guard discoveryLock.try() else { throw WorseQueryError.discoveryInProgress }
+        defer { discoveryLock.unlock() }
+        let maximum = try WorseQueryHelper.currentFilesystemMaxInode()
+        let chunkSize: UInt64 = 250_000
+        var first: UInt64 = 1
+        var seen = Set<String>()
+        var candidates = 0, grants = 0
+        var lastGrantError: Error?
+        log("worse_query discovery: start bundle=\(bundleID), baseline upper bound=\(maximum)")
+
+        while first <= maximum {
+            try Task.checkCancellation()
+            let last = first + min(chunkSize - 1, maximum - first)
+            let paths = try WorseQueryHelper.enumeratePaths(in: appDataRoot, from: first, through: last)
+            for path in paths {
+                try Task.checkCancellation()
+                let clean = ContainerDiscoveryMerger.canonicalPath(path)
+                guard isApplicationContainerPath(clean), seen.insert(clean).inserted else { continue }
+                candidates += 1
+                let handle: Int64
+                do {
+                    handle = try WorseQueryHelper.acquireAccess(for: clean)
+                } catch {
+                    lastGrantError = error
+                    continue
+                }
+                defer { WorseQueryHelper.releaseAccess(handle: handle) }
+                grants += 1
+
+                // Match upstream: obtain a token for EACH UUID child, then read
+                // its identifier while that token is active. The Application
+                // parent itself cannot provide the required directory grant.
+                var buffer = [CChar](repeating: 0, count: 512)
+                let length = getxattr(clean, "com.apple.containermanager.identifier", &buffer, 511, 0, 0)
+                var identifier: String?
+                if length > 0 { identifier = String(cString: buffer) }
+                if identifier == nil,
+                   let data = try? Data(contentsOf: URL(fileURLWithPath: metadataPath(for: clean))),
+                   let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any] {
+                    identifier = plist["MCMMetadataIdentifier"] as? String
+                }
+                if let identifier,
+                   (try? PatchPathValidator.canonicalBundleIdentifier(identifier)) == identifier {
+                    UserDefaults.standard.set(clean, forKey: "astra.resolved_container.\(identifier)")
+                    if identifier == bundleID {
+                        log("worse_query discovery: matched bundle=\(bundleID), scanned through=\(last), candidates=\(candidates), grants=\(grants)")
+                        return clean
+                    }
+                }
+            }
+            if first == 1 || last == maximum || last % 1_000_000 == 0 {
+                log("worse_query discovery: scanned=\(last)/\(maximum), candidates=\(candidates), grants=\(grants)")
+            }
+            if last == maximum { break }
+            first = last + 1
+        }
+        log("worse_query discovery: unresolved bundle=\(bundleID), scanned=\(maximum), candidates=\(candidates), grants=\(grants)")
+        if grants == 0, let lastGrantError { throw lastGrantError }
+        throw WorseQueryError.containerDiscoveryFailed(bundleID)
+    }
+
     static func resolveAppContainerPathByMetadataScan(bundleID: String) -> String? {
+        if WorseQueryHelper.isAvailable {
+            do { return try resolveContainerWithWorseQuery(bundleID: bundleID) }
+            catch { log("worse_query discovery failed: \(error.localizedDescription)"); return nil }
+        }
         guard KernelExploit.hasSandboxAccess() || WorseQueryHelper.isAvailable || shouldUseBadQuery else {
             return nil
         }
 
         // 1. Quét nhanh các container thông qua pathleak (fsgetpath)
-        let maxInode = WorseQueryHelper.currentFilesystemMaxInode()
+        let maxInode = (try? WorseQueryHelper.currentFilesystemMaxInode()) ?? 100_000
         let leakDirs = (pathleak(appDataRoot, maxInode) as? [String]) ?? []
 
         let candidateDirs: [String]
@@ -489,8 +570,8 @@ enum ContainerStore {
         }
         let canonicalRoot = ContainerDiscoveryMerger.canonicalPath(appDataRoot)
         guard clean.hasPrefix(canonicalRoot + "/") else { return false }
-        let lastComponent = (clean as NSString).lastPathComponent
-        return UUID(uuidString: lastComponent) != nil
+        let uuid = String(clean.dropFirst(canonicalRoot.count + 1))
+        return !uuid.contains("/") && UUID(uuidString: uuid) != nil
     }
 
     // MARK: Filesystem discovery

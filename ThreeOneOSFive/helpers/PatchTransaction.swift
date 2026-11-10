@@ -1105,13 +1105,35 @@ enum PatchTransaction {
 // MARK: - Device Patch Service
 
 enum DevicePatchService {
+    static func prepareContainers(bundleIDs: [String]) async throws -> [String: URL] {
+        let work = Task.detached(priority: .userInitiated) {
+            var roots: [String: URL] = [:]
+            for bundleID in bundleIDs {
+                try Task.checkCancellation()
+                let path = try ContainerStore.resolveAppContainerForPatch(bundleID: bundleID)
+                guard ContainerStore.isApplicationContainerPath(path) else {
+                    throw PatchPackageError.targetAppUnavailable(bundleID)
+                }
+                roots[bundleID] = URL(fileURLWithPath: path, isDirectory: true)
+            }
+            return roots
+        }
+        return try await withTaskCancellationHandler(operation: { try await work.value },
+                                                      onCancel: { work.cancel() })
+    }
+
+    static func prepareContainers(receipt: PatchTransactionReceipt) async throws -> [String: URL] {
+        try await prepareContainers(bundleIDs: PatchTransaction.requiredBundleIdentifiers(for: receipt))
+    }
+
     static func recordedApplicationState(projectID: UUID) -> PatchApplicationState? {
         guard let root = try? PatchProjectLibrary.backupRootURL() else { return nil }
         return PatchTransaction.latestRecordedApplicationState(projectID: projectID, backupRoot: root)
     }
 
-    static func inspectExistingApplication(receipt: PatchTransactionReceipt, project: PatchProject) throws -> PatchApplicationState {
-        try withResolvedContainers(bundleIDs: project.allBundleIdentifiers) { roots in
+    static func inspectExistingApplication(receipt: PatchTransactionReceipt, project: PatchProject,
+                                            preparedContainers: [String: URL]? = nil) throws -> PatchApplicationState {
+        try withResolvedContainers(bundleIDs: project.allBundleIdentifiers, prepared: preparedContainers) { roots in
             try PatchTransaction.inspectExistingApplication(receipt: receipt, project: project, containerResolver: { bundleID in
                 guard let root = roots[bundleID] else { throw PatchPackageError.targetAppUnavailable(bundleID) }
                 return root
@@ -1119,9 +1141,9 @@ enum DevicePatchService {
         }
     }
 
-    static func apply(project: PatchProject) throws -> PatchTransactionReceipt {
+    static func apply(project: PatchProject, preparedContainers: [String: URL]? = nil) throws -> PatchTransactionReceipt {
         let bundleIDs = orderedBundleIdentifiers(in: project)
-        return try withResolvedContainers(bundleIDs: bundleIDs) { roots in
+        return try withResolvedContainers(bundleIDs: bundleIDs, prepared: preparedContainers) { roots in
             try PatchTransaction.apply(
                 project: project,
                 backupRoot: try PatchProjectLibrary.backupRootURL(),
@@ -1152,10 +1174,11 @@ enum DevicePatchService {
 
     static func restore(
         receipt: PatchTransactionReceipt,
-        allowChangedTargets: Bool = false
+        allowChangedTargets: Bool = false,
+        preparedContainers: [String: URL]? = nil
     ) throws {
         let bundleIDs = try PatchTransaction.requiredBundleIdentifiers(for: receipt)
-        try withResolvedContainers(bundleIDs: bundleIDs) { roots in
+        try withResolvedContainers(bundleIDs: bundleIDs, prepared: preparedContainers) { roots in
             try PatchTransaction.restore(
                 receipt: receipt,
                 allowChangedTargets: allowChangedTargets,
@@ -1199,6 +1222,7 @@ enum DevicePatchService {
 
     private static func withResolvedContainers<T>(
         bundleIDs: [String],
+        prepared: [String: URL]? = nil,
         operation: ([String: URL]) throws -> T
     ) throws -> T {
         var roots: [String: URL] = [:]
@@ -1206,8 +1230,14 @@ enum DevicePatchService {
         defer { handles.reversed().forEach { sandbox_extension_release_handle($0) } }
 
         for bundleID in bundleIDs {
-            guard let path = ContainerStore.resolveAppContainerPath(bundleID: bundleID, retainAccess: false),
-                  ContainerStore.isApplicationContainerPath(path) else {
+            let path: String
+            if let prepared {
+                guard let root = prepared[bundleID] else { throw PatchPackageError.targetAppUnavailable(bundleID) }
+                path = root.path
+            } else {
+                path = try ContainerStore.resolveAppContainerForPatch(bundleID: bundleID)
+            }
+            guard ContainerStore.isApplicationContainerPath(path) else {
                 throw PatchPackageError.targetAppUnavailable(bundleID)
             }
             if WorseQueryHelper.isAvailable {

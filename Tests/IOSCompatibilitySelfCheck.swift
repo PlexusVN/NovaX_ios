@@ -16,6 +16,8 @@ enum AppInfo {
             precondition(Policy.storageMode(major:27, minor:minor, patch:0, build:"") == .direct)
             precondition(Policy.pairingMode(major:27, minor:minor, patch:0, build:"") == .none)
         }
+        precondition(Policy.supportsWorseQuery(major:27, minor:0, patch:1, build:"fixture-27.0.1"))
+        precondition(Policy.storageMode(major:27, minor:0, patch:1, build:"fixture-27.0.1") == .direct)
         for build in ["24B5084k", "24B5089g"] {
             precondition(Policy.storageMode(major:27, minor:2, patch:0, build:build) == .direct)
             precondition(Policy.pairingMode(major:27, minor:2, patch:0, build:build) == .none)

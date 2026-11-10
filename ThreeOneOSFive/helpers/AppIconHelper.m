@@ -606,6 +606,18 @@ NSDictionary *appInfoForBundleID(NSString *bundleID) {
     return result;
 }
 
+static NSString *applicationDataContainerPath(id value) {
+    NSString *path = [value isKindOfClass:[NSURL class]] ? [value path] : value;
+    if (![path isKindOfClass:[NSString class]]) return nil;
+    path = path.stringByStandardizingPath;
+    if ([path hasPrefix:@"/var/"]) path = [@"/private" stringByAppendingString:path];
+    NSString *root = @"/private/var/mobile/Containers/Data/Application/";
+    if (![path hasPrefix:root]) return nil;
+    NSString *uuid = [path substringFromIndex:root.length];
+    if ([uuid containsString:@"/"] || ![[NSUUID alloc] initWithUUIDString:uuid]) return nil;
+    return path;
+}
+
 NSString * _Nullable containerPathForBundleID(NSString *bundleID) {
     if (!bundleID || bundleID.length == 0) return nil;
     ensureLaunchServicesLoaded();
@@ -618,11 +630,11 @@ NSString * _Nullable containerPathForBundleID(NSString *bundleID) {
             if ([proxyClass respondsToSelector:appProxySel]) {
                 id proxy = ((id (*)(id, SEL, id))objc_msgSend)(proxyClass, appProxySel, bundleID);
                 if (proxy) {
-                    for (NSString *selectorName in @[@"dataContainerURL", @"containerURL", @"bundleContainerURL"]) {
+                    for (NSString *selectorName in @[@"dataContainerURL", @"containerURL"]) {
                         SEL containerSel = NSSelectorFromString(selectorName);
                         if (![proxy respondsToSelector:containerSel]) continue;
                         id value = ((id (*)(id, SEL))objc_msgSend)(proxy, containerSel);
-                        NSString *path = [value isKindOfClass:[NSURL class]] ? [value path] : ([value isKindOfClass:[NSString class]] ? value : nil);
+                        NSString *path = applicationDataContainerPath(value);
                         if (path.length > 0) {
                             while (path.length > 1 && [path hasSuffix:@"/"]) {
                                 path = [path substringToIndex:path.length - 1];
@@ -650,7 +662,7 @@ NSString * _Nullable containerPathForBundleID(NSString *bundleID) {
                         SEL dataContainerSel = NSSelectorFromString(selName);
                         if ([record respondsToSelector:dataContainerSel]) {
                             id url = ((id (*)(id, SEL))objc_msgSend)(record, dataContainerSel);
-                            NSString *path = [url isKindOfClass:[NSURL class]] ? [url path] : ([url isKindOfClass:[NSString class]] ? url : nil);
+                            NSString *path = applicationDataContainerPath(url);
                             if (path.length > 0) {
                                 while (path.length > 1 && [path hasSuffix:@"/"]) {
                                     path = [path substringToIndex:path.length - 1];
@@ -671,7 +683,7 @@ NSString * _Nullable containerPathForBundleID(NSString *bundleID) {
         NSDictionary<NSString *, NSDictionary *> *all = installedAppInfo();
         for (NSString *key in all) {
             if ([key isEqualToString:bundleID] || [key hasSuffix:[@"." stringByAppendingString:bundleID]]) {
-                NSString *c = all[key][@"container"];
+                NSString *c = applicationDataContainerPath(all[key][@"container"]);
                 if ([c isKindOfClass:[NSString class]] && c.length > 0) {
                     while (c.length > 1 && [c hasSuffix:@"/"]) {
                         c = [c substringToIndex:c.length - 1];

@@ -84,3 +84,6 @@ release-registry.json
 !/Tests/test_worse_query_wiring.py
 !/Tests/test_worse_query_integration.py
 !/Tests/WorseQueryHelperSelfCheck.swift
+!/Tests/PathLeakSelfCheck.m
+!/Tests/WorseQueryNativeSelfCheck.m
+!/Tests/ContainerDiscoverySelfCheck.swift
