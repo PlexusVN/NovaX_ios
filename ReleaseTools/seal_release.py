@@ -5,10 +5,27 @@ from pathlib import Path
 import argparse,zipfile,plistlib,hashlib,json,uuid,subprocess,os
 from macho_release import inspect_macho
 
+def merge_registry(previous, document, retired=()):
+    """Keep distributed releases, including rebuilds sharing a build number."""
+    known = {item['body']['release_id'] for item in previous}
+    if set(retired) - known:
+        raise ValueError('retired_release_unknown')
+    identity = document['body']['release_id']
+    retained = [item for item in previous if item['body']['release_id'] not in retired]
+    for item in retained:
+        if item['body']['release_id'] == identity:
+            if item != document:
+                raise ValueError('release_identity_conflict')
+            return retained
+    if len(retained) >= 20:
+        raise ValueError('registry_full_requires_explicit_retirement')
+    return retained + [document]
+
 def main():
     p=argparse.ArgumentParser()
     p.add_argument('--ipa',type=Path,required=True);p.add_argument('--private-key',type=Path,required=True)
     p.add_argument('--registry',type=Path,required=True)
+    p.add_argument('--retire-release', action='append', default=[])
     p.add_argument('--key-id',default='astra-rsa-2026-01')
     p.add_argument('--expected-fingerprint',default='b7ea531c327235ad0463df5d9e5bc8bcc13f34230d9cee9beba452c296294cb8')
     a=p.parse_args();ipa=a.ipa.resolve();registry=a.registry.resolve()
@@ -31,14 +48,15 @@ def main():
           input=json.dumps(body).encode(),capture_output=True)
         if signed.returncode:raise ValueError('release_signing_failed_check_key_fingerprint')
         doc=json.loads(signed.stdout);seal=json.dumps(doc,separators=(',',':'),sort_keys=True).encode()
+        # Validate retention before modifying the IPA or registry.
+        releases=merge_registry(previous, doc, a.retire_release)
         staged=ipa.with_suffix('.seal.tmp')
         with zipfile.ZipFile(staged,'w',compression=zipfile.ZIP_DEFLATED)as out:
             for item in z.infolist():
                 if item.filename!=base+'/Astra.release':out.writestr(item,z.read(item))
             out.writestr(base+'/Astra.release',seal)
     os.replace(staged,ipa)
-    retained=[r for r in previous if r['body']['build']!=body['build']]
-    registry.parent.mkdir(parents=True,exist_ok=True);registry.write_text(json.dumps({'releases':(retained+[doc])[-20:]},indent=2),encoding='utf-8')
+    registry.parent.mkdir(parents=True,exist_ok=True);registry.write_text(json.dumps({'releases':releases},indent=2),encoding='utf-8')
     report={'releaseID':body['release_id'],'build':body['build'],'sealDigest':hashlib.sha256(seal).hexdigest(),
             'ipaSHA256':hashlib.sha256(ipa.read_bytes()).hexdigest(),'registry':str(registry)}
     ipa.with_suffix('.release.json').write_text(json.dumps(report,indent=2),encoding='utf-8');print(json.dumps(report))

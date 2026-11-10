@@ -200,7 +200,3 @@ Người dùng mở ứng dụng NovaX (Astra) trên iOS 27, app vừa chớp m�
    - Khi người dùng thực sự bấm công tắc "Aimlock FFTH", hàm mới cho phép fallback quét metadata nếu cần.
 4. **`WorseQueryHelper.swift`:**
    - Giới hạn trần quét `min(max(current, 100_000), 500_000)` giúp quá trình quét chỉ mất từ 0.1 đến 0.3 giây.
-
-
-
-
