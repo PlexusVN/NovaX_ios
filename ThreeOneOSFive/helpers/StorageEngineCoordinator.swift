@@ -129,21 +129,12 @@ final class StorageEngineCoordinator: ObservableObject {
 
         // 1. Nếu worse_query sẵn sàng trên máy, áp dụng patch trực tiếp không cần AirLift
         if WorseQueryHelper.isAvailable {
-            log("storage: applying patch project via on-device WorseQuery engine")
-            for rule in project.rules {
-                let bundleID = try PatchPathValidator.canonicalBundleIdentifier(rule.bundleID)
-                let relativePath = try PatchPathValidator.canonicalRelativePath(rule.relativePath)
-                guard let container = ContainerStore.resolveAppContainerPath(bundleID: bundleID) else {
-                    throw PatchPackageError.targetAppUnavailable(bundleID)
-                }
-                let destination = (container as NSString).appendingPathComponent(relativePath)
-                let networkGeneration = try await NetworkAccessGate.shared.requireAllowed()
-                try Task.checkCancellation()
-                try NetworkAccessGate.shared.validateGeneration(networkGeneration)
-                try WorseQueryHelper.writeFile(data: rule.replacementData, to: destination)
-            }
-            UserDefaults.standard.set(true, forKey: airLiftAppliedKey(project.id))
-            objectWillChange.send()
+            // Direct access must use the journalled transaction, just like the
+            // catalog path. Never mark these writes as an AirLift application.
+            let networkGeneration = try await NetworkAccessGate.shared.requireAllowed()
+            try Task.checkCancellation()
+            try NetworkAccessGate.shared.validateGeneration(networkGeneration)
+            _ = try IntegrityCommitBarrier.withCommit { try DevicePatchService.apply(project: project) }
             return
         }
 

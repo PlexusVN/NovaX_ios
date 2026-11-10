@@ -45,11 +45,10 @@ final class AirLiftTunnelManager: ObservableObject {
     /// The transport is operational as soon as iOS actually routes the
     /// AirLift peer through the external LocalDevVPN tunnel.
     var isServiceReachable: Bool { serviceStatus == .reachable }
-    var isOperational: Bool { isTunnelRouteDetected || isServiceReachable }
+    var isOperational: Bool { isTunnelRouteDetected }
 
     private let peerAddress = "10.7.0.1"
     private let fallbackPeerAddress = "172.16.0.1"
-    private let expectedInterfaceAddress = "10.7.1.1"
     private let lockdownPort: UInt16 = 62078
     private let rsdPort: UInt16 = 49152
     private var cancellables = Set<AnyCancellable>()
@@ -93,8 +92,6 @@ final class AirLiftTunnelManager: ObservableObject {
         lastErrorMessage = nil
 
         let candidates = [peerAddress, fallbackPeerAddress]
-        let expectedSource = expectedInterfaceAddress
-
         let result = await Task.detached(priority: .utility) {
             var winningHost = candidates[0]
             var routeFound = false
@@ -103,48 +100,29 @@ final class AirLiftTunnelManager: ObservableObject {
             var statusMessage = ""
 
             for host in candidates {
-                let hasRoute = Self.hasTunnelRoute(to: host, expectedSource: (host == "10.7.0.1") ? expectedSource : host)
-                if hasRoute {
-                    routeFound = true
+                // An unrelated utun or a refused TCP connection does not prove
+                // this peer is routed through the loopback VPN.
+                guard Self.hasTunnelRoute(to: host) else { continue }
+                if !routeFound {
                     winningHost = host
                 }
+                routeFound = true
 
                 // Check port 49152 (RSD) and port 62078 (Lockdown)
                 let rsdProbe = Self.probeTcpPort(host: host, port: 49152, timeoutSec: 1.2)
                 let lkdProbe = Self.probeTcpPort(host: host, port: 62078, timeoutSec: 1.2)
 
-                if rsdProbe.connected || lkdProbe.connected {
+                if !serviceFound && (rsdProbe.connected || lkdProbe.connected) {
                     winningHost = host
                     routeFound = true
                     portResponsive = true
                     serviceFound = true
                     statusMessage = "Dịch vụ RSD/Lockdown phản hồi tốt trên \(host)."
-                    break
-                } else if rsdProbe.reachable || lkdProbe.reachable {
-                    winningHost = host
-                    routeFound = true
-                    portResponsive = true
-                    statusMessage = "Đã nhận diện route tunnel tới \(host)."
-                    break
-                }
-            }
-
-            if !serviceFound && routeFound {
-                let lk = Self.queryLockdown(host: winningHost, port: 62078)
-                if lk.ok {
-                    serviceFound = true
-                    portResponsive = true
-                    statusMessage = lk.message
                 }
             }
 
             if !routeFound {
-                if Self.hasAnyTunnelInterface() {
-                    routeFound = true
-                    statusMessage = "Đã nhận diện interface tunnel mạng cục bộ."
-                } else {
-                    statusMessage = "Không tìm thấy route LocalDevVPN tới \(winningHost). Hãy mở LocalDevVPN và bấm Bật kết nối."
-                }
+                statusMessage = "Không tìm thấy route LocalDevVPN tới 10.7.0.1. Hãy mở LocalDevVPN, bật kết nối rồi trở lại Astra."
             }
 
             return TunnelProbeResult(
@@ -241,27 +219,13 @@ final class AirLiftTunnelManager: ObservableObject {
         return (false, false)
     }
 
-    private nonisolated static func hasAnyTunnelInterface() -> Bool {
-        var interfaces: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&interfaces) == 0, let first = interfaces else { return false }
-        defer { freeifaddrs(interfaces) }
-        var cursor: UnsafeMutablePointer<ifaddrs>? = first
-        while let current = cursor {
-            defer { cursor = current.pointee.ifa_next }
-            let name = String(cString: current.pointee.ifa_name)
-            if isTunnelInterface(name) { return true }
-        }
-        return false
-    }
-
     /// Confirms that iOS routes the AirLift peer through LocalDevVPN. A UDP
     /// connect does not send traffic; it only asks the kernel to select a route
     /// and local source address for the peer.
-    private nonisolated static func hasTunnelRoute(to host: String, expectedSource: String) -> Bool {
+    private nonisolated static func hasTunnelRoute(to host: String) -> Bool {
         guard let source = routeSource(to: host) else {
             return false
         }
-        guard source == expectedSource else { return false }
         if let defaultSource = routeSource(to: "203.0.113.1"), defaultSource == source {
             return false
         }

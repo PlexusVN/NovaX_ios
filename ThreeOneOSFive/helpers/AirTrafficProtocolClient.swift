@@ -511,6 +511,9 @@ final class AirTrafficProtocolClient: ObservableObject {
         // AirliftFFI performs the authoritative authenticated RSD/Lockdown probe
         // and can use transport routes that the lightweight 62078 check cannot.
         guard tunnel.isOperational else {
+            if WorseQueryHelper.isOSSupported && !WorseQueryHelper.isAppGroupConfigured {
+                throw WorseQueryError.appGroupUnavailable
+            }
             throw AirLiftError.socketConnectionFailed(
                 tunnel.lastErrorMessage ?? "Hãy mở ứng dụng LocalDevVPN, bật tunnel rồi thử lại."
             )

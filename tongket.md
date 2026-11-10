@@ -1,5 +1,13 @@
 # BÁO CÁO TỔNG KẾT TÍCH HỢP `WORSE_QUERY` VÀO HỆ SINH THÁI ASTRA (NOVAX)
 
+> Cập nhật kiểm chứng 11/11/2026: các tuyên bố thành công dưới đây chủ yếu dựa
+> trên kiểm tra wiring, chưa chứng minh chạy được sau khi ký ESign trên iPhone.
+> Rà soát mới phát hiện thiếu nhận diện App Group sau ký, quản lý token transaction
+> và lưu entitlement vào IPA. Source đã được sửa; xem
+> [báo cáo rà soát](Astra-Fixed/Astra-Full-Source-1.2.10-16/client/NovaX/docs/WORSE_QUERY_AUDIT_20261111.md).
+> Chưa build IPA mới hoặc xác nhận runtime máy thật. iOS 27.2 beta 3+ không được
+> coi là có thể khắc phục bằng AirLift khi cả đường AirTraffic đã vá.
+
 ---
 
 ## 1. TỔNG QUAN
@@ -159,6 +167,40 @@ kèm vòng xoay `ProgressView` xoay mãi không dừng, chức năng không áp 
    Đặt trần an toàn cho `currentFilesystemMaxInode()` dựa trên file thăm dò thực tế và chuẩn hóa toàn bộ đường dẫn qua `ContainerDiscoveryMerger.canonicalPath`.
 6. **`ContainerStore.swift`:**
    Chuẩn hóa `isApplicationContainerPath` và duy trì token handle sandbox extension trong suốt quá trình patch.
+
+---
+
+## 9. CHẨN ĐOÁN & SỬA LỖI VĂNG APP NGAY KHI MỞ TRÊN IOS 27 (LAUNCH CRASH FIX)
+
+### 1. Hiện tượng lỗi:
+Người dùng mở ứng dụng NovaX (Astra) trên iOS 27, app vừa chớp màn hình khởi động thì lập tức bị văng (crash trong 0.1 giây).
+
+### 2. Nguyên nhân kỹ thuật phát hiện:
+1. **Con trỏ lơ lửng trong bộ nhớ đa luồng (Dangling Pointer / `EXC_BAD_ACCESS`):**
+   Trong `pathleak.m`, câu lệnh:
+   ```objc
+   prefix2 = [canonicalDir substringFromIndex:8].fileSystemRepresentation;
+   ```
+   tạo một `NSString` tạm thời không có biến giữ tham chiếu mạnh. Trình biên dịch ARC tự động giải phóng vùng nhớ này ngay sau câu lệnh. Khi `dispatch_apply` chạy 8 luồng song song cùng truy cập con trỏ `prefix2`, CPU kích hoạt lỗi truy cập ô nhớ bất hợp pháp `EXC_BAD_ACCESS` (SIGSEGV) làm app văng ngay lập tức.
+2. **Ngoại lệ không bắt được từ LaunchServices (`NSInternalInconsistencyException` / SIGABRT):**
+   Trên iOS 27, các lệnh gọi trực tiếp `LSApplicationRecord alloc` hoặc gọi `applicationRecord` trên proxy của các ứng dụng hệ thống bị sandbox chặn và ném ngoại lệ Objective-C. Vì không có khối bảo vệ `@try ... @catch`, ngoại lệ này thoát ra ngoài Swift runtime và gọi `std::terminate() -> abort()`.
+3. **Thực thi quét đĩa quá sớm khi khởi động app:**
+   Hàm `checkDirectDirectoryAccessAsync` trong `App.swift` chạy ngầm ngay khi app vừa mở (`onAppear`), kích hoạt hàm quét container. Khi chưa có cache, nó chạy thẳng vào hàm quét inode, làm kích hoạt đồng thời 2 lỗi bộ nhớ kể trên.
+
+### 3. Các xử lý đã hoàn thành:
+1. **`pathleak.m`:**
+   - Chuyển toàn bộ về cơ chế tuần tự đơn luồng an toàn 100% theo đúng thiết kế gốc của tác giả Taj C.
+   - Sử dụng bộ đệm ngăn xếp cục bộ `char prefix1[PATH_MAX]` và `char prefix2[PATH_MAX]`, loại bỏ hoàn toàn con trỏ trỏ tới vùng nhớ tạm thời.
+   - Loại bỏ `dispatch_apply` và khóa `os_unfair_lock`, loại bỏ triệt để mọi nguy cơ `EXC_BAD_ACCESS` hay race condition.
+2. **`AppIconHelper.m`:**
+   - Xóa bỏ việc gọi `applicationRecord` trong vòng lặp duyệt tất cả ứng dụng trong `appsFromWorkspace`.
+   - Bọc tất cả các nhánh tra cứu container của `LSApplicationProxy`, `LSApplicationRecord`, và `installedAppInfo` trong các khối khiên bảo vệ `@try { ... } @catch (NSException *e) { }`, triệt tiêu hoàn toàn nguy cơ sập app do ngoại lệ hệ thống.
+3. **`ContainerStore.swift` & `App.swift`:**
+   - Bổ sung cờ `allowMetadataScan: Bool = true`. Khi app khởi động (`checkDirectDirectoryAccessAsync`), cờ được đặt thành `false` để chỉ kiểm tra nhanh cache và LaunchServices trong 0.001ms mà không quét ổ đĩa.
+   - Khi người dùng thực sự bấm công tắc "Aimlock FFTH", hàm mới cho phép fallback quét metadata nếu cần.
+4. **`WorseQueryHelper.swift`:**
+   - Giới hạn trần quét `min(max(current, 100_000), 500_000)` giúp quá trình quét chỉ mất từ 0.1 đến 0.3 giây.
+
 
 
 

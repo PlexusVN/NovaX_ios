@@ -601,6 +601,10 @@ final class FeaturePatchService: ObservableObject {
                 throw ProtectedDownloadError.invalidResponse
             }
             stage = .access
+            log("patch engine: iOS=\(AppInfo.versionTuple) build=\(AppInfo.osBuild) worseQueryOS=\(WorseQueryHelper.isOSSupported) appGroup=\(WorseQueryHelper.isAppGroupConfigured) storage=\(ExploitSupportPolicy.currentStorageMode)")
+            guard ExploitSupportPolicy.currentStorageMode != .unsupported else {
+                throw WorseQueryError.unsupportedOS(AppInfo.osBuild)
+            }
             let networkGeneration = try await NetworkAccessGate.shared.requireAllowed()
             try Task.checkCancellation()
             try NetworkAccessGate.shared.validateGeneration(networkGeneration)
@@ -1350,7 +1354,7 @@ final class FeaturePatchService: ObservableObject {
         guard auth.authState == .verified, auth.authenticationRevision == authRevision else { throw FeaturePatchError.notAuthenticated }
         patchStepMessage = kind == .mod ? "Đang ghi dữ liệu vào game..." : "Đang khôi phục dữ liệu gốc..."
         do {
-            if useAirLift {
+            if useAirLift || WorseQueryHelper.isAvailable {
                 try await StorageEngineCoordinator.shared.writeFile(data: fileData, toPath: destination.path)
             } else if FileManager.default.fileExists(atPath: destination.path) {
                 do {

@@ -1,5 +1,10 @@
 # Astra — trạng thái tích hợp on-device AirLift
 
+> Cập nhật 11/11/2026: source hiện ưu tiên worse_query khi OS và App Group cho
+> phép. Phần dưới mô tả luồng AirLift dự phòng. Xem
+> [rà soát worse_query/P06](docs/WORSE_QUERY_AUDIT_20261111.md) để biết các lỗi
+> tích hợp đã sửa, yêu cầu bản ký và giới hạn kiểm chứng máy thật.
+
 Astra dùng ứng dụng LocalDevVPN riêng cùng `AirliftFFI` để ghép đôi, kết nối dịch vụ thiết bị và ghi patch ngay trên iPhone. Astra không còn chứa packet-tunnel extension và không tự tạo cấu hình VPN.
 
 ## Thành phần đã tích hợp

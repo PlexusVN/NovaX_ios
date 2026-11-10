@@ -4,9 +4,14 @@ import CryptoKit
 // Device-only resolution cannot run here. All apply/restore I/O uses temp folders.
 enum ContainerStore {
     static func isApplicationContainerPath(_ path: String) -> Bool { false }
-    static func resolveAppContainerPath(bundleID: String, allowMetadataScan: Bool = true) -> String? { nil }
+    static func resolveAppContainerPath(bundleID: String, allowMetadataScan: Bool = true, retainAccess: Bool = true) -> String? { nil }
     static func grantContainerAccess(_ path: String) -> Int64 { 0 }
 }
+enum WorseQueryHelper {
+    static var isAvailable: Bool { false }
+    static func acquireAccess(for path: String) throws -> Int64 { throw CatalogCheckError.failed("device grant must not be used") }
+}
+func sandbox_extension_release_handle(_ handle: Int64) {}
 enum PatchProjectLibrary {
     static func backupRootURL() throws -> URL { throw CatalogCheckError.failed("device backup root must not be used") }
 }

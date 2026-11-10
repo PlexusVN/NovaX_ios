@@ -20,7 +20,23 @@ enum AppInfo {
             precondition(Policy.storageMode(major:27, minor:2, patch:0, build:build) == .direct)
             precondition(Policy.pairingMode(major:27, minor:2, patch:0, build:build) == .none)
         }
-        precondition(Policy.storageMode(major:27, minor:2, patch:0, build:"unsupported-build") == .airLift)
+        for build in ["", "unsupported-build", "24B5099f", "24A1"] {
+            precondition(!Policy.supportsWorseQuery(major:27, minor:2, patch:0, build:build))
+            precondition(Policy.storageMode(major:27, minor:2, patch:0, build:build) == .unsupported)
+        }
+        for major in [26, 27] {
+            let noGroup = Policy.runtimeStorageMode(major:major, minor:0, patch:0, build:"",
+                                                   hasSandboxAccess:false, worseQueryAvailable:false)
+            precondition(noGroup == .airLift)
+            precondition(Policy.pairingMode(for:noGroup, major:major) == (major == 27 ? .onDeviceOrImportedFile : .importedFile))
+            for sandbox in [false, true] {
+                let ready = Policy.runtimeStorageMode(major:major, minor:0, patch:0, build:"",
+                                                     hasSandboxAccess:sandbox, worseQueryAvailable:true)
+                precondition(ready == .direct && Policy.pairingMode(for:ready, major:major) == .none)
+            }
+            precondition(Policy.runtimeStorageMode(major:major, minor:0, patch:0, build:"",
+                                                  hasSandboxAccess:true, worseQueryAvailable:false) == .direct)
+        }
         precondition(Policy.storageMode(major:26, minor:6, patch:1, build:"") == .direct)
         precondition(Policy.pairingMode(major:26, minor:6, patch:2, build:"") == .none)
         precondition(Policy.pairingMode(major:26, minor:7, patch:0, build:"") == .none)

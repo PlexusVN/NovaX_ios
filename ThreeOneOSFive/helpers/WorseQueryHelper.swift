@@ -7,7 +7,7 @@
 //
 
 import Foundation
-import UIKit
+import Darwin
 
 public enum WorseQueryError: LocalizedError {
     case appGroupUnavailable
@@ -24,7 +24,7 @@ public enum WorseQueryError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .appGroupUnavailable:
-            return "Không tìm thấy App Group hợp lệ trong provisioning profile hoặc chứng chỉ ký."
+            return "Bản ký Astra hiện tại không có App Group truy cập được nên chưa thể dùng worse_query không cần VPN/pairing. Hãy ký lại bằng profile có App Group hợp lệ và giữ quyền App Group khi ký ESign. Nếu dùng AirLift dự phòng, cần bật LocalDevVPN và ghép đôi thiết bị."
         case .targetNotFound(let path):
             return "Đường dẫn mục tiêu không tồn tại trên thiết bị: \(path)"
         case .dlopenOrSymbolsFailed:
@@ -52,7 +52,7 @@ public final class WorseQueryHelper {
 
     /// Danh sách các App Group định danh dự phòng
     public static let candidateAppGroups: [String] = {
-        var groups: [String] = []
+        var groups = AstraSignedApplicationGroups()
         if let bundleID = Bundle.main.bundleIdentifier, !bundleID.isEmpty {
             groups.append("group.\(bundleID)")
         }
@@ -61,14 +61,8 @@ public final class WorseQueryHelper {
             "group.cc.forcequit.worse-query",
             "group.com.astra.app"
         ])
-        return groups
+        return Array(NSOrderedSet(array: groups)) as? [String] ?? groups
     }()
-
-    /// Các build iOS 27.2 được xác minh hỗ trợ
-    private static let supported272Builds: Set<String> = [
-        "24B5084k", // iOS 27.2 Beta 1
-        "24B5089g"  // iOS 27.2 Beta 2
-    ]
 
     private init() {}
 
@@ -98,33 +92,13 @@ public final class WorseQueryHelper {
     /// Kiểm tra xem phiên bản iOS hiện tại có hỗ trợ worse_query hay không
     public static var isOSSupported: Bool {
         let version = ProcessInfo.processInfo.operatingSystemVersion
-        let major = version.majorVersion
-        let minor = version.minorVersion
-        let build = AppInfo.osBuild
-
-        if major == 26 {
-            // iOS 26.0 đến 26.7.2
-            if minor < 7 { return true }
-            if minor == 7 { return version.patchVersion <= 2 }
-            return false
-        }
-
-        if major == 27 {
-            // iOS 27.0 - 27.1
-            if minor < 2 { return true }
-            // iOS 27.2 beta 1 & beta 2
-            if minor == 2 {
-                if supported272Builds.contains(build) { return true }
-                // Fallback kiểm tra ký tự cuối build nếu là build beta trước beta 3
-                return build <= "24B5089g" && !build.isEmpty
-            }
-            return false
-        }
-
-        return false
+        return ExploitSupportPolicy.supportsWorseQuery(
+            major: version.majorVersion, minor: version.minorVersion,
+            patch: version.patchVersion, build: AppInfo.osBuild
+        )
     }
 
-    /// worse_query có thể hoạt động ngay lập tức (OS hỗ trợ + Có App Group)
+    /// Preconditions only; the daemon may still reject a real access request.
     public static var isAvailable: Bool {
         isOSSupported && isAppGroupConfigured
     }
@@ -132,25 +106,22 @@ public final class WorseQueryHelper {
     /// Kiểm tra xem đường dẫn có thuộc phạm vi cho phép của worse_query hay không
     public static func isScopeSupported(for path: String) -> Bool {
         let clean = ContainerDiscoveryMerger.canonicalPath(path)
-        return clean.hasPrefix("/var/mobile/Containers/Data/Application") ||
-               clean.hasPrefix("/private/var/mobile/Containers/Data/Application") ||
-               clean.hasPrefix("/var/mobile/Containers/Shared/AppGroup") ||
-               clean.hasPrefix("/private/var/mobile/Containers/Shared/AppGroup") ||
-               clean.hasPrefix("/var/containers/Data/System") ||
-               clean.hasPrefix("/private/var/containers/Data/System")
+        return supportedRoots.contains { clean == $0 || clean.hasPrefix($0 + "/") }
     }
+
+    private static let supportedRoots = [
+        "/var/mobile/Containers/Data/Application",
+        "/var/mobile/Containers/Data/InternalDaemon",
+        "/var/mobile/Containers/Data/PluginKitPlugin",
+        "/var/mobile/Containers/Shared/AppGroup",
+        "/var/containers/Data/System",
+        "/var/containers/Shared/SystemGroup"
+    ].map { ContainerDiscoveryMerger.canonicalPath($0) }
 
     /// Trích xuất thư mục gốc của container từ đường dẫn bất kỳ (Data/Application, AppGroup, System)
     public static func containerRoot(for path: String) -> String? {
         let clean = ContainerDiscoveryMerger.canonicalPath(path)
-        let prefixes = [
-            "/var/mobile/Containers/Data/Application/",
-            "/private/var/mobile/Containers/Data/Application/",
-            "/var/mobile/Containers/Shared/AppGroup/",
-            "/private/var/mobile/Containers/Shared/AppGroup/",
-            "/var/containers/Data/System/",
-            "/private/var/containers/Data/System/"
-        ]
+        let prefixes = supportedRoots.map { $0 + "/" }
 
         for prefix in prefixes {
             if clean.hasPrefix(prefix) {
@@ -186,6 +157,7 @@ public final class WorseQueryHelper {
 
         // Tự động chuẩn hóa mục tiêu về thư mục gốc container nếu là đường dẫn con
         let canonical = ContainerDiscoveryMerger.canonicalPath(targetPath)
+        guard isScopeSupported(for: canonical) else { throw WorseQueryError.invalidPath(targetPath) }
         let effectiveTarget = containerRoot(for: canonical) ?? canonical
 
         guard isOSSupported else {

@@ -3,6 +3,9 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+/// App Groups in the running executable's signed entitlements (after re-signing).
+NSArray<NSString *> *AstraSignedApplicationGroups(void);
+
 /// Returns a dictionary mapping bundleID -> @{ @"name": NSString, @"icon": UIImage }.
 /// Uses the private LSApplicationWorkspace API (stable across iOS 14+).
 NSDictionary<NSString *, NSDictionary *> *installedAppInfo(void);

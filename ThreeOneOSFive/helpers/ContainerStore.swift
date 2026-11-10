@@ -61,7 +61,8 @@ enum ContainerStore {
         "com.apple.compass", "com.apple.Magnifier", "com.apple.DocumentsApp"
     ]
 
-    static func resolveAppContainerPath(bundleID: String, allowMetadataScan: Bool = true) -> String? {
+    static func resolveAppContainerPath(bundleID: String, allowMetadataScan: Bool = true,
+                                        retainAccess: Bool = true) -> String? {
         guard (try? PatchPathValidator.canonicalBundleIdentifier(bundleID)) == bundleID else {
             return nil
         }
@@ -71,10 +72,19 @@ enum ContainerStore {
         // 1. Kiểm tra cache đã lưu trước đó nếu đường dẫn container vẫn tồn tại
         if let cached = UserDefaults.standard.string(forKey: cacheKey) {
             let cleanCached = ContainerDiscoveryMerger.canonicalPath(cached)
-            if isApplicationContainerPath(cleanCached),
-               FileManager.default.fileExists(atPath: cleanCached) {
+            var exists = false
+            if isApplicationContainerPath(cleanCached) {
+                if WorseQueryHelper.isAvailable {
+                    exists = (try? WorseQueryHelper.withSandboxAccess(for: cleanCached) {
+                        FileManager.default.fileExists(atPath: cleanCached)
+                    }) ?? false
+                } else {
+                    exists = FileManager.default.fileExists(atPath: cleanCached)
+                }
+            }
+            if exists {
                 log("patch: container resolved from persistent cache for \(bundleID) -> \(cleanCached)")
-                _ = grantContainerAccess(cleanCached)
+                if retainAccess { _ = grantContainerAccess(cleanCached) }
                 return cleanCached
             }
         }
@@ -85,7 +95,7 @@ enum ContainerStore {
             if isApplicationContainerPath(cleanLS) {
                 log("patch: LaunchServices resolved \(bundleID) -> \(cleanLS)")
                 UserDefaults.standard.set(cleanLS, forKey: cacheKey)
-                _ = grantContainerAccess(lsPath)
+                if retainAccess { _ = grantContainerAccess(lsPath) }
                 return cleanLS
             }
         }
@@ -97,7 +107,7 @@ enum ContainerStore {
             if isApplicationContainerPath(cleanMCM) {
                 log("patch: MHA-C2 resolved \(bundleID) -> \(cleanMCM)")
                 UserDefaults.standard.set(cleanMCM, forKey: cacheKey)
-                _ = grantContainerAccess(cleanMCM)
+                if retainAccess { _ = grantContainerAccess(cleanMCM) }
                 return cleanMCM
             }
         }
@@ -112,7 +122,7 @@ enum ContainerStore {
             if isApplicationContainerPath(cleanScanned) {
                 log("patch: filesystem metadata scan resolved \(bundleID) -> \(cleanScanned)")
                 UserDefaults.standard.set(cleanScanned, forKey: cacheKey)
-                _ = grantContainerAccess(cleanScanned)
+                if retainAccess { _ = grantContainerAccess(cleanScanned) }
                 return cleanScanned
             }
         }
@@ -146,6 +156,7 @@ enum ContainerStore {
             let cleanDir = ContainerDiscoveryMerger.canonicalPath(dir)
             guard UUID(uuidString: (cleanDir as NSString).lastPathComponent) != nil else { continue }
             let handle = grantContainerAccess(cleanDir)
+            defer { if handle >= 0 { sandbox_extension_release_handle(handle) } }
 
             var matched = false
             if WorseQueryHelper.isAvailable {
@@ -170,13 +181,6 @@ enum ContainerStore {
                 }
             }
 
-            if handle >= 0 {
-                if WorseQueryHelper.isAvailable {
-                    WorseQueryHelper.releaseAccess(handle: handle)
-                } else {
-                    bad_query_release(handle)
-                }
-            }
         }
         return nil
     }
@@ -583,8 +587,10 @@ enum ContainerStore {
     static func grantContainerAccess(_ containerPath: String) -> Int64 {
         let clean = containerPath.hasSuffix("/") ? String(containerPath.dropLast()) : containerPath
         if WorseQueryHelper.isAvailable && WorseQueryHelper.isScopeSupported(for: clean) {
-            if let handle = try? WorseQueryHelper.acquireAccess(for: clean) {
-                return handle
+            do {
+                return try WorseQueryHelper.acquireAccess(for: clean)
+            } catch {
+                log("worse_query: container grant failed: \(error.localizedDescription)")
             }
         }
         guard shouldUseBadQuery else { return -1 }

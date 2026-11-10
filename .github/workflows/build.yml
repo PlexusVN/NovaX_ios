@@ -29,6 +29,8 @@ jobs:
           python3 Tests/test_security_flow_wiring.py
           python3 Tests/test_ios16_compatibility.py
           python3 Tests/test_worse_query_wiring.py
+          python3 Tests/test_worse_query_integration.py
+          python3 -m unittest discover -s Tests -p 'test_*.py'
 
       - name: Verify TLS pin allowlist has no trust-only fallback
         run: |
@@ -157,6 +159,9 @@ jobs:
           test -x "$APP_NAME/$EXECUTABLE"
           python3 ReleaseTools/verify_native_compatibility.py --app "$APP_NAME" --max-ios 16.0
           nm -gj "$APP_NAME/$EXECUTABLE" | grep -Fx "_ALGetGrappaToken"
+          nm -gj "$APP_NAME/$EXECUTABLE" | grep -Fx "_worse_query"
+          nm -gj "$APP_NAME/$EXECUTABLE" | grep -Fx "_worse_query_release"
+          nm -gj "$APP_NAME/$EXECUTABLE" | grep -Fx "_AstraSignedApplicationGroups"
           strings "$APP_NAME/$EXECUTABLE" | grep -F "RemoteXPC timed out after 6s"
           strings "$APP_NAME/$EXECUTABLE" | grep -F "timeout fallback trying raw RPPairing"
           strings "$APP_NAME/$EXECUTABLE" | grep -F "AirTraffic write timed out after 180s; operation cancelled"
@@ -167,6 +172,16 @@ jobs:
           codesign --force --sign - "$RUNNER_TEMP/resign-check.app"
           python3 ReleaseTools/macho_release.py "$RUNNER_TEMP/resign-check.app/$EXECUTABLE" > "$RUNNER_TEMP/release-after.json"
           cmp "$RUNNER_TEMP/release-before.json" "$RUNNER_TEMP/release-after.json"
+
+      - name: Preserve App Group entitlements for external signing
+        run: |
+          APP_NAME=$(find build -maxdepth 1 -name "*.app" -type d | head -n 1)
+          # No Apple identity is used. ESign must replace this ad-hoc signature
+          # with a profile which actually authorizes an accessible App Group.
+          codesign --force --sign - --generate-entitlement-der \
+            --entitlements ThreeOneOSFive/ThreeOneOSFive.entitlements "$APP_NAME"
+          codesign -d --entitlements :- "$APP_NAME" > "$RUNNER_TEMP/astra-entitlements.plist"
+          python3 -c 'import plistlib,sys; p=plistlib.load(open(sys.argv[1],"rb")); assert "group.com.novax.app" in p.get("com.apple.security.application-groups",[])' "$RUNNER_TEMP/astra-entitlements.plist"
 
       - name: Package IPA
         run: |

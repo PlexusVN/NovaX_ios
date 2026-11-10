@@ -3,6 +3,36 @@
 #import <objc/message.h>
 #import <dlfcn.h>
 
+NSArray<NSString *> *AstraSignedApplicationGroups(void) {
+    // Optional binding keeps older OS versions usable. Read the code signature,
+    // not the source .entitlements file or a possibly stale provisioning plist.
+    void *security = dlopen("/System/Library/Frameworks/Security.framework/Security", RTLD_LAZY | RTLD_LOCAL);
+    if (!security) return @[];
+    typedef CFTypeRef (*CreateTaskFn)(CFAllocatorRef);
+    typedef CFTypeRef (*CopyEntitlementFn)(CFTypeRef, CFStringRef, CFErrorRef *);
+    CreateTaskFn createTask = (CreateTaskFn)dlsym(security, "SecTaskCreateFromSelf");
+    CopyEntitlementFn copyEntitlement = (CopyEntitlementFn)dlsym(security, "SecTaskCopyValueForEntitlement");
+    CFTypeRef value = NULL;
+    if (createTask && copyEntitlement) {
+        CFTypeRef task = createTask(kCFAllocatorDefault);
+        if (task) {
+            value = copyEntitlement(task, CFSTR("com.apple.security.application-groups"), NULL);
+            CFRelease(task);
+        }
+    }
+    dlclose(security);
+    if (!value) return @[];
+    id decoded = CFBridgingRelease(value);
+    if (![decoded isKindOfClass:[NSArray class]]) return @[];
+    NSMutableOrderedSet<NSString *> *groups = [NSMutableOrderedSet orderedSet];
+    for (id group in (NSArray *)decoded) {
+        if ([group isKindOfClass:[NSString class]] && [group length] > 0) {
+            [groups addObject:group];
+        }
+    }
+    return groups.array;
+}
+
 static UIImage *iconFromData(NSData *data, CGFloat targetSize) {
     if (!data) return nil;
     UIImage *image = [UIImage imageWithData:data];
