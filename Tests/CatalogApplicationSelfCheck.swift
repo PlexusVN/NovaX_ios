@@ -4,7 +4,7 @@ import CryptoKit
 // Device-only resolution cannot run here. All apply/restore I/O uses temp folders.
 enum ContainerStore {
     static func isApplicationContainerPath(_ path: String) -> Bool { false }
-    static func resolveAppContainerPath(bundleID: String) -> String? { nil }
+    static func resolveAppContainerPath(bundleID: String, allowMetadataScan: Bool = true) -> String? { nil }
     static func grantContainerAccess(_ path: String) -> Int64 { 0 }
 }
 enum PatchProjectLibrary {

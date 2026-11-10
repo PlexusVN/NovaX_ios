@@ -217,7 +217,7 @@ class AppState: ObservableObject {
         DispatchQueue.global(qos: .utility).async {
             let bundleIDs = ["com.dts.freefireth", "com.dts.freefiremax"]
             for bundleID in bundleIDs {
-                if let path = ContainerStore.resolveAppContainerPath(bundleID: bundleID) {
+                if let path = ContainerStore.resolveAppContainerPath(bundleID: bundleID, allowMetadataScan: false) {
                     let docPath = (path as NSString).appendingPathComponent("Documents")
                     if FileManager.default.isWritableFile(atPath: docPath) {
                         DispatchQueue.main.async {

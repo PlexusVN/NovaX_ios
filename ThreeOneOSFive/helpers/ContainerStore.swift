@@ -61,7 +61,7 @@ enum ContainerStore {
         "com.apple.compass", "com.apple.Magnifier", "com.apple.DocumentsApp"
     ]
 
-    static func resolveAppContainerPath(bundleID: String) -> String? {
+    static func resolveAppContainerPath(bundleID: String, allowMetadataScan: Bool = true) -> String? {
         guard (try? PatchPathValidator.canonicalBundleIdentifier(bundleID)) == bundleID else {
             return nil
         }
@@ -103,6 +103,8 @@ enum ContainerStore {
         }
         let detail = lookupError.map(String.init) ?? "unavailable"
         log("patch: MHA-C2 could not resolve \(bundleID), detail=\(detail)")
+
+        guard allowMetadataScan else { return nil }
 
         // 4. Fallback quét metadata hệ thống qua pathleak / worse_query / bad_query
         if let scanned = resolveAppContainerPathByMetadataScan(bundleID: bundleID) {

@@ -237,25 +237,6 @@ static NSDictionary *appsFromWorkspace(void) {
                     break;
                 }
             }
-            if (!entry[@"container"]) {
-                SEL recordSel = NSSelectorFromString(@"applicationRecord");
-                if ([app respondsToSelector:recordSel]) {
-                    id record = ((id (*)(id, SEL))objc_msgSend)(app, recordSel);
-                    if (record) {
-                        for (NSString *selectorName in @[@"dataContainerURL", @"containerURL"]) {
-                            SEL containerSel = NSSelectorFromString(selectorName);
-                            if (![record respondsToSelector:containerSel]) continue;
-                            id containerValue = ((id (*)(id, SEL))objc_msgSend)(record, containerSel);
-                            NSString *containerPath = [containerValue isKindOfClass:[NSURL class]] ? [containerValue path] : containerValue;
-                            if ([containerPath isKindOfClass:[NSString class]] && containerPath.length > 0) {
-                                entry[@"container"] = containerPath;
-                                withContainer++;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
             result[bundleID] = entry;
         }
     }
@@ -599,20 +580,20 @@ NSString * _Nullable containerPathForBundleID(NSString *bundleID) {
     if (!bundleID || bundleID.length == 0) return nil;
     ensureLaunchServicesLoaded();
 
-    // 1. Try modern LSApplicationRecord first (iOS 14 - 27+)
-    Class recordClass = NSClassFromString(@"LSApplicationRecord");
-    if (recordClass) {
-        SEL initSel = NSSelectorFromString(@"initWithBundleIdentifier:allowPlaceholder:error:");
-        if ([recordClass instancesRespondToSelector:initSel]) {
-            NSError *err = nil;
-            id record = ((id (*)(id, SEL, id, BOOL, id*))objc_msgSend)([recordClass alloc], initSel, bundleID, NO, &err);
-            if (record) {
-                for (NSString *selName in @[@"dataContainerURL", @"containerURL"]) {
-                    SEL dataContainerSel = NSSelectorFromString(selName);
-                    if ([record respondsToSelector:dataContainerSel]) {
-                        id url = ((id (*)(id, SEL))objc_msgSend)(record, dataContainerSel);
-                        NSString *path = [url isKindOfClass:[NSURL class]] ? [url path] : ([url isKindOfClass:[NSString class]] ? url : nil);
-                        if ([path isKindOfClass:[NSString class]] && path.length > 0) {
+    // 1. Safe lookup via LSApplicationProxy
+    @try {
+        Class proxyClass = NSClassFromString(@"LSApplicationProxy");
+        if (proxyClass) {
+            SEL appProxySel = NSSelectorFromString(@"applicationProxyForIdentifier:");
+            if ([proxyClass respondsToSelector:appProxySel]) {
+                id proxy = ((id (*)(id, SEL, id))objc_msgSend)(proxyClass, appProxySel, bundleID);
+                if (proxy) {
+                    for (NSString *selectorName in @[@"dataContainerURL", @"containerURL", @"bundleContainerURL"]) {
+                        SEL containerSel = NSSelectorFromString(selectorName);
+                        if (![proxy respondsToSelector:containerSel]) continue;
+                        id value = ((id (*)(id, SEL))objc_msgSend)(proxy, containerSel);
+                        NSString *path = [value isKindOfClass:[NSURL class]] ? [value path] : ([value isKindOfClass:[NSString class]] ? value : nil);
+                        if (path.length > 0) {
                             while (path.length > 1 && [path hasSuffix:@"/"]) {
                                 path = [path substringToIndex:path.length - 1];
                             }
@@ -622,62 +603,55 @@ NSString * _Nullable containerPathForBundleID(NSString *bundleID) {
                 }
             }
         }
+    } @catch (NSException *e) {
+        NSLog(@"[3105] containerPathForBundleID proxy exception: %@", e);
     }
 
-    // 2. Try LSApplicationProxy and its applicationRecord
-    Class proxyClass = NSClassFromString(@"LSApplicationProxy");
-    if (proxyClass) {
-        SEL appProxySel = NSSelectorFromString(@"applicationProxyForIdentifier:");
-        if ([proxyClass respondsToSelector:appProxySel]) {
-            id proxy = ((id (*)(id, SEL, id))objc_msgSend)(proxyClass, appProxySel, bundleID);
-            if (proxy) {
-                SEL recordSel = NSSelectorFromString(@"applicationRecord");
-                if ([proxy respondsToSelector:recordSel]) {
-                    id record = ((id (*)(id, SEL))objc_msgSend)(proxy, recordSel);
-                    if (record) {
-                        for (NSString *selName in @[@"dataContainerURL", @"containerURL"]) {
-                            SEL dataContainerSel = NSSelectorFromString(selName);
-                            if ([record respondsToSelector:dataContainerSel]) {
-                                id url = ((id (*)(id, SEL))objc_msgSend)(record, dataContainerSel);
-                                NSString *path = [url isKindOfClass:[NSURL class]] ? [url path] : ([url isKindOfClass:[NSString class]] ? url : nil);
-                                if ([path isKindOfClass:[NSString class]] && path.length > 0) {
-                                    while (path.length > 1 && [path hasSuffix:@"/"]) {
-                                        path = [path substringToIndex:path.length - 1];
-                                    }
-                                    return path;
+    // 2. Safe fallback via LSApplicationRecord (with strict exception shield)
+    @try {
+        Class recordClass = NSClassFromString(@"LSApplicationRecord");
+        if (recordClass) {
+            SEL initSel = NSSelectorFromString(@"initWithBundleIdentifier:allowPlaceholder:error:");
+            if ([recordClass instancesRespondToSelector:initSel]) {
+                NSError *err = nil;
+                id record = ((id (*)(id, SEL, id, BOOL, id*))objc_msgSend)([recordClass alloc], initSel, bundleID, NO, &err);
+                if (record) {
+                    for (NSString *selName in @[@"dataContainerURL", @"containerURL"]) {
+                        SEL dataContainerSel = NSSelectorFromString(selName);
+                        if ([record respondsToSelector:dataContainerSel]) {
+                            id url = ((id (*)(id, SEL))objc_msgSend)(record, dataContainerSel);
+                            NSString *path = [url isKindOfClass:[NSURL class]] ? [url path] : ([url isKindOfClass:[NSString class]] ? url : nil);
+                            if (path.length > 0) {
+                                while (path.length > 1 && [path hasSuffix:@"/"]) {
+                                    path = [path substringToIndex:path.length - 1];
                                 }
+                                return path;
                             }
                         }
                     }
                 }
-                for (NSString *selectorName in @[@"dataContainerURL", @"containerURL"]) {
-                    SEL containerSel = NSSelectorFromString(selectorName);
-                    if (![proxy respondsToSelector:containerSel]) continue;
-                    id value = ((id (*)(id, SEL))objc_msgSend)(proxy, containerSel);
-                    NSString *path = [value isKindOfClass:[NSURL class]] ? [value path] : value;
-                    if ([path isKindOfClass:[NSString class]] && path.length > 0) {
-                        while (path.length > 1 && [path hasSuffix:@"/"]) {
-                            path = [path substringToIndex:path.length - 1];
-                        }
-                        return path;
-                    }
-                }
             }
         }
+    } @catch (NSException *e) {
+        NSLog(@"[3105] containerPathForBundleID record exception: %@", e);
     }
 
     // 3. Fallback: Search in installedAppInfo()
-    NSDictionary<NSString *, NSDictionary *> *all = installedAppInfo();
-    for (NSString *key in all) {
-        if ([key isEqualToString:bundleID] || [key hasSuffix:[@"." stringByAppendingString:bundleID]]) {
-            NSString *c = all[key][@"container"];
-            if ([c isKindOfClass:[NSString class]] && c.length > 0) {
-                while (c.length > 1 && [c hasSuffix:@"/"]) {
-                    c = [c substringToIndex:c.length - 1];
+    @try {
+        NSDictionary<NSString *, NSDictionary *> *all = installedAppInfo();
+        for (NSString *key in all) {
+            if ([key isEqualToString:bundleID] || [key hasSuffix:[@"." stringByAppendingString:bundleID]]) {
+                NSString *c = all[key][@"container"];
+                if ([c isKindOfClass:[NSString class]] && c.length > 0) {
+                    while (c.length > 1 && [c hasSuffix:@"/"]) {
+                        c = [c substringToIndex:c.length - 1];
+                    }
+                    return c;
                 }
-                return c;
             }
         }
+    } @catch (NSException *e) {
+        NSLog(@"[3105] containerPathForBundleID installedAppInfo exception: %@", e);
     }
 
     return nil;

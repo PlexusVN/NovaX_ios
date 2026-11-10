@@ -175,7 +175,7 @@ public final class WorseQueryHelper {
             current = UInt64(st.st_ino) + 2_000
         }
         try? FileManager.default.removeItem(at: probeURL)
-        return max(current, 100_000)
+        return min(max(current, 100_000), 500_000)
     }
 
     /// Cấp phát quyền Sandbox Extension cho đường dẫn mục tiêu
