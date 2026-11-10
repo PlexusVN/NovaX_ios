@@ -124,4 +124,41 @@ Khi người dùng bật switch **"Aimlock FFTH"** trong màn hình Chức năng
 * **`PatchTransaction.swift`:** Trong `withResolvedContainers`, gọi `ContainerStore.grantContainerAccess` và duy trì token trong toàn bộ thời gian ghi và sao lưu dữ liệu.
 * **`KernelExploit.swift`:** Trong `currentStorageMode`, nếu chạy trên iOS 26/27 mà chứng chỉ ký thiếu App Group (`WorseQueryHelper.isAvailable == false`), tự động chuyển hướng về `.airLift` dự phòng thay vì bị kẹt lỗi trực tiếp.
 
+---
+
+## 8. CHẨN ĐOÁN & SỬA LỖI VÒNG XOAY QUAY MÃI TRÊN IOS 27 (INFINITE SPINNER FIX)
+
+### 1. Hiện tượng lỗi:
+Người dùng nhấn bật công tắc "Aimlock FFTH" trên iOS 27, giao diện hiện thông báo:
+> `Chức năng đang bật`
+> `Vui lòng chờ...`
+kèm vòng xoay `ProgressView` xoay mãi không dừng, chức năng không áp dụng thành công.
+
+### 2. Nguyên nhân kỹ thuật phát hiện:
+1. **Khóa luồng Main Actor (UI Thread Freeze):**
+   Trong `FeaturesView.swift`, hàm `togglePatch()` gọi `Task { @MainActor in try await service.applyPatch(...) }`. Bên trong, việc giải mã chữ ký, tra cứu container và ghi file được thực thi đồng bộ, làm tê liệt toàn bộ luồng giao diện người dùng.
+2. **Khác biệt đường dẫn APFS trong Darwin VFS (`pathleak`):**
+   Phân vùng Data của APFS mount tại `/private/var`. Lệnh hệ thống `fsgetpath` luôn trả về đường dẫn chuẩn `/private/var/mobile/Containers/Data/Application/<UUID>`. Trong khi đó, `appDataRoot` được truyền vào là `/var/mobile/...`. Khi so sánh tiền tố bằng `strncmp`, chuỗi không khớp khiến `pathleak` duyệt qua hàng triệu inode mà không tìm thấy thư mục nào.
+3. **Vòng lặp Inode quá lớn:**
+   `WorseQueryHelper.currentFilesystemMaxInode()` có dòng `max(current, 10_000_000)`, ép `pathleak` phải gọi `fsgetpath` từ 10.000.000 đến 25.000.000 lần, chiếm dụng CPU trong thời gian dài.
+4. **Hạn chế của `LSApplicationProxy` trên iOS 15 - 27+:**
+   Trên iOS hiện đại, Apple không cấp quyền đọc `[proxy dataContainerURL]` cho bên thứ ba. Cần sử dụng lớp `LSApplicationRecord` (`[[LSApplicationRecord alloc] initWithBundleIdentifier:allowPlaceholder:error:]`) để lấy trực tiếp URL container trong 0.05ms mà không cần quét ổ đĩa.
+5. **Kiểm tra `lstat` khi chưa có quyền Sandbox Extension:**
+   Trong `worse_query.m`, trước khi gửi query đến `containermanagerd`, hàm kiểm tra `lstat(target)`. Vì ứng dụng đang bị sandbox chặn truy cập thư mục ngoài container, `lstat` trả về mã lỗi `EACCES` hoặc `EPERM`. Đoạn mã cũ coi đây là thư mục không tồn tại và lập tức trả về `-255`, chặn đứng việc xin token extension.
+
+### 3. Các xử lý đã hoàn thành:
+1. **`FeaturesView.swift`:**
+   Chuyển toàn bộ tác vụ bật/tắt patch sang `Task.detached(priority: .userInitiated)` chạy ở luồng nền độc lập. Chỉ gửi kết quả (thành công/lỗi/haptics/toast) về Main Actor qua `await MainActor.run`. Giao diện giữ nguyên độ mượt 120Hz và không bao giờ bị đơ.
+2. **`AppIconHelper.m`:**
+   Ưu tiên dùng `LSApplicationRecord.dataContainerURL` và `[proxy applicationRecord]`, chuẩn hóa loại bỏ dấu gạch chéo `/` ở cuối đường dẫn.
+3. **`pathleak.m`:**
+   Bổ sung chuẩn hóa tiền tố `/private/var/...` song song với `/var/...`, so khớp thông minh cả hai định dạng, tích hợp loại bỏ trùng lặp bằng `seen Set`.
+4. **`worse_query.m`:**
+   Chỉ trả về `-255` khi `errno == ENOENT` (tệp thực sự không tồn tại). Nếu gặp lỗi quyền truy cập (`EACCES`/`EPERM`), vẫn tiếp tục gửi query đến daemon gốc `containermanagerd` để xin Sandbox Extension Token hợp lệ.
+5. **`WorseQueryHelper.swift`:**
+   Đặt trần an toàn cho `currentFilesystemMaxInode()` dựa trên file thăm dò thực tế và chuẩn hóa toàn bộ đường dẫn qua `ContainerDiscoveryMerger.canonicalPath`.
+6. **`ContainerStore.swift`:**
+   Chuẩn hóa `isApplicationContainerPath` và duy trì token handle sandbox extension trong suốt quá trình patch.
+
+
 

@@ -1208,7 +1208,6 @@ enum DevicePatchService {
                   ContainerStore.isApplicationContainerPath(path) else {
                 throw PatchPackageError.targetAppUnavailable(bundleID)
             }
-            _ = ContainerStore.grantContainerAccess(path)
             roots[bundleID] = PatchPathValidator.canonicalFileURL(URL(fileURLWithPath: path, isDirectory: true))
         }
         return try operation(roots)

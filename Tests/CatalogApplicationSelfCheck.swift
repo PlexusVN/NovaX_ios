@@ -5,6 +5,7 @@ import CryptoKit
 enum ContainerStore {
     static func isApplicationContainerPath(_ path: String) -> Bool { false }
     static func resolveAppContainerPath(bundleID: String) -> String? { nil }
+    static func grantContainerAccess(_ path: String) -> Int64 { 0 }
 }
 enum PatchProjectLibrary {
     static func backupRootURL() throws -> URL { throw CatalogCheckError.failed("device backup root must not be used") }
