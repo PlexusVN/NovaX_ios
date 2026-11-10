@@ -1202,28 +1202,11 @@ enum DevicePatchService {
         operation: ([String: URL]) throws -> T
     ) throws -> T {
         var roots: [String: URL] = [:]
-        var handles: [Int64] = []
-
-        defer {
-            for handle in handles {
-                if handle >= 0 {
-                    if WorseQueryHelper.isAvailable {
-                        WorseQueryHelper.releaseAccess(handle: handle)
-                    } else {
-                        bad_query_release(handle)
-                    }
-                }
-            }
-        }
 
         for bundleID in bundleIDs {
             guard let path = ContainerStore.resolveAppContainerPath(bundleID: bundleID),
                   ContainerStore.isApplicationContainerPath(path) else {
                 throw PatchPackageError.targetAppUnavailable(bundleID)
-            }
-            let handle = ContainerStore.grantContainerAccess(path)
-            if handle >= 0 {
-                handles.append(handle)
             }
             roots[bundleID] = PatchPathValidator.canonicalFileURL(URL(fileURLWithPath: path, isDirectory: true))
         }

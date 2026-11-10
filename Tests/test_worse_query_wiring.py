@@ -89,15 +89,12 @@ class WorseQueryWiringTests(unittest.TestCase):
         self.assertIn('containerPathForBundleID', content)
         self.assertIn('astra.resolved_container.', content)
         self.assertIn('pathleak(appDataRoot', content)
+        self.assertIn('grantContainerAccess(lsPath)', content)
 
         helper_swift = ROOT / 'ThreeOneOSFive' / 'helpers' / 'WorseQueryHelper.swift'
         helper_content = helper_swift.read_text(encoding='utf-8')
         self.assertIn('containerRoot(for:', helper_content)
         self.assertIn('currentFilesystemMaxInode()', helper_content)
-
-        tx_swift = ROOT / 'ThreeOneOSFive' / 'helpers' / 'PatchTransaction.swift'
-        tx_content = tx_swift.read_text(encoding='utf-8')
-        self.assertIn('ContainerStore.grantContainerAccess(path)', tx_content)
 
 if __name__ == '__main__':
     unittest.main()
