@@ -46,12 +46,12 @@ func pathleak_range(_ path: String, _ first: UInt64, _ last: UInt64, _ code: Uns
 enum FixtureFailure: Error { case operation }
 
 @main struct WorseQueryHelperSelfCheck {
-    static func main() throws {
+    @MainActor static func main() async throws {
         do {
             _ = try WorseQueryHelper.acquireAccess(for: "/var/mobile/Containers/Data/Application/fixture")
             preconditionFailure("main-thread native query was not rejected")
         } catch WorseQueryError.mainThreadAccess {}
-        try DispatchQueue.global(qos: .userInitiated).sync { try checkBackground() }
+        try await Task.detached(priority: .userInitiated) { try checkBackground() }.value
     }
     static func checkBackground() throws {
         let root = "/var/mobile/Containers/Data/Application/00000000-0000-0000-0000-000000000001"
