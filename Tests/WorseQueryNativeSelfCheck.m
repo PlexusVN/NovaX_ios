@@ -43,7 +43,7 @@ static NSString *groupID = @"group.astra.native.fixture";
 }
 @end
 
-typedef struct { uint64_t klass, part, flags; } FixtureQuery;
+typedef struct { uint64_t klass, part, flags; void *borrowed_identifier; } FixtureQuery;
 static void *createQuery(void) {
     if (failCreate) return NULL;
     created++; activeQueries++;
@@ -54,6 +54,7 @@ static void setClass(void *query, uint64_t value) { ((FixtureQuery *)query)->kla
 static void setPart(void *query, uint64_t value) { ((FixtureQuery *)query)->part = value; }
 static void setFlags(void *query, uint64_t value) { ((FixtureQuery *)query)->flags = value; lastFlags = value; }
 static void setGroup(void *query, xpc_object_t value) {
+    ((FixtureQuery *)query)->borrowed_identifier = (__bridge void *)value;
     NSCAssert(strcmp(xpc_string_get_string_ptr(value), groupID.UTF8String) == 0, @"wrong App Group identifier");
 }
 static void *getResult(void *query) {
@@ -67,7 +68,14 @@ static void *getResult(void *query) {
     usleep(1000);
     return rejectQuery ? NULL : query;
 }
-static void freeQuery(void *query) { free(query); freed++; activeQueries--; }
+static void freeQuery(void *query) {
+    void *borrowed = ((FixtureQuery *)query)->borrowed_identifier;
+    if (borrowed) {
+        const char *identifier = xpc_string_get_string_ptr((__bridge xpc_object_t)borrowed);
+        NSCAssert(identifier && strcmp(identifier, groupID.UTF8String) == 0, @"identifier owner died before query cleanup");
+    }
+    free(query); freed++; activeQueries--;
+}
 static char *copyToken(void *query) { return refuseToken ? NULL : strdup("fixture-token"); }
 static int64_t consumeToken(const char *token) {
     NSCAssert(activeQueries == 1, @"query was freed before token consumption");

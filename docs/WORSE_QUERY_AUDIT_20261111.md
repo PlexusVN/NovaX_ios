@@ -29,6 +29,8 @@ Từng bước native được checkpoint xuống lịch sử trước khi gọi
 query, library và token có cleanup chung cả khi Objective-C exception phát sinh
 (WQ08). Swift chặn cấp token trên main thread (WQ09). C shield không thể bắt mọi
 SIGSEGV/SIGABRT/SIGKILL; không coi test giả lập là bằng chứng đã hết crash máy thật.
+XPC group identifier có owner với objc_precise_lifetime đến sau query_free;
+không kết thúc ownership khi hàm perform trả về trước khi cleanup chạy.
 
 Apply/restore/đọc/ghi trực tiếp đi qua DirectPatchExecutor. Worker giữ nguyên
 barrier/journal và token cho toàn transaction. Auth/network bị thu hồi hoặc hủy
