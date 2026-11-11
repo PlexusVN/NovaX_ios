@@ -40,7 +40,7 @@ enum ContainerStore {
     static let appDataRoot = "/var/mobile/Containers/Data/Application"
     static let systemDataRoot = "/var/mobile/Containers/Data/System"
     private static var shouldUseBadQuery: Bool {
-        ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 26
+        ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 26
     }
     private static let applicationBundleRoots: [(path: String, nested: Bool)] = [
         ("/var/containers/Bundle/Application", true),
@@ -315,6 +315,9 @@ enum ContainerStore {
     }
 
     static func resolveAppContainerPathByMetadataScan(bundleID: String) -> String? {
+        if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 {
+            return IOS27ContainerSession.path(for: bundleID)
+        }
         if WorseQueryHelper.isAvailable {
             do { return try resolveContainerWithWorseQuery(bundleID: bundleID) }
             catch { log("worse_query discovery failed: \(error.localizedDescription)"); return nil }

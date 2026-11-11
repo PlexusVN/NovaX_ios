@@ -157,6 +157,10 @@ class IntegrationContracts(unittest.TestCase):
         self.assertNotIn('containerPathForBundleID(', scan)
         self.assertIn('chunkSize: UInt64 = 50_000', scan)
         self.assertIn('checkpoint(sessionID', scan)
+        self.assertIn('majorVersion == 26', store.split('private static var shouldUseBadQuery: Bool')[1].split('private static let')[0])
+        native_mcm = (ROOT / 'ThreeOneOSFive/exploit/mcm_bridge.m').read_text(encoding='utf-8')
+        activate = extract_function(native_mcm, 'NSString *MCMActivateContainerPath(')
+        self.assertLess(activate.index('majorVersion >= 27'), activate.index('MCMActiveLeases()'))
         service = (HELPERS / 'FeaturePatchService.swift').read_text(encoding='utf-8')
         self.assertGreaterEqual(service.count('try await DirectPatchExecutor.run(validation:'), 3)
 
