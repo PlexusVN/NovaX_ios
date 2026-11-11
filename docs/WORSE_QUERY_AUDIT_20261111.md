@@ -1,5 +1,38 @@
 # Rà soát worse_query và lỗi tìm container — 11/11/2026
 
+## Build 26: sửa lại luồng chuẩn bị trước khi vào ứng dụng
+
+Người dùng xác nhận build 25 vẫn vào thẳng ứng dụng và văng khi bật chức năng.
+Màn hình build 25 chỉ được bật bên trong fallback scanner. Trước điểm đó,
+resolveAppContainerForPatch vẫn gọi resolver cũ (cache/LaunchServices/MCM class 2).
+Đồng thời việc lấy token lần nữa và ghi transaction còn chạy trong MainActor.
+Đây là các sai lệch tích hợp tìm được trong source, chưa phải kết luận về
+exception/signal thực tế trên điện thoại vì không có crash report thiết bị.
+
+Build 26 thay bằng luồng đăng nhập → IOS27PreparationView → kiểm tra cache/quét
+và token trên worker → người dùng chọn Vào ứng dụng. Màn hình Chức năng không
+được dựng trước khi bước chuẩn bị thành công hoặc người dùng chủ động chọn
+AirLift khi thiếu App Group. Không gọi exploit trước đăng nhập. Phiên bị gián
+đoạn hiển thị log cũ và yêu cầu Thử lại, không tự lặp native crash lúc mở app.
+
+Provider iOS 27 chỉ dùng baseline/pathleak + query class 7/part 3/token/xattr như
+upstream. Cache phải được xác minh định danh dưới token thật. Không gọi LS/MCM
+class 2/bad_query trong đường chuẩn bị hoặc resolve patch iOS 27. Quét theo đoạn
+50.000 inode tới baseline, dùng một lượt cho Free Fire và MAX. Nếu chỉ cài một
+game, quét hết phạm vi rồi cho tiếp tục với game đã xác minh; không tự tạo đường
+dẫn cho game chưa có. Có nút quét lại trong Cài đặt.
+
+Từng bước native được checkpoint xuống lịch sử trước khi gọi. Caches symlink,
+query, library và token có cleanup chung cả khi Objective-C exception phát sinh
+(WQ08). Swift chặn cấp token trên main thread (WQ09). C shield không thể bắt mọi
+SIGSEGV/SIGABRT/SIGKILL; không coi test giả lập là bằng chứng đã hết crash máy thật.
+
+Apply/restore/đọc/ghi trực tiếp đi qua DirectPatchExecutor. Worker giữ nguyên
+barrier/journal và token cho toàn transaction. Auth/network bị thu hồi hoặc hủy
+task sẽ chặn các lượt ghi tiếp theo và rollback phần đã ghi; rollback không bị
+ngắt bởi cancellation. Test dùng transaction production kiểm tra thu hồi mạng
+ngay sau lượt ghi đầu tiên vẫn khôi phục đủ bytes gốc.
+
 ## Bổ sung build 25: khởi động và màn hình quét
 
 Người dùng báo iOS 27 văng ngay khi chạm biểu tượng, chưa thấy đăng nhập. Chưa có

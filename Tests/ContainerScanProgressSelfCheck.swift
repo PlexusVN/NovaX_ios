@@ -74,6 +74,17 @@ enum ScanFixtureError: LocalizedError {
 
         let history = FileManager.default.temporaryDirectory.appendingPathComponent("astra-scan-fixture-\(UUID()).json")
         defer { try? FileManager.default.removeItem(at: history) }
+        let durable = ContainerScanProgress(historyURL: history)
+        _ = try await Task.detached {
+            try durable.track(bundleID: "com.fixture.game") { id in
+                durable.checkpoint(id, message: "before native query fixture")
+                let saved = try JSONDecoder().decode(ContainerScanSnapshot.self, from: Data(contentsOf: history))
+                precondition(saved.phase == .scanning && saved.logs.last!.contains("before native query fixture"), "checkpoint was not durable before native invocation")
+                return "/fixture/game"
+            }
+        }.value
+        await drainMainQueue()
+        durable.checkpoint(UUID(), message: "flush completed history writes")
         var interrupted = ContainerScanSnapshot(id: UUID(), bundleID: "com.fixture.game", phase: .scanning)
         interrupted.scanned = 750_000; interrupted.total = 2_000_000
         interrupted.logs = ["saved real progress"]

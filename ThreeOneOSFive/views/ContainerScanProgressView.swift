@@ -4,6 +4,13 @@ import UIKit
 struct ContainerScanProgressView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var progress: ContainerScanProgress
+    var isPreparation = false
+    var isPreparing = false
+    var preparationReady = false
+    var preparationError: String?
+    var onRetry: (() -> Void)?
+    var onContinue: (() -> Void)?
+    var onAirLift: (() -> Void)?
     @State private var copied = false
     private var state: ContainerScanSnapshot { progress.snapshot }
 
@@ -21,11 +28,11 @@ struct ContainerScanProgressView: View {
                             .font(.caption).foregroundColor(AppTheme.gamingTextSecondary)
                     }
                     Spacer()
-                    if state.phase == .scanning { ProgressView().tint(AppTheme.gamingBlueBright) }
+                    if state.phase == .scanning || isPreparing { ProgressView().tint(AppTheme.gamingBlueBright) }
                 }
-                Text(state.phase == .scanning
+                Text(preparationError ?? (preparationReady ? "Đã kiểm tra quyền truy cập thư mục game. Chọn Vào ứng dụng để tiếp tục." : state.phase == .scanning || isPreparing
                      ? "Lần đầu có thể mất vài phút hoặc lâu hơn. Giữ Astra ở màn hình này; lần sau sẽ dùng đường dẫn đã lưu nếu còn hợp lệ."
-                     : state.detail.isEmpty ? "Nhật ký xuất hiện khi một chức năng cần dò thư mục. Astra không tự quét khi vừa mở app." : state.detail)
+                     : state.detail.isEmpty ? "Chuẩn bị worse_query trước khi vào màn hình Chức năng." : state.detail))
                     .font(.subheadline).foregroundColor(AppTheme.gamingTextSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 if !state.bundleID.isEmpty {
@@ -67,13 +74,25 @@ struct ContainerScanProgressView: View {
                         reader.scrollTo(state.logs.count - 1, anchor: .bottom)
                     }
                 }
-                Button(state.phase == .scanning ? (progress.cancelPending ? "Đang dừng…" : "Dừng quét") : "Đóng") {
+                if isPreparation && !isPreparing {
+                    Button(preparationReady ? "Vào ứng dụng" : "Thử lại") {
+                        if preparationReady { onContinue?() } else { onRetry?() }
+                    }
+                    .buttonStyle(.borderedProminent).tint(AppTheme.gamingBlue)
+                    .frame(maxWidth: .infinity)
+                    if let onAirLift {
+                        Button("Thiết lập AirLift dự phòng", action: onAirLift)
+                            .font(.subheadline)
+                    }
+                } else {
+                Button(state.phase == .scanning || isPreparing ? (progress.cancelPending ? "Đang dừng…" : "Dừng quét") : "Đóng") {
                     if state.phase == .scanning { progress.requestCancellation() } else { progress.dismiss(); dismiss() }
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(AppTheme.gamingBlue)
                 .frame(maxWidth: .infinity)
                 .disabled(progress.cancelPending)
+                }
             }
             .padding(22)
             .frame(maxWidth: 620)
@@ -85,6 +104,12 @@ struct ContainerScanProgressView: View {
     }
 
     private var title: String {
+        if isPreparation {
+            if preparationReady { return "Đã chuẩn bị xong iOS 27" }
+            if isPreparing { return progress.cancelPending ? "Đang dừng quét" : "Chuẩn bị quyền truy cập iOS 27" }
+            if preparationError != nil { return "Chưa chuẩn bị xong" }
+            return "Chuẩn bị quyền truy cập iOS 27"
+        }
         switch state.phase {
         case .idle: return "Nhật ký quét thư mục"
         case .scanning: return progress.cancelPending ? "Đang dừng quét" : "Đang tìm thư mục dữ liệu"
@@ -92,6 +117,25 @@ struct ContainerScanProgressView: View {
         case .failed: return "Chưa hoàn tất quét"
         case .cancelled: return "Đã dừng quét"
         case .interrupted: return "Phiên quét trước bị gián đoạn"
+        }
+    }
+}
+
+struct IOS27PreparationView: View {
+    @ObservedObject var preparation: IOS27ContainerPreparation
+    var body: some View {
+        ContainerScanProgressView(progress: .shared,
+            isPreparation: true,
+            isPreparing: preparation.state == .preparing,
+            preparationReady: preparation.state == .ready,
+            preparationError: preparation.failure,
+            onRetry: { Task { await preparation.prepareIfNeeded(force: true) } },
+            onContinue: { preparation.enterApplication() },
+            onAirLift: preparation.canUseAirLift ? { preparation.chooseAirLift() } : nil)
+        .task {
+            // Let SwiftUI draw the gate before any private native API runs.
+            do { try await Task.sleep(nanoseconds: 200_000_000) } catch { return }
+            await preparation.prepareIfNeeded()
         }
     }
 }

@@ -59,7 +59,7 @@ final class ContainerScanProgress: ObservableObject {
             .appendingPathComponent("Astra", isDirectory: true).appendingPathComponent("ContainerScanHistory.json")
     }
 
-    func track(bundleID: String, operation: (UUID) throws -> String) throws -> String {
+    func track<T>(bundleID: String, successMessage: String = "Đã tìm thấy thư mục dữ liệu. Astra tiếp tục thao tác bạn đã chọn.", operation: (UUID) throws -> T) throws -> T {
         let id = UUID()
         lock.lock()
         activeID = id
@@ -76,7 +76,7 @@ final class ContainerScanProgress: ObservableObject {
             try checkCancellation(id)
             let path = try operation(id)
             try checkCancellation(id)
-            finish(id, phase: .resolved, detail: "Đã tìm thấy thư mục dữ liệu. Astra tiếp tục thao tác bạn đã chọn.")
+            finish(id, phase: .resolved, detail: successMessage)
             return path
         } catch {
             finish(id, phase: error is CancellationError ? .cancelled : .failed,
@@ -95,6 +95,18 @@ final class ContainerScanProgress: ObservableObject {
             self.append(message)
             self.saveHistory(force: false)
         }
+    }
+
+    /// Persist the last native operation BEFORE invoking it. If the OS terminates
+    /// this process, the next preparation screen can show where it stopped.
+    func checkpoint(_ id: UUID, message: String) {
+        let update = {
+            guard self.snapshot.id == id, self.snapshot.phase == .scanning else { return }
+            self.append(message)
+            self.saveHistory(force: true)
+        }
+        if Thread.isMainThread { update() } else { DispatchQueue.main.sync(execute: update) }
+        historyQueue.sync {}
     }
 
     func checkCancellation(_ id: UUID) throws {

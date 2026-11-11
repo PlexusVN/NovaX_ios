@@ -65,8 +65,10 @@ final class StorageEngineCoordinator: ObservableObject {
         // 1. Ưu tiên ghi trực tiếp qua WorseQuery trên thiết bị (Không cần pairing máy tính)
         if WorseQueryHelper.isAvailable && WorseQueryHelper.isScopeSupported(for: destinationPath) {
             log("storage: routing write via on-device WorseQuery provider for \(destinationPath)")
-            try IntegrityCommitBarrier.withCommit {
-                try WorseQueryHelper.writeFile(data: data, to: destinationPath)
+            try await DirectPatchExecutor.run(validation: { try NetworkAccessGate.shared.validateGeneration(networkGeneration) }) {
+                try IntegrityCommitBarrier.withCommit {
+                    try WorseQueryHelper.writeFile(data: data, to: destinationPath)
+                }
             }
             return
         }
@@ -100,7 +102,7 @@ final class StorageEngineCoordinator: ObservableObject {
         // 1. Ưu tiên đọc trực tiếp qua WorseQuery trên thiết bị
         if WorseQueryHelper.isAvailable && WorseQueryHelper.isScopeSupported(for: path) {
             log("storage: routing read via on-device WorseQuery provider for \(path)")
-            return try WorseQueryHelper.readFile(at: path)
+            return try await DirectPatchExecutor.run(validation: {}) { try WorseQueryHelper.readFile(at: path) }
         }
         if isAirLiftActive {
             guard isAirTrafficEngineLinked else {
@@ -135,7 +137,9 @@ final class StorageEngineCoordinator: ObservableObject {
             let networkGeneration = try await NetworkAccessGate.shared.requireAllowed()
             try Task.checkCancellation()
             try NetworkAccessGate.shared.validateGeneration(networkGeneration)
-            _ = try IntegrityCommitBarrier.withCommit { try DevicePatchService.apply(project: project, preparedContainers: roots) }
+            _ = try await DirectPatchExecutor.run(validation: { try NetworkAccessGate.shared.validateGeneration(networkGeneration) }) {
+                try IntegrityCommitBarrier.withCommit { try DevicePatchService.apply(project: project, preparedContainers: roots) }
+            }
             return
         }
 

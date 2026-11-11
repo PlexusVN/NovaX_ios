@@ -47,6 +47,13 @@ enum FixtureFailure: Error { case operation }
 
 @main struct WorseQueryHelperSelfCheck {
     static func main() throws {
+        do {
+            _ = try WorseQueryHelper.acquireAccess(for: "/var/mobile/Containers/Data/Application/fixture")
+            preconditionFailure("main-thread native query was not rejected")
+        } catch WorseQueryError.mainThreadAccess {}
+        try DispatchQueue.global(qos: .userInitiated).sync { try checkBackground() }
+    }
+    static func checkBackground() throws {
         let root = "/var/mobile/Containers/Data/Application/00000000-0000-0000-0000-000000000001"
         let canonicalRoot = "/private" + root
         precondition(WorseQueryHelper.resolveActiveAppGroup() == "group.esign.rewritten")

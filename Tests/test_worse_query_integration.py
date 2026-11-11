@@ -42,10 +42,12 @@ class IntegrationContracts(unittest.TestCase):
         native = (ROOT / 'ThreeOneOSFive/exploit/worse_query.m').read_text(encoding='utf-8')
         for call in ['query_set_class(query, 7)', 'query_set_part(query, 3)',
                      '0x0000000800000000ULL', '0x0000008000000000ULL',
-                     'copy_sandbox_token(result)', 'consume_extension(token)',
+                     'copy_sandbox_token(result)', 'consume_extension(resources->token)',
                      '@synchronized (query_lock())', 'errno != EACCES && errno != EPERM']:
             self.assertIn(call, native)
-        self.assertIn('query_free(query);\n        dlclose(mgr);\n        clean_symlink(group);\n        return -4;', native)
+        self.assertIn('@finally', native)
+        self.assertIn('resources.free_query(resources.query)', native)
+        self.assertIn('if (resources.changed_caches) clean_symlink(group)', native)
 
     def test_missing_group_and_no_vpn_do_not_reach_native_timeout(self):
         client = (HELPERS / 'AirTrafficProtocolClient.swift').read_text(encoding='utf-8')
@@ -69,7 +71,7 @@ class IntegrationContracts(unittest.TestCase):
 
     def test_ios27_launch_does_not_probe_target_or_consume_tokens(self):
         app = (ROOT / 'ThreeOneOSFive/App.swift').read_text(encoding='utf-8')
-        self.assertIn('value: authManager.authState == .verified && gatekeeper.canBypassGatekeeper', app)
+        self.assertIn('value: ios27Preparation.didContinue', app)
         self.assertNotIn('value: gatekeeper.canBypassGatekeeper', app)
         probe = extract_function(app, 'func checkDirectDirectoryAccessAsync(')
         self.assertLess(probe.index('guard AppInfo.versionTuple.major < 27'), probe.index('DispatchQueue.global'))
@@ -121,17 +123,42 @@ class IntegrationContracts(unittest.TestCase):
         code += merger.split('enum ContainerAccessPolicy {')[0].replace('import Foundation', '')
         code += '\nenum PatchPathValidator {\n' + extract_function(validator, 'static func canonicalBundleIdentifier(') + '\n}\n'
         code += '\nenum ContainerStore {\nstatic let discoveryLock = NSLock()\nstatic let appDataRoot = "/var/mobile/Containers/Data/Application"\n'
-        for signature in ['private static func resolveContainerWithWorseQuery(',
+        for signature in ['static func prepareIOS27Access(', 'static func resolveAppContainerForPatch(',
                           'static func isApplicationContainerPath(', 'static func metadataPath(']:
-            code += extract_function(store, signature) + '\n'
-        code += 'static func resolveAppContainerForPatch(bundleID: String) throws -> String { try resolveContainerWithWorseQuery(bundleID: bundleID) }\n}\n'
+            code += extract_function(store, signature).replace('ContainerScanProgress.shared', 'DiscoveryFixture.progress') + '\n'
+        code += 'static func resolveAppContainerPath(bundleID: String, allowMetadataScan: Bool = true, retainAccess: Bool = true) -> String? { DiscoveryFixture.legacyCalls += 1; return nil }\n}\n'
+        code = code.replace('static func resolveAppContainerPath(bundleID:', 'static func resolveContainerWithWorseQuery(bundleID: String) throws -> String { preconditionFailure("legacy scan reached on iOS27") }\nstatic func resolveAppContainerPath(bundleID:')
         code += 'enum DevicePatchService {\n' + extract_function(transaction, 'static func prepareContainers(bundleIDs:') + '\n}\n'
         with tempfile.TemporaryDirectory() as folder:
             source = Path(folder) / 'Discovery.swift'; source.write_text(code, encoding='utf-8')
             binary = Path(folder) / 'discovery-check'
-            subprocess.run(['swiftc', str(source), str(HELPERS / 'ContainerScanProgress.swift'), str(ROOT / 'Tests/ContainerDiscoverySelfCheck.swift'),
+            subprocess.run(['swiftc', str(source), str(HELPERS / 'ContainerScanProgress.swift'),
+                            str(HELPERS / 'IOS27ContainerPreparation.swift'), str(HELPERS / 'DirectPatchExecutor.swift'), str(ROOT / 'Tests/ContainerDiscoverySelfCheck.swift'),
                             '-o', str(binary)], check=True)
             subprocess.run([str(binary)], check=True)
+
+    @unittest.skipUnless(sys.platform == 'darwin' and shutil.which('swiftc'), 'requires macOS Swift')
+    def test_actual_direct_executor_and_revocation(self):
+        with tempfile.TemporaryDirectory() as folder:
+            binary = Path(folder) / 'direct-executor-check'
+            subprocess.run(['swiftc', str(HELPERS / 'DirectPatchExecutor.swift'),
+                            str(ROOT / 'Tests/DirectPatchExecutorSelfCheck.swift'), '-o', str(binary)], check=True)
+            subprocess.run([str(binary)], check=True)
+
+    def test_ios27_gate_precedes_content_and_legacy_resolvers(self):
+        app = (ROOT / 'ThreeOneOSFive/App.swift').read_text(encoding='utf-8')
+        self.assertLess(app.index('IOS27PreparationView(preparation:'), app.index('ContentView()'))
+        self.assertIn('requiresIOS27Preparation && !ios27Preparation.didContinue', app)
+        store = (HELPERS / 'ContainerStore.swift').read_text(encoding='utf-8')
+        resolver = extract_function(store, 'static func resolveAppContainerForPatch(')
+        self.assertLess(resolver.index('IOS27ContainerSession.path'), resolver.index('resolveAppContainerPath('))
+        scan = extract_function(store, 'static func prepareIOS27Access(')
+        self.assertNotIn('MCMActivate', scan)
+        self.assertNotIn('containerPathForBundleID(', scan)
+        self.assertIn('chunkSize: UInt64 = 50_000', scan)
+        self.assertIn('checkpoint(sessionID', scan)
+        service = (HELPERS / 'FeaturePatchService.swift').read_text(encoding='utf-8')
+        self.assertGreaterEqual(service.count('try await DirectPatchExecutor.run(validation:'), 3)
 
     def test_ipa_keeps_requested_entitlements_and_rejects_missing_native_code(self):
         workflow = (ROOT / '.github/workflows/build.yml').read_text(encoding='utf-8')

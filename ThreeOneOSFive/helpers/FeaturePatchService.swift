@@ -636,14 +636,23 @@ final class FeaturePatchService: ObservableObject {
             if useAirLift {
                 try await StorageEngineCoordinator.shared.applyPatchProject(project)
             } else {
-                if let receipt = DevicePatchService.latestReceipt(projectID: project.id) {
-                    catalogApplications.markRecoveryRequired(slug)
-                    guard try DevicePatchService.inspectExistingApplication(receipt: receipt, project: project, preparedContainers: roots) == .applied else {
-                        throw PatchRestoreError.recoveryRequired
+                let receipt = DevicePatchService.latestReceipt(projectID: project.id)
+                if receipt != nil { catalogApplications.markRecoveryRequired(slug) }
+                let commitProject = project
+                try await DirectPatchExecutor.run(validation: {
+                    try NetworkAccessGate.shared.validateGeneration(networkGeneration)
+                    guard auth.authState == .verified, auth.authenticationRevision == authRevision else { throw FeaturePatchError.notAuthenticated }
+                }) {
+                    if let receipt {
+                        guard try DevicePatchService.inspectExistingApplication(receipt: receipt, project: commitProject, preparedContainers: roots) == .applied else {
+                            throw PatchRestoreError.recoveryRequired
+                        }
+                    } else {
+                        _ = try IntegrityCommitBarrier.withCommit { try DevicePatchService.apply(project: commitProject, preparedContainers: roots) }
                     }
-                } else {
-                    _ = try IntegrityCommitBarrier.withCommit { try DevicePatchService.apply(project: project, preparedContainers: roots) }
                 }
+                try NetworkAccessGate.shared.validateGeneration(networkGeneration)
+                guard auth.authState == .verified, auth.authenticationRevision == authRevision else { throw FeaturePatchError.notAuthenticated }
             }
             catalogApplications.markApplied(slug)
             print("[FeaturePatch] protected patch applied successfully")
@@ -691,8 +700,13 @@ final class FeaturePatchService: ObservableObject {
             guard auth.authState == .verified, auth.authenticationRevision == authRevision else {
                 throw FeaturePatchError.notAuthenticated
             }
-            try IntegrityCommitBarrier.withCommit {
-                try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true, preparedContainers: roots)
+            try await DirectPatchExecutor.run(validation: {
+                try NetworkAccessGate.shared.validateGeneration(networkGeneration)
+                guard auth.authState == .verified, auth.authenticationRevision == authRevision else { throw FeaturePatchError.notAuthenticated }
+            }) {
+                try IntegrityCommitBarrier.withCommit {
+                    try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true, preparedContainers: roots)
+                }
             }
         } else if DevicePatchService.recordedApplicationState(projectID: validProjectID) != .off {
             throw PatchRestoreError.missingReceipt
@@ -1184,7 +1198,12 @@ final class FeaturePatchService: ObservableObject {
             let generation = try await NetworkAccessGate.shared.requireAllowed()
             try NetworkAccessGate.shared.validateGeneration(generation)
             guard auth.authState == .verified, auth.authenticationRevision == revision else { throw FeaturePatchError.notAuthenticated }
-            _ = try IntegrityCommitBarrier.withCommit { try DevicePatchService.apply(project: decoded.project, preparedContainers: roots) }
+            _ = try await DirectPatchExecutor.run(validation: {
+                try NetworkAccessGate.shared.validateGeneration(generation)
+                guard auth.authState == .verified, auth.authenticationRevision == revision else { throw FeaturePatchError.notAuthenticated }
+            }) {
+                try IntegrityCommitBarrier.withCommit { try DevicePatchService.apply(project: decoded.project, preparedContainers: roots) }
+            }
         }
         defaults.set(release.id, forKey: "native_patch_release_\(variant.rawValue)")
         defaults.set(decoded.project.id.uuidString, forKey: "native_patch_project_\(variant.rawValue)")

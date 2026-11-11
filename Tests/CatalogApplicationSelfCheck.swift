@@ -34,7 +34,7 @@ struct CatalogApplicationSelfCheck {
         return bytes
     }
     static func json(_ value: Any) throws -> Data { try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys, .withoutEscapingSlashes]) }
-    static func main() throws {
+    static func main() async throws {
         let folder = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
         let fixture = try JSONSerialization.jsonObject(with: Data(contentsOf: folder.appendingPathComponent("catalog.json"))) as! [String: Any]
         let context = fixture["context"] as! [String: Any]
@@ -149,6 +149,19 @@ struct CatalogApplicationSelfCheck {
                 try check(registry.state(for: catalogID, recordedState: lookup) == .off, "restored journal must override stale ON flag")
                 registry.clear(catalogID)
                 try check(registry.projectID(for: catalogID) == nil, "successful restore did not clear catalog association")
+                let commitProject = project
+                let revokedBackups = base.appendingPathComponent("revoked-backups")
+                do {
+                    _ = try await DirectPatchExecutor.run(validation: {}) {
+                        try PatchTransaction.apply(project: commitProject, backupRoot: revokedBackups, containerResolver: { _ in container }, beforeWrite: { index in
+                            if index == 0 { NotificationCenter.default.post(name: Notification.Name("AstraNetworkAccessInvalidated"), object: nil) }
+                        })
+                    }
+                    throw CatalogCheckError.failed("revoked transaction returned success")
+                } catch PatchPackageError.applyFailed {}
+                for rule in project.rules {
+                    try check(Data(contentsOf: container.appendingPathComponent(rule.relativePath)) == original, "revocation left patched bytes instead of rolling back")
+                }
                 print("[PASS] catalog \(sourceID): CryptoKit, apply/restore, missing flag recovery, existing receipt adoption, interrupted restore")
             } catch { print("[FAIL] catalog \(sourceID): \(String(reflecting: error))"); throw error }
         }

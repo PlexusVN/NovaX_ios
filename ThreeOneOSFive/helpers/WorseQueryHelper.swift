@@ -20,6 +20,9 @@ public enum WorseQueryError: LocalizedError {
     case extensionConsumptionFailed
     case containerDiscoveryFailed(String)
     case discoveryInProgress
+    case preparationRequired
+    case nativeException
+    case mainThreadAccess
     case unknownError(Int64)
     case unsupportedOS(String)
     case invalidPath(String)
@@ -46,6 +49,12 @@ public enum WorseQueryError: LocalizedError {
             return "Chưa tìm được thư mục dữ liệu của ứng dụng \(bundleID) bằng worse_query. Hãy mở ứng dụng đích một lần rồi thử lại (WQ02)."
         case .discoveryInProgress:
             return "Astra đang dò thư mục dữ liệu cho một thao tác khác. Hãy chờ thao tác đó hoàn tất rồi thử lại."
+        case .preparationRequired:
+            return "Chưa chuẩn bị xong quyền truy cập iOS 27. Hãy hoàn tất màn hình quét thư mục trước khi bật chức năng."
+        case .nativeException:
+            return "Hệ thống phát sinh exception khi cấp quyền worse_query (WQ08). Xem dòng log cuối của phiên chuẩn bị."
+        case .mainThreadAccess:
+            return "Đã chặn truy cập native trên luồng giao diện (WQ09). Hãy chạy lại bước chuẩn bị quyền truy cập."
         case .unknownError(let code):
             return "Lỗi worse_query không xác định (mã lỗi: \(code))."
         case .unsupportedOS(let version):
@@ -167,6 +176,9 @@ public final class WorseQueryHelper {
 
     /// Cấp phát quyền Sandbox Extension cho đường dẫn mục tiêu
     public static func acquireAccess(for targetPath: String, createDir: Bool = false) throws -> Int64 {
+        if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 && Thread.isMainThread {
+            throw WorseQueryError.mainThreadAccess
+        }
         guard !targetPath.isEmpty else {
             throw WorseQueryError.invalidPath(targetPath)
         }
@@ -208,6 +220,8 @@ public final class WorseQueryHelper {
             throw WorseQueryError.kernelRefusedExtension
         case -7:
             throw WorseQueryError.extensionConsumptionFailed
+        case -8:
+            throw WorseQueryError.nativeException
         case -255:
             throw WorseQueryError.targetNotFound(effectiveTarget)
         default:

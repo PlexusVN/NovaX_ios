@@ -2,7 +2,7 @@ import CryptoKit
 import Darwin
 import Foundation
 
-struct PatchTransactionReceipt: Equatable, Identifiable {
+struct PatchTransactionReceipt: Equatable, Identifiable, Sendable {
     let id: UUID
     let projectID: UUID
     let journalURL: URL
@@ -153,6 +153,7 @@ enum PatchTransaction {
         beforeWrite: ((Int) throws -> Void)? = nil,
         fileManager: FileManager = .default
     ) throws -> PatchTransactionReceipt {
+        try DirectPatchExecutionContext.check()
         guard !project.rules.isEmpty || !project.directories.isEmpty else {
             throw PatchPackageError.invalidProject
         }
@@ -274,6 +275,7 @@ enum PatchTransaction {
         }
         do {
             for resolved in resolvedRules {
+                try DirectPatchExecutionContext.check()
                 let existed = fileManager.fileExists(atPath: resolved.target.path)
                 let backupFilename = existed ? "\(resolved.rule.id.uuidString).original" : nil
                 let appliedFilename = project.isPrivate
@@ -329,12 +331,14 @@ enum PatchTransaction {
 
         do {
             for resolved in resolvedDirectories where !fileManager.fileExists(atPath: resolved.target.path) {
+                try DirectPatchExecutionContext.check()
                 try fileManager.createDirectory(
                     at: resolved.target,
                     withIntermediateDirectories: false
                 )
             }
             for (index, resolved) in resolvedRules.enumerated() {
+                try DirectPatchExecutionContext.check()
                 try beforeWrite?(index)
                 try atomicWrite(
                     resolved.rule.replacementData,
@@ -346,6 +350,7 @@ enum PatchTransaction {
                     throw PatchPackageError.applyFailed
                 }
             }
+            try DirectPatchExecutionContext.check()
             journal.status = .applied
             try writeJournal(journal, to: journalURL)
             return PatchTransactionReceipt(
@@ -439,6 +444,7 @@ enum PatchTransaction {
                 fileManager: fileManager
             ) {
                 for (index, item) in resolved.reversed().enumerated() {
+                    try DirectPatchExecutionContext.check()
                     try beforeWrite?(index)
                     if item.record.originalExisted {
                         let backup = transactionDirectory.appendingPathComponent(
@@ -449,6 +455,7 @@ enum PatchTransaction {
                         try fileManager.removeItem(at: item.target)
                     }
                 }
+                try DirectPatchExecutionContext.check()
                 journal.status = .restored
                 try writeJournal(journal, to: receipt.journalURL)
             }
@@ -1230,6 +1237,7 @@ enum DevicePatchService {
         defer { handles.reversed().forEach { sandbox_extension_release_handle($0) } }
 
         for bundleID in bundleIDs {
+            try DirectPatchExecutionContext.check()
             let path: String
             if let prepared {
                 guard let root = prepared[bundleID] else { throw PatchPackageError.targetAppUnavailable(bundleID) }

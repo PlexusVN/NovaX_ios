@@ -107,6 +107,7 @@ jobs:
             ThreeOneOSFive/helpers/ProtectedArtifactDecoder.swift \
             ThreeOneOSFive/helpers/PatchProjectModels.swift \
             ThreeOneOSFive/helpers/PatchPackageCodec.swift \
+            ThreeOneOSFive/helpers/DirectPatchExecutor.swift \
             ThreeOneOSFive/helpers/PatchTransaction.swift \
             Tests/CatalogApplicationSelfCheck.swift -o "$RUNNER_TEMP/astra-catalog-selfcheck"
           "$RUNNER_TEMP/astra-catalog-selfcheck" Tests/Fixtures/catalog
@@ -121,6 +122,15 @@ jobs:
             Tests/DeviceEnvironmentSelfCheck.swift \
             Tests/IntegritySelfCheck.swift -o "$RUNNER_TEMP/astra-integrity-selfcheck"
           "$RUNNER_TEMP/astra-integrity-selfcheck" Tests/Fixtures/integrity_release.json
+
+      # Catch SwiftUI/root-flow errors before the lengthy native rebuild. This
+      # app is never packaged; the final app is rebuilt with verified archives.
+      - name: Compile app integration before native rebuild
+        run: |
+          xcodebuild build -quiet \
+            -project ThreeOneOSFive.xcodeproj -target 3105 -configuration Release \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            CONFIGURATION_BUILD_DIR="$(pwd)/build/preflight"
 
       - name: Cache iOS 16 native compilation
         uses: actions/cache@v4
@@ -154,7 +164,7 @@ jobs:
           test -d "$APP_NAME"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$APP_NAME/Info.plist")" = "Astra"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_NAME/Info.plist")" = "2.1"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_NAME/Info.plist")" = "25"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_NAME/Info.plist")" = "26"
           EXECUTABLE=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP_NAME/Info.plist")
           test -x "$APP_NAME/$EXECUTABLE"
           python3 ReleaseTools/verify_native_compatibility.py --app "$APP_NAME" --max-ios 16.0
@@ -198,5 +208,5 @@ jobs:
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Astra-Unsigned-IPA-2.1-25
+          name: Astra-Unsigned-IPA-2.1-26
           path: build/Astra.ipa

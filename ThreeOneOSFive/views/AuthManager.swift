@@ -6,9 +6,18 @@ import Combine
 final class AuthManager: ObservableObject {
     private(set) var authenticationRevision: UInt64 = 0
 
-    @Published var authState: AuthState = .idle
+    @Published var authState: AuthState = .idle {
+        didSet {
+            if oldValue != authState { NotificationCenter.default.post(name: Notification.Name("AstraAuthenticationInvalidated"), object: nil) }
+        }
+    }
     @Published var licenseKey: String = "" {
-        didSet { if oldValue != licenseKey { authenticationRevision &+= 1 } }
+        didSet {
+            if oldValue != licenseKey {
+                authenticationRevision &+= 1
+                NotificationCenter.default.post(name: Notification.Name("AstraAuthenticationInvalidated"), object: nil)
+            }
+        }
     }
     @Published var hwid: String = DeviceUtils.hwid
     @Published var deviceName: String = DeviceUtils.deviceMarketingName

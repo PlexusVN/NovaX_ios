@@ -88,3 +88,4 @@ release-registry.json
 !/Tests/WorseQueryNativeSelfCheck.m
 !/Tests/ContainerDiscoverySelfCheck.swift
 !/Tests/ContainerScanProgressSelfCheck.swift
+!/Tests/DirectPatchExecutorSelfCheck.swift

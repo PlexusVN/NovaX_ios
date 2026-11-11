@@ -25,6 +25,7 @@ static NSURL *groupRoot;
 static BOOL groupAvailable = YES, libraryAvailable = YES, rejectQuery = NO, refuseToken = NO;
 static BOOL failCreate = NO, missingSymbol = NO;
 static BOOL throwGroupException = NO;
+static BOOL throwQueryException = NO;
 static int statError = EACCES;
 static int64_t consumedHandle = 42, releasedHandle = -1;
 static NSUInteger created = 0, freed = 0, activeQueries = 0;
@@ -56,6 +57,7 @@ static void setGroup(void *query, xpc_object_t value) {
     NSCAssert(strcmp(xpc_string_get_string_ptr(value), groupID.UTF8String) == 0, @"wrong App Group identifier");
 }
 static void *getResult(void *query) {
+    if (throwQueryException) @throw [NSException exceptionWithName:NSInvalidArgumentException reason:@"fixture query exception" userInfo:nil];
     FixtureQuery *q = query;
     NSCAssert(q->klass == 7 && q->part == 3, @"query does not match upstream class/part");
     NSCAssert(q->flags == 0x0000000800000000ULL || q->flags == 0x0000008000000000ULL, @"wrong token flags");
@@ -124,6 +126,10 @@ int main(void) {
             NSCAssert(worse_query_group_path(groupID) == nil, @"Foundation exception escaped into Swift");
             NSCAssert(worse_query(target, groupID, NO, NO) == -1, @"native query did not handle group exception");
             throwGroupException = NO;
+            throwQueryException = YES;
+            NSCAssert(worse_query(target, groupID, NO, NO) == -8, @"native query exception escaped");
+            checkClean();
+            throwQueryException = NO;
             NSCAssert(worse_query(target, groupID, NO, NO) == 42, @"EACCES prevented token acquisition");
             NSCAssert(lastFlags == 0x0000008000000000ULL, @"default flag differs from upstream");
             checkClean();

@@ -68,6 +68,12 @@ enum ContainerStore {
             return nil
         }
 
+        // iOS 27 patching uses only roots verified by the explicit preparation
+        // gate. Never enter LS/MCM class-2/bad_query before the scan UI exists.
+        if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 {
+            return IOS27ContainerSession.path(for: bundleID)
+        }
+
         let cacheKey = "astra.resolved_container.\(bundleID)"
 
         // 1. Kiểm tra cache đã lưu trước đó nếu đường dẫn container vẫn tồn tại
@@ -134,6 +140,12 @@ enum ContainerStore {
     /// query or filesystem setup into the same "app unavailable" message.
     static func resolveAppContainerForPatch(bundleID: String) throws -> String {
         _ = try PatchPathValidator.canonicalBundleIdentifier(bundleID)
+        if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 {
+            guard let path = IOS27ContainerSession.path(for: bundleID) else {
+                throw WorseQueryError.preparationRequired
+            }
+            return path
+        }
         if let path = resolveAppContainerPath(bundleID: bundleID, allowMetadataScan: false, retainAccess: false) {
             return path
         }
@@ -142,6 +154,89 @@ enum ContainerStore {
         }
         if let path = resolveAppContainerPath(bundleID: bundleID, retainAccess: false) { return path }
         throw PatchPackageError.targetAppUnavailable(bundleID)
+    }
+
+    static func prepareIOS27Access() throws -> [String: String] {
+        guard discoveryLock.try() else { throw WorseQueryError.discoveryInProgress }
+        defer { discoveryLock.unlock() }
+        let targets: Set<String> = ["com.dts.freefireth", "com.dts.freefiremax"]
+        return try ContainerScanProgress.shared.track(bundleID: targets.sorted().joined(separator: ", "),
+            successMessage: "Đã chuẩn bị quyền truy cập thư mục game. Chọn Vào ứng dụng để tiếp tục.") { sessionID in
+            guard WorseQueryHelper.isOSSupported else { throw WorseQueryError.unsupportedOS(AppInfo.osBuild) }
+            ContainerScanProgress.shared.checkpoint(sessionID, message: "Kiểm tra App Group của bản ký hiện tại…")
+            guard WorseQueryHelper.isAppGroupConfigured else { throw WorseQueryError.appGroupUnavailable }
+            var found: [String: String] = [:]
+            var seen = Set<String>()
+            var candidates = 0, grants = 0
+            var lastGrantError: Error?
+
+            func inspect(_ path: String) throws {
+                try ContainerScanProgress.shared.checkCancellation(sessionID)
+                let clean = ContainerDiscoveryMerger.canonicalPath(path)
+                guard isApplicationContainerPath(clean), seen.insert(clean).inserted else { return }
+                candidates += 1
+                ContainerScanProgress.shared.checkpoint(sessionID, message: "worse_query: cấp token cho \(clean)")
+                let handle: Int64
+                do { handle = try WorseQueryHelper.acquireAccess(for: clean) }
+                catch { lastGrantError = error; throw error }
+                defer { WorseQueryHelper.releaseAccess(handle: handle) }
+                grants += 1
+                ContainerScanProgress.shared.checkpoint(sessionID, message: "Token hợp lệ; đọc định danh container…")
+                var buffer = [CChar](repeating: 0, count: 512)
+                let length = getxattr(clean, "com.apple.containermanager.identifier", &buffer, 511, 0, 0)
+                var identifier: String?
+                if length > 0 { identifier = String(cString: buffer) }
+                if identifier == nil,
+                   let data = try? Data(contentsOf: URL(fileURLWithPath: metadataPath(for: clean))),
+                   let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any] {
+                    identifier = plist["MCMMetadataIdentifier"] as? String
+                }
+                guard let identifier,
+                      (try? PatchPathValidator.canonicalBundleIdentifier(identifier)) == identifier else { return }
+                UserDefaults.standard.set(clean, forKey: "astra.resolved_container.\(identifier)")
+                if targets.contains(identifier) {
+                    found[identifier] = clean
+                    ContainerScanProgress.shared.checkpoint(sessionID, message: "Đã xác minh \(identifier).")
+                }
+            }
+
+            // A cached UUID is re-identified under a real token, never accepted
+            // solely because a directory exists or LS/MCM returned its path.
+            for bundleID in targets.sorted() {
+                if let cached = UserDefaults.standard.string(forKey: "astra.resolved_container.\(bundleID)") {
+                    do { try inspect(cached) }
+                    catch is CancellationError { throw CancellationError() }
+                    catch { ContainerScanProgress.shared.checkpoint(sessionID, message: "Cache không dùng được: \(error.localizedDescription)") }
+                }
+            }
+            ContainerScanProgress.shared.report(sessionID, scanned: 0, total: 0, candidates: candidates, grants: grants,
+                message: "Kiểm tra cache: \(found.count) game đã được xác minh.")
+            if found.count == targets.count { return found }
+            let maximum = try WorseQueryHelper.currentFilesystemMaxInode()
+            let chunkSize: UInt64 = 50_000
+            var first: UInt64 = 1
+            ContainerScanProgress.shared.report(sessionID, scanned: 0, total: maximum, candidates: candidates, grants: grants,
+                message: "Quét toàn bộ phạm vi 1…\(maximum) inode bằng pathleak; không dùng MCM/LaunchServices.")
+            while first <= maximum {
+                try ContainerScanProgress.shared.checkCancellation(sessionID)
+                let last = first + min(chunkSize - 1, maximum - first)
+                let paths = try WorseQueryHelper.enumeratePaths(in: appDataRoot, from: first, through: last)
+                for path in paths {
+                    do { try inspect(path) }
+                    catch is CancellationError { throw CancellationError() }
+                    catch { ContainerScanProgress.shared.checkpoint(sessionID, message: "Không cấp được quyền: \(error.localizedDescription)") }
+                }
+                ContainerScanProgress.shared.report(sessionID, scanned: last, total: maximum, candidates: candidates, grants: grants,
+                    message: "Đã dò \(last)/\(maximum) inode; \(candidates) container, \(grants) token hợp lệ, \(found.count) game.")
+                if found.count == targets.count || last == maximum { break }
+                first = last + 1
+            }
+            guard !found.isEmpty else {
+                if grants == 0, let lastGrantError { throw lastGrantError }
+                throw WorseQueryError.containerDiscoveryFailed("Free Fire / Free Fire MAX")
+            }
+            return found
+        }
     }
 
     private static func resolveContainerWithWorseQuery(bundleID: String) throws -> String {

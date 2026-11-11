@@ -12,6 +12,7 @@ struct ThreeOneOSFiveApp: App {
     @StateObject private var gatekeeper = AirLiftGatekeeperManager.shared
     @StateObject private var networkAccess = NetworkAccessGate.shared
     @StateObject private var containerScan = ContainerScanProgress.shared
+    @StateObject private var ios27Preparation = IOS27ContainerPreparation.shared
     @AppStorage(AppLanguage.storageKey) private var languageCode = AppLanguage.vietnamese.rawValue
     @State private var showMainInterface = false
     @Environment(\.scenePhase) private var scenePhase
@@ -45,13 +46,20 @@ struct ThreeOneOSFiveApp: App {
         AppLanguage(rawValue: languageCode) ?? .vietnamese
     }
 
+    private var requiresIOS27Preparation: Bool {
+        AppInfo.versionTuple.major == 27 && ExploitSupportPolicy.currentSupportsWorseQuery
+    }
+
     var body: some Scene {
         WindowGroup {
             ZStack {
                 // Một màn hình duy nhất: SplashLoginView gộp loading + login
                 // → liền mạch, không có "chuyển cảnh" giữa 2 view (giống HTML)
                 Group {
-                    if authManager.authState == .verified && gatekeeper.requiresPairingForCurrentDevice && !gatekeeper.canBypassGatekeeper {
+                    if authManager.authState == .verified && requiresIOS27Preparation && !ios27Preparation.didContinue {
+                        IOS27PreparationView(preparation: ios27Preparation)
+                            .zIndex(2)
+                    } else if authManager.authState == .verified && gatekeeper.requiresPairingForCurrentDevice && !gatekeeper.canBypassGatekeeper {
                         IOS27PairingSetupView(auth: authManager) {
                             withAnimation(.easeInOut(duration: 0.32)) {
                                 showMainInterface = true
@@ -92,7 +100,7 @@ struct ThreeOneOSFiveApp: App {
                     }
                 }
 
-                if AppInfo.versionTuple.major == 27 && containerScan.isPresented && authManager.authState == .verified {
+                if AppInfo.versionTuple.major == 27 && containerScan.isPresented && authManager.authState == .verified && (!requiresIOS27Preparation || ios27Preparation.didContinue) {
                     ContainerScanProgressView(progress: containerScan)
                         .zIndex(2.5)
                 }
@@ -108,11 +116,12 @@ struct ThreeOneOSFiveApp: App {
                 }
             }
             .animation(.easeInOut(duration: 0.32), value: showMainInterface)
-            .animation(.easeInOut(duration: 0.32), value: authManager.authState == .verified && gatekeeper.canBypassGatekeeper)
+            .animation(.easeInOut(duration: 0.32), value: ios27Preparation.didContinue)
             .preferredColorScheme(.dark)
             .task(id: authManager.authState == .verified) {
                 guard authManager.authState == .verified else {
                     showMainInterface = false
+                    ios27Preparation.reset()
                     return
                 }
 

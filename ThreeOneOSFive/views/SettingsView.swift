@@ -7,6 +7,7 @@ struct SettingsView: View {
     @AppStorage(AppLanguage.storageKey) private var languageCode = AppLanguage.vietnamese.rawValue
     @ObservedObject private var updateManager = UpdateManager.shared
     @State private var showContainerScanHistory = false
+    @ObservedObject private var ios27Preparation = IOS27ContainerPreparation.shared
 
     var body: some View {
         NavigationStack {
@@ -66,6 +67,7 @@ struct SettingsView: View {
                 if AppInfo.versionTuple.major == 27 {
                     Section {
                         Button("Xem nhật ký quét thư mục") { showContainerScanHistory = true }
+                        Button("Quét lại quyền truy cập game") { ios27Preparation.reset() }
                     } header: {
                         Text("Quét thư mục iOS 27")
                     } footer: {
