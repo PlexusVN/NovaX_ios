@@ -162,7 +162,9 @@ struct IOS27PreparationView: View {
                             Label("Không thể chuẩn bị iOS 27", systemImage: "exclamationmark.circle.fill")
                                 .font(.subheadline.bold())
                                 .foregroundColor(AppTheme.statusError)
-                            Text(failure)
+                            Text(failure.replacingOccurrences(
+                                of: "Xem dòng log cuối rồi chọn Thử lại để tiếp tục.",
+                                with: "Chọn Thử lại để tiếp tục hoặc sao chép thông tin lỗi để được hỗ trợ."))
                                 .font(.system(.caption, design: .monospaced))
                                 .textSelection(.enabled)
                                 .fixedSize(horizontal: false, vertical: true)
