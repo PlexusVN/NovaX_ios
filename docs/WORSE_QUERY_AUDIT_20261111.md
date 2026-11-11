@@ -31,6 +31,9 @@ query, library và token có cleanup chung cả khi Objective-C exception phát 
 SIGSEGV/SIGABRT/SIGKILL; không coi test giả lập là bằng chứng đã hết crash máy thật.
 XPC group identifier có owner với objc_precise_lifetime đến sau query_free;
 không kết thúc ownership khi hàm perform trả về trước khi cleanup chạy.
+App Group được xác minh trên worker và cache cho runtime router. SwiftUI không
+gọi Foundation/containermanager lookup trên main thread khi đọc trạng thái engine;
+không giữ lock cache trong lúc chờ RPC. Mỗi lượt chuẩn bị làm mới xác minh này.
 
 Apply/restore/đọc/ghi trực tiếp đi qua DirectPatchExecutor. Worker giữ nguyên
 barrier/journal và token cho toàn transaction. Auth/network bị thu hồi hoặc hủy

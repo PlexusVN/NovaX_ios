@@ -47,6 +47,7 @@ enum FixtureFailure: Error { case operation }
 
 @main struct WorseQueryHelperSelfCheck {
     @MainActor static func main() async throws {
+        precondition(WorseQueryHelper.resolveActiveAppGroup() == nil, "UI performed a native group probe before preparation")
         do {
             _ = try WorseQueryHelper.acquireAccess(for: "/var/mobile/Containers/Data/Application/fixture")
             preconditionFailure("main-thread native query was not rejected")
@@ -94,12 +95,14 @@ enum FixtureFailure: Error { case operation }
         } catch WorseQueryError.extensionConsumptionFailed {}
         precondition(NativeFixture.released == [42, 42])
         FileManager.default.groupAvailable = false
+        WorseQueryHelper.invalidateActiveAppGroup()
         precondition(!WorseQueryHelper.isAvailable)
         do {
             _ = try WorseQueryHelper.acquireAccess(for: root)
             preconditionFailure("missing signed group was ignored")
         } catch WorseQueryError.appGroupUnavailable {}
         FileManager.default.groupAvailable = true
+        WorseQueryHelper.invalidateActiveAppGroup()
         NativeFixture.result = 43
         ProcessInfo.processInfo.operatingSystemVersion = OperatingSystemVersion(majorVersion: 26, minorVersion: 1, patchVersion: 0)
         let handle = try WorseQueryHelper.acquireAccess(for: "/var/mobile/Containers/Shared/AppGroup/test")

@@ -67,6 +67,9 @@ public enum WorseQueryError: LocalizedError {
 
 public final class WorseQueryHelper {
     public static let shared = WorseQueryHelper()
+    private static let groupStateLock = NSLock()
+    private static var groupProbeCompleted = false
+    private static var verifiedGroup: String?
 
     /// Danh sách các App Group định danh dự phòng
     public static let candidateAppGroups: [String] = {
@@ -86,12 +89,33 @@ public final class WorseQueryHelper {
 
     /// Tự động phát hiện App Group đang hoạt động được hệ thống cấp phép
     public static func resolveActiveAppGroup() -> String? {
+        groupStateLock.lock()
+        let completed = groupProbeCompleted
+        let cached = verifiedGroup
+        groupStateLock.unlock()
+        if completed { return cached }
+        // Runtime routing is read during SwiftUI rendering. Never perform the
+        // Foundation/containermanager lookup there on iOS 27, even while a
+        // worker is already waiting for containermanagerd.
+        if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 && Thread.isMainThread { return nil }
+        var resolved: String?
         for group in candidateAppGroups {
             // Foundation may raise an Objective-C exception for a group removed
             // by re-signing. Swift do/catch cannot catch that exception.
-            if worse_query_group_path(group) != nil { return group }
+            if worse_query_group_path(group) != nil { resolved = group; break }
         }
-        return nil
+        groupStateLock.lock()
+        verifiedGroup = resolved
+        groupProbeCompleted = true
+        groupStateLock.unlock()
+        return resolved
+    }
+
+    static func invalidateActiveAppGroup() {
+        groupStateLock.lock()
+        verifiedGroup = nil
+        groupProbeCompleted = false
+        groupStateLock.unlock()
     }
 
     /// Kiểm tra App Group có sẵn sàng hay không
@@ -207,6 +231,7 @@ public final class WorseQueryHelper {
 
         switch handle {
         case -1:
+            invalidateActiveAppGroup()
             throw WorseQueryError.appGroupUnavailable
         case -2:
             throw WorseQueryError.dlopenOrSymbolsFailed

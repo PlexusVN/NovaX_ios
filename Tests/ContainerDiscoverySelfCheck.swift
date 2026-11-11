@@ -31,6 +31,7 @@ enum DiscoveryFixture {
     }
 }
 enum WorseQueryHelper {
+    static func invalidateActiveAppGroup() {}
     static let isOSSupported = true
     static var isAppGroupConfigured: Bool { !DiscoveryFixture.missingGroup }
     static let isAvailable = true

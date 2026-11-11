@@ -164,6 +164,7 @@ enum ContainerStore {
             successMessage: "Đã chuẩn bị quyền truy cập thư mục game. Chọn Vào ứng dụng để tiếp tục.") { sessionID in
             guard WorseQueryHelper.isOSSupported else { throw WorseQueryError.unsupportedOS(AppInfo.osBuild) }
             ContainerScanProgress.shared.checkpoint(sessionID, message: "Kiểm tra App Group của bản ký hiện tại…")
+            WorseQueryHelper.invalidateActiveAppGroup()
             guard WorseQueryHelper.isAppGroupConfigured else { throw WorseQueryError.appGroupUnavailable }
             var found: [String: String] = [:]
             var seen = Set<String>()
