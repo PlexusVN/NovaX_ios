@@ -5,11 +5,11 @@ private enum ResumeCheckError: Error { case failed(String), writeFailure }
 private final class ResumeMemory {
     var values: [String: Data] = [:]
     var failTag: String?
-    lazy var storage = DeviceIdentityStorage(read: { [unowned self] in values[$0] },
-        write: { [unowned self] tag, value in
+    lazy var storage = DeviceIdentityStorage(read: { [self] in values[$0] },
+        write: { [self] tag, value in
             if tag == failTag { throw ResumeCheckError.writeFailure }
             values[tag] = value
-        }, remove: { [unowned self] in values.removeValue(forKey: $0) })
+        }, remove: { [self] in values.removeValue(forKey: $0) })
 }
 @MainActor private final class ResumeTransport {
     let binding: String
