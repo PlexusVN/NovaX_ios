@@ -65,12 +65,18 @@ func getxattr(_ path: String, _ name: String, _ value: UnsafeMutableRawPointer?,
     return bytes.count - 1
 }
 func log(_ line: String) {}
+final class RestartFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var flag = false
+    func set() { lock.lock(); flag = true; lock.unlock() }
+    var value: Bool { lock.lock(); defer { lock.unlock() }; return flag }
+}
 
 @main struct ContainerDiscoverySelfCheck {
     @MainActor static func drain() async { await withCheckedContinuation { c in DispatchQueue.main.async { c.resume() } } }
     @MainActor static func main() async throws {
         defer { UserDefaults.standard.removePersistentDomain(forName: UserDefaults.suite); IOS27ContainerSession.reset() }
-        let preparation = IOS27ContainerPreparation(progress: DiscoveryFixture.progress, operation: { try ContainerStore.prepareIOS27Access() })
+        let preparation = IOS27ContainerPreparation(progress: DiscoveryFixture.progress, operation: { try ContainerStore.prepareIOS27Access(forceScan: $0) })
         precondition(preparation.state == .idle && !preparation.didContinue)
         preparation.enterApplication()
         precondition(!preparation.didContinue, "gate allowed entry before preparation")
@@ -90,6 +96,16 @@ func log(_ line: String) {}
         await preparation.prepareIfNeeded(force: true); await drain()
         precondition(preparation.state == .ready && DiscoveryFixture.ranges.isEmpty)
         precondition(DiscoveryFixture.calls == 2, "cache bypassed real token/identifier verification")
+
+        preparation.reset(); DiscoveryFixture.reset(clearCache: false)
+        UserDefaults.standard.removeObject(forKey: "astra.resolved_container.\(DiscoveryFixture.maxID)")
+        await preparation.prepareIfNeeded(); await drain()
+        precondition(preparation.state == .ready && DiscoveryFixture.ranges.isEmpty && DiscoveryFixture.calls == 1,
+                     "single installed game caused a full scan on every launch")
+        preparation.reset(forceScan: true); DiscoveryFixture.reset(clearCache: false)
+        await preparation.prepareIfNeeded(); await drain()
+        precondition(preparation.state == .ready && !DiscoveryFixture.ranges.isEmpty && IOS27ContainerSession.path(for: DiscoveryFixture.maxID) != nil,
+                     "explicit rescan could not discover a newly installed variant")
 
         preparation.reset(); DiscoveryFixture.reset(); DiscoveryFixture.missingGroup = true
         await preparation.prepareIfNeeded(force: true); await drain()
@@ -118,15 +134,15 @@ func log(_ line: String) {}
         let previous = ContainerScanSnapshot(id: UUID(), bundleID: DiscoveryFixture.gameID, phase: .scanning)
         try JSONEncoder().encode(previous).write(to: history)
         let interruptedProgress = ContainerScanProgress(historyURL: history)
-        var restarted = false
-        let interruptedGate = IOS27ContainerPreparation(progress: interruptedProgress, operation: {
-            restarted = true
+        let restarted = RestartFlag()
+        let interruptedGate = IOS27ContainerPreparation(progress: interruptedProgress, operation: { _ in
+            restarted.set()
             return [DiscoveryFixture.gameID: DiscoveryFixture.game]
         })
         await interruptedGate.prepareIfNeeded()
-        precondition(interruptedGate.state == .failed && !restarted && !interruptedGate.didContinue)
+        precondition(interruptedGate.state == .failed && !restarted.value && !interruptedGate.didContinue)
         await interruptedGate.prepareIfNeeded(force: true)
-        precondition(interruptedGate.state == .ready && restarted && !interruptedGate.didContinue)
+        precondition(interruptedGate.state == .ready && restarted.value && !interruptedGate.didContinue)
         print("[PASS] actual iOS27 preparation gate: 27.0.1, high inodes, both games, cache revalidation, no legacy MCM/LS, per-UUID tokens, off-main, missing group, failure/cancel blocks entry and patch")
     }
 }

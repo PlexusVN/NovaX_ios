@@ -156,7 +156,7 @@ enum ContainerStore {
         throw PatchPackageError.targetAppUnavailable(bundleID)
     }
 
-    static func prepareIOS27Access() throws -> [String: String] {
+    static func prepareIOS27Access(forceScan: Bool = false) throws -> [String: String] {
         guard discoveryLock.try() else { throw WorseQueryError.discoveryInProgress }
         defer { discoveryLock.unlock() }
         let targets: Set<String> = ["com.dts.freefireth", "com.dts.freefiremax"]
@@ -211,7 +211,7 @@ enum ContainerStore {
             }
             ContainerScanProgress.shared.report(sessionID, scanned: 0, total: 0, candidates: candidates, grants: grants,
                 message: "Kiểm tra cache: \(found.count) game đã được xác minh.")
-            if found.count == targets.count { return found }
+            if found.count == targets.count || (!forceScan && !found.isEmpty) { return found }
             let maximum = try WorseQueryHelper.currentFilesystemMaxInode()
             let chunkSize: UInt64 = 50_000
             var first: UInt64 = 1

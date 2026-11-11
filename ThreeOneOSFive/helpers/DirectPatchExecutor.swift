@@ -1,6 +1,6 @@
 import Foundation
 
-fileprivate final class DirectPatchPermit: NSObject {
+fileprivate final class DirectPatchPermit: NSObject, @unchecked Sendable {
     private let lock = NSLock()
     private var revoked = false
     func revoke() { lock.lock(); revoked = true; lock.unlock() }
@@ -33,8 +33,8 @@ enum DirectPatchExecutionContext {
 /// Native query, backup/write/verify and rollback never occupy MainActor.
 /// Revocation is checked before forward writes; rollback remains uninterrupted.
 enum DirectPatchExecutor {
-    static func run<T: Sendable>(validation: @escaping @MainActor () throws -> Void,
-                       operation: @escaping () throws -> T) async throws -> T {
+    static func run<T: Sendable>(validation: @escaping @MainActor @Sendable () throws -> Void,
+                       operation: @escaping @Sendable () throws -> T) async throws -> T {
         let permit = DirectPatchPermit()
         let notifications = NotificationCenter.default
         let observers = ["AstraNetworkAccessInvalidated", "AstraAuthenticationInvalidated"].map { name in

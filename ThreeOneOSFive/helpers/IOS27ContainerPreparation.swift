@@ -24,17 +24,18 @@ final class IOS27ContainerPreparation: ObservableObject {
     private var work: Task<[String: String], Error>?
     private var generation: UInt64 = 0
     private let progress: ContainerScanProgress
-    private let operation: () throws -> [String: String]
+    private let operation: @Sendable (Bool) throws -> [String: String]
+    private var forceNextScan = false
 
     init(progress: ContainerScanProgress = .shared,
-         operation: @escaping () throws -> [String: String] = { try ContainerStore.prepareIOS27Access() }) {
+         operation: @escaping @Sendable (Bool) throws -> [String: String] = { try ContainerStore.prepareIOS27Access(forceScan: $0) }) {
         self.progress = progress
         self.operation = operation
     }
 
     func prepareIfNeeded(force: Bool = false) async {
         guard work == nil, state != .ready || force else { return }
-        if !force && progress.snapshot.phase == .interrupted {
+        if !force && !forceNextScan && progress.snapshot.phase == .interrupted {
             state = .failed
             failure = "Phiên chuẩn bị trước bị gián đoạn. Xem dòng log cuối rồi chọn Thử lại để tiếp tục."
             return
@@ -44,7 +45,9 @@ final class IOS27ContainerPreparation: ObservableObject {
         state = .preparing; failure = nil; canUseAirLift = false; didContinue = false
         IOS27ContainerSession.reset()
         let operation = self.operation
-        let task = Task.detached(priority: .userInitiated) { try operation() }
+        let forceScan = force || forceNextScan
+        forceNextScan = false
+        let task = Task.detached(priority: .userInitiated) { try operation(forceScan) }
         work = task
         do {
             let roots = try await withTaskCancellationHandler(operation: { try await task.value }, onCancel: { task.cancel() })
@@ -74,10 +77,11 @@ final class IOS27ContainerPreparation: ObservableObject {
         didContinue = true
     }
 
-    func reset() {
+    func reset(forceScan: Bool = false) {
         generation &+= 1
         work?.cancel(); work = nil
         IOS27ContainerSession.reset()
         state = .idle; failure = nil; didContinue = false; canUseAirLift = false
+        forceNextScan = forceScan
     }
 }

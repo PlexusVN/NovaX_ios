@@ -67,7 +67,7 @@ struct SettingsView: View {
                 if AppInfo.versionTuple.major == 27 {
                     Section {
                         Button("Xem nhật ký quét thư mục") { showContainerScanHistory = true }
-                        Button("Quét lại quyền truy cập game") { ios27Preparation.reset() }
+                        Button("Quét lại quyền truy cập game") { ios27Preparation.reset(forceScan: true) }
                     } header: {
                         Text("Quét thư mục iOS 27")
                     } footer: {

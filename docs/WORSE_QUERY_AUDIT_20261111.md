@@ -21,6 +21,9 @@ class 2/bad_query trong đường chuẩn bị hoặc resolve patch iOS 27. Qué
 50.000 inode tới baseline, dùng một lượt cho Free Fire và MAX. Nếu chỉ cài một
 game, quét hết phạm vi rồi cho tiếp tục với game đã xác minh; không tự tạo đường
 dẫn cho game chưa có. Có nút quét lại trong Cài đặt.
+Nếu cache đã xác minh được một game thì lần mở bình thường dùng ngay kết quả đó;
+không quét toàn bộ chỉ để tìm biến thể chưa cài. Nút Quét lại buộc kiểm tra các
+biến thể còn thiếu, phù hợp khi người dùng mới cài thêm game.
 
 Từng bước native được checkpoint xuống lịch sử trước khi gọi. Caches symlink,
 query, library và token có cleanup chung cả khi Objective-C exception phát sinh
