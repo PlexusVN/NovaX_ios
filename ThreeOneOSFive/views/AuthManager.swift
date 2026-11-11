@@ -68,6 +68,12 @@ final class AuthManager: ObservableObject {
             return
         }
 
+        if hwid.isEmpty { hwid = DeviceUtils.hwid }
+        guard UUID(uuidString: hwid) != nil else {
+            authState = .error("Chưa đọc được định danh thiết bị. Hãy mở khóa iPhone rồi thử lại.")
+            return
+        }
+
         authState = .loading("Đang xác thực...")
 
         let key = licenseKey.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -135,7 +141,10 @@ final class AuthManager: ObservableObject {
             }
 
             licenseKey = key
-            _ = KeychainUtils.save(key: "novax_saved_license_key", value: key)
+            guard KeychainUtils.save(key: "novax_saved_license_key", value: key) else {
+                authState = .error("Không thể lưu phiên bảo mật. Hãy mở khóa iPhone rồi thử lại.")
+                return
+            }
             defaults.removeObject(forKey: keyKey)
             authState = .verified
             errorMessage = nil

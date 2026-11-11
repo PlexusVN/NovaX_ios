@@ -8,39 +8,36 @@ import CFNetwork
 // MARK: - Keychain helpers (sideload-safe: no entitlement dependency)
 
 enum KeychainUtils {
+    private static let lock = NSLock()
     static func save(key: String, value: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
         guard let data = value.data(using: .utf8) else { return false }
 
         let identityQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: key
         ]
-        // Delete by identity only. Including kSecValueData in the delete query
-        // would fail whenever an existing item is being updated to new data.
-        SecItemDelete(identityQuery as CFDictionary)
-
-        // Try with access group first (works for sideload with matching entitlements)
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: key,
+        // Updating preserves the previous value if Keychain is temporarily
+        // unavailable. Never delete a valid HWID/license before a write succeeds.
+        let values: [String: Any] = [
             kSecValueData as String: data,
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         ]
-        let status = SecItemAdd(query as CFDictionary, nil)
-        if status == errSecSuccess { return true }
-
-        // Fallback: no access group (works across re-signing tools)
-        let fallback: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: key,
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        ]
-        SecItemDelete(identityQuery as CFDictionary)
-        return SecItemAdd(fallback as CFDictionary, nil) == errSecSuccess
+        let update = SecItemUpdate(identityQuery as CFDictionary, values as CFDictionary)
+        if update == errSecSuccess { return true }
+        guard update == errSecItemNotFound else { return false }
+        var insert = identityQuery
+        values.forEach { insert[$0.key] = $0.value }
+        let added = SecItemAdd(insert as CFDictionary, nil)
+        if added == errSecSuccess { return true }
+        if added == errSecDuplicateItem {
+            return SecItemUpdate(identityQuery as CFDictionary, values as CFDictionary) == errSecSuccess
+        }
+        return false
     }
 
     static func read(key: String) -> String? {
+        lock.lock(); defer { lock.unlock() }
         // Try primary query
         if let value = readInternal(key: key, accessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly) {
             return value
@@ -66,6 +63,7 @@ enum KeychainUtils {
     }
 
     static func delete(key: String) {
+        lock.lock(); defer { lock.unlock() }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: key
@@ -351,23 +349,32 @@ var expectedServerPin: String { "7NfgIVpP+fdJQCMiloG7ljIWxP5OZEiAGfsc6+jgcQA=" }
 
 // MARK: - Device Utils
 
+// BEGIN STABLE HWID POLICY — compiled with isolated storage by regression tests.
+enum StableDeviceHWID {
+    static func resolve(storage: DeviceIdentityStorage, vendorID: String?) throws -> String {
+        if let data = try storage.read("deviceHwid") {
+            guard let stored = String(data: data, encoding: .utf8), UUID(uuidString: stored) != nil else {
+                throw DeviceIdentityError.invalidIdentity
+            }
+            return stored
+        }
+        // IDFV can be nil before the first unlock. Do not manufacture a new
+        // hardware identity or consume another license slot while it is absent.
+        guard let vendorID, UUID(uuidString: vendorID) != nil else {
+            throw DeviceIdentityError.identityMissing
+        }
+        try storage.write("deviceHwid", Data(vendorID.utf8))
+        return vendorID
+    }
+}
+// END STABLE HWID POLICY
+
 struct DeviceUtils {
 
-    /// HWID: Sử dụng trực tiếp UID định danh của thiết bị (identifierForVendor), không băm hay lấy phần khác.
+    /// Keep the original device-local UID across launches and app updates.
     static var hwid: String {
-        // Lấy trực tiếp UID định danh của máy
-        if let vendorID = UIDevice.current.identifierForVendor?.uuidString, !vendorID.isEmpty {
-            _ = KeychainUtils.save(key: "deviceHwid", value: vendorID)
-            return vendorID
-        }
-        // Fallback đọc từ Keychain nếu đã lưu UID trước đó (dạng UUID hợp lệ có dấu gạch ngang)
-        if let cached = KeychainUtils.read(key: "deviceHwid"), !cached.isEmpty, cached.contains("-") {
-            return cached
-        }
-        // Fallback tạo UID mới bền vững nếu hệ thống không trả về vendorID
-        let freshUID = UUID().uuidString
-        _ = KeychainUtils.save(key: "deviceHwid", value: freshUID)
-        return freshUID
+        (try? StableDeviceHWID.resolve(storage: .keychain,
+            vendorID: UIDevice.current.identifierForVendor?.uuidString)) ?? ""
     }
 
     static var deviceModel: String {

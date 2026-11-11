@@ -23,6 +23,8 @@ parts = [prefix,
     section('@MainActor\nprivate final class ProtectedAuthContext', 'private struct ProtectedSessionSnapshot'),
     section('// BEGIN RECOVERY CHALLENGE CONTRACT', '// END RECOVERY CHALLENGE CONTRACT'),
     section('private actor ProtectedRequestGate', '@MainActor\nfinal class ProtectedDownloadService')]
+utils = (Path(sys.argv[1]).parent / 'views/SecurityUtils.swift').read_text(encoding='utf-8')
+parts.append(utils.split('// BEGIN STABLE HWID POLICY')[1].split('// END STABLE HWID POLICY')[0].split('\n', 1)[1])
 parts.append('''
 @MainActor final class IdentityResumeHarness {
     typealias Transport = (String, [String: Any]) async throws -> [String: Any]

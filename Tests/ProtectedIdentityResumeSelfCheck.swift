@@ -73,6 +73,35 @@ private final class ResumeMemory {
         return(memory,identity,auth,transport,flow)
     }
     @MainActor static func main() async throws {
+        do {
+            let memory=ResumeMemory(), original=UUID().uuidString
+            memory.values["deviceHwid"]=Data(original.utf8)
+            let before=memory.values
+            try require(try StableDeviceHWID.resolve(storage:memory.storage,vendorID:UUID().uuidString)==original,
+                        "a changed vendor ID never overwrites the registered HWID")
+            try require(try StableDeviceHWID.resolve(storage:memory.storage,vendorID:nil)==original,
+                        "saved HWID remains available before IDFV is ready")
+            try require(memory.values==before,"reading an established HWID never rewrites Keychain")
+        }
+        do {
+            let memory=ResumeMemory()
+            do { _=try StableDeviceHWID.resolve(storage:memory.storage,vendorID:nil);throw ResumeCheckError.failed("temporary nil IDFV created random HWID") }
+            catch DeviceIdentityError.identityMissing {}
+            try require(memory.values.isEmpty,"nil IDFV does not allocate a new license identity")
+            let vendor=UUID().uuidString;memory.failTag="deviceHwid"
+            do { _=try StableDeviceHWID.resolve(storage:memory.storage,vendorID:vendor);throw ResumeCheckError.failed("failed HWID persistence ignored") }
+            catch ResumeCheckError.writeFailure {}
+            memory.failTag=nil
+            try require(try StableDeviceHWID.resolve(storage:memory.storage,vendorID:vendor)==vendor,
+                        "first HWID is published only after storage succeeds")
+        }
+        do {
+            let storage=DeviceIdentityStorage(read:{_ in throw DeviceIdentityError.keychain(-25308)},
+                write:{_,_ in throw ResumeCheckError.failed("locked Keychain was overwritten")},remove:{_ in})
+            do { _=try StableDeviceHWID.resolve(storage:storage,vendorID:UUID().uuidString);throw ResumeCheckError.failed("Keychain error treated as a new device") }
+            catch DeviceIdentityError.keychain(-25308) {}
+            try require(true,"temporary Keychain failure never rotates HWID")
+        }
         for code in ["device_key_invalid","device_signature_invalid"] {
             let(memory,identity,_,transport,flow)=try fixture();let before=memory.values
             flow.openFailures=[ProtectedDownloadError.rejected(code)]
