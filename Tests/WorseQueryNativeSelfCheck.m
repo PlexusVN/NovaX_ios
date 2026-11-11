@@ -24,6 +24,7 @@ static int fixture_lstat(const char *, struct stat *);
 static NSURL *groupRoot;
 static BOOL groupAvailable = YES, libraryAvailable = YES, rejectQuery = NO, refuseToken = NO;
 static BOOL failCreate = NO, missingSymbol = NO;
+static BOOL throwGroupException = NO;
 static int statError = EACCES;
 static int64_t consumedHandle = 42, releasedHandle = -1;
 static NSUInteger created = 0, freed = 0, activeQueries = 0;
@@ -36,6 +37,7 @@ static NSString *groupID = @"group.astra.native.fixture";
 @end
 @implementation NSFileManager (AstraQueryFixture)
 - (NSURL *)astra_fixtureGroup:(NSString *)identifier {
+    if (throwGroupException) @throw [NSException exceptionWithName:NSInvalidArgumentException reason:@"fixture: re-signed group denied" userInfo:nil];
     return groupAvailable && [identifier isEqualToString:groupID] ? groupRoot : nil;
 }
 @end
@@ -117,6 +119,11 @@ int main(void) {
         method_exchangeImplementations(original, replacement);
         @try {
             NSString *target = @"/private/var/mobile/Containers/Data/Application/AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA";
+            NSCAssert(worse_query_group_path(groupID) != nil, @"valid App Group lookup failed");
+            throwGroupException = YES;
+            NSCAssert(worse_query_group_path(groupID) == nil, @"Foundation exception escaped into Swift");
+            NSCAssert(worse_query(target, groupID, NO, NO) == -1, @"native query did not handle group exception");
+            throwGroupException = NO;
             NSCAssert(worse_query(target, groupID, NO, NO) == 42, @"EACCES prevented token acquisition");
             NSCAssert(lastFlags == 0x0000008000000000ULL, @"default flag differs from upstream");
             checkClean();

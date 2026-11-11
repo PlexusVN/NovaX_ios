@@ -28,6 +28,9 @@ final class FileManager {
     }
 }
 func AstraSignedApplicationGroups() -> [String] { ["group.esign.rewritten"] }
+func worse_query_group_path(_ group: String) -> String? {
+    FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group)?.path
+}
 enum NativeFixture {
     static var result: Int64 = 42
     static var calls: [(String, String, Bool, Bool)] = []

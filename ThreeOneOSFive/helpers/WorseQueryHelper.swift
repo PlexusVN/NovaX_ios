@@ -77,18 +77,10 @@ public final class WorseQueryHelper {
 
     /// Tự động phát hiện App Group đang hoạt động được hệ thống cấp phép
     public static func resolveActiveAppGroup() -> String? {
-        let fileManager = FileManager.default
         for group in candidateAppGroups {
-            if let url = fileManager.containerURL(forSecurityApplicationGroupIdentifier: group) {
-                // Kiểm tra xem thư mục có thật sự truy cập được không
-                if fileManager.fileExists(atPath: url.path) {
-                    return group
-                }
-                // Thử tạo thư mục nếu chưa tồn tại
-                if (try? fileManager.createDirectory(at: url, withIntermediateDirectories: true)) != nil {
-                    return group
-                }
-            }
+            // Foundation may raise an Objective-C exception for a group removed
+            // by re-signing. Swift do/catch cannot catch that exception.
+            if worse_query_group_path(group) != nil { return group }
         }
         return nil
     }

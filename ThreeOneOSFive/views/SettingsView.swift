@@ -6,6 +6,7 @@ struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
     @AppStorage(AppLanguage.storageKey) private var languageCode = AppLanguage.vietnamese.rawValue
     @ObservedObject private var updateManager = UpdateManager.shared
+    @State private var showContainerScanHistory = false
 
     var body: some View {
         NavigationStack {
@@ -62,6 +63,14 @@ struct SettingsView: View {
 
                 AirLiftSettingsSection()
 
+                if AppInfo.versionTuple.major == 27 {
+                    Section("Quét thư mục iOS 27") {
+                        Button("Xem nhật ký quét thư mục") { showContainerScanHistory = true }
+                    } footer: {
+                        Text("Theo dõi tiến trình khi bật chức năng cần tìm thư mục game. Có thể sao chép nhật ký để gửi hỗ trợ.")
+                    }
+                }
+
                 Section {
                     HStack {
                         Text(language.text("settings.current_version"))
@@ -92,6 +101,16 @@ struct SettingsView: View {
             .tint(AppTheme.accent)
             .navigationTitle(language.text("settings.title"))
             .navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: $showContainerScanHistory) {
+                NavigationStack {
+                    ContainerScanProgressView(progress: ContainerScanProgress.shared)
+                        .toolbar {
+                            ToolbarItem(placement: .navigationBarTrailing) {
+                                Button("Xong") { showContainerScanHistory = false }
+                            }
+                        }
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(language.text("common.done")) { dismiss() }

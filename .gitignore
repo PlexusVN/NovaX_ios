@@ -87,3 +87,4 @@ release-registry.json
 !/Tests/PathLeakSelfCheck.m
 !/Tests/WorseQueryNativeSelfCheck.m
 !/Tests/ContainerDiscoverySelfCheck.swift
+!/Tests/ContainerScanProgressSelfCheck.swift

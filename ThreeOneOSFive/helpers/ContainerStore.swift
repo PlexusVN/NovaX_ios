@@ -147,63 +147,75 @@ enum ContainerStore {
     private static func resolveContainerWithWorseQuery(bundleID: String) throws -> String {
         guard discoveryLock.try() else { throw WorseQueryError.discoveryInProgress }
         defer { discoveryLock.unlock() }
-        let maximum = try WorseQueryHelper.currentFilesystemMaxInode()
-        let chunkSize: UInt64 = 250_000
-        var first: UInt64 = 1
-        var seen = Set<String>()
-        var candidates = 0, grants = 0
-        var lastGrantError: Error?
-        log("worse_query discovery: start bundle=\(bundleID), baseline upper bound=\(maximum)")
+        return try ContainerScanProgress.shared.track(bundleID: bundleID) { sessionID in
+            let maximum = try WorseQueryHelper.currentFilesystemMaxInode()
+            ContainerScanProgress.shared.report(sessionID, scanned: 0, total: maximum, candidates: 0, grants: 0,
+                message: "Phạm vi dò: 1…\(maximum) inode. Bắt đầu tìm thư mục dữ liệu.")
+            let chunkSize: UInt64 = 250_000
+            var first: UInt64 = 1
+            var seen = Set<String>()
+            var candidates = 0, grants = 0
+            var lastGrantError: Error?
+            log("worse_query discovery: start bundle=\(bundleID), baseline upper bound=\(maximum)")
 
-        while first <= maximum {
-            try Task.checkCancellation()
-            let last = first + min(chunkSize - 1, maximum - first)
-            let paths = try WorseQueryHelper.enumeratePaths(in: appDataRoot, from: first, through: last)
-            for path in paths {
-                try Task.checkCancellation()
-                let clean = ContainerDiscoveryMerger.canonicalPath(path)
-                guard isApplicationContainerPath(clean), seen.insert(clean).inserted else { continue }
-                candidates += 1
-                let handle: Int64
-                do {
-                    handle = try WorseQueryHelper.acquireAccess(for: clean)
-                } catch {
-                    lastGrantError = error
-                    continue
-                }
-                defer { WorseQueryHelper.releaseAccess(handle: handle) }
-                grants += 1
+            while first <= maximum {
+                try ContainerScanProgress.shared.checkCancellation(sessionID)
+                let last = first + min(chunkSize - 1, maximum - first)
+                let paths = try WorseQueryHelper.enumeratePaths(in: appDataRoot, from: first, through: last)
+                for path in paths {
+                    try ContainerScanProgress.shared.checkCancellation(sessionID)
+                    let clean = ContainerDiscoveryMerger.canonicalPath(path)
+                    guard isApplicationContainerPath(clean), seen.insert(clean).inserted else { continue }
+                    candidates += 1
+                    let handle: Int64
+                    do {
+                        handle = try WorseQueryHelper.acquireAccess(for: clean)
+                    } catch {
+                        lastGrantError = error
+                        if candidates <= 3 {
+                            ContainerScanProgress.shared.report(sessionID, scanned: last, total: maximum, candidates: candidates, grants: grants,
+                                message: "Cấp quyền container thất bại: \(error.localizedDescription)")
+                        }
+                        continue
+                    }
+                    defer { WorseQueryHelper.releaseAccess(handle: handle) }
+                    grants += 1
 
-                // Match upstream: obtain a token for EACH UUID child, then read
-                // its identifier while that token is active. The Application
-                // parent itself cannot provide the required directory grant.
-                var buffer = [CChar](repeating: 0, count: 512)
-                let length = getxattr(clean, "com.apple.containermanager.identifier", &buffer, 511, 0, 0)
-                var identifier: String?
-                if length > 0 { identifier = String(cString: buffer) }
-                if identifier == nil,
-                   let data = try? Data(contentsOf: URL(fileURLWithPath: metadataPath(for: clean))),
-                   let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any] {
-                    identifier = plist["MCMMetadataIdentifier"] as? String
-                }
-                if let identifier,
-                   (try? PatchPathValidator.canonicalBundleIdentifier(identifier)) == identifier {
-                    UserDefaults.standard.set(clean, forKey: "astra.resolved_container.\(identifier)")
-                    if identifier == bundleID {
-                        log("worse_query discovery: matched bundle=\(bundleID), scanned through=\(last), candidates=\(candidates), grants=\(grants)")
-                        return clean
+                    // Match upstream: obtain a token for EACH UUID child, then read
+                    // its identifier while that token is active. The Application
+                    // parent itself cannot provide the required directory grant.
+                    var buffer = [CChar](repeating: 0, count: 512)
+                    let length = getxattr(clean, "com.apple.containermanager.identifier", &buffer, 511, 0, 0)
+                    var identifier: String?
+                    if length > 0 { identifier = String(cString: buffer) }
+                    if identifier == nil,
+                       let data = try? Data(contentsOf: URL(fileURLWithPath: metadataPath(for: clean))),
+                       let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any] {
+                        identifier = plist["MCMMetadataIdentifier"] as? String
+                    }
+                    if let identifier,
+                       (try? PatchPathValidator.canonicalBundleIdentifier(identifier)) == identifier {
+                        UserDefaults.standard.set(clean, forKey: "astra.resolved_container.\(identifier)")
+                        if identifier == bundleID {
+                            log("worse_query discovery: matched bundle=\(bundleID), scanned through=\(last), candidates=\(candidates), grants=\(grants)")
+                            ContainerScanProgress.shared.report(sessionID, scanned: last, total: maximum, candidates: candidates, grants: grants,
+                                message: "Đã tìm thấy \(bundleID); đã dò \(last)/\(maximum), tìm thấy \(candidates) thư mục, truy cập được \(grants).")
+                            return clean
+                        }
                     }
                 }
+                ContainerScanProgress.shared.report(sessionID, scanned: last, total: maximum, candidates: candidates, grants: grants,
+                    message: "Đã dò \(last)/\(maximum) inode; tìm thấy \(candidates) thư mục, truy cập được \(grants).")
+                if first == 1 || last == maximum || last % 1_000_000 == 0 {
+                    log("worse_query discovery: scanned=\(last)/\(maximum), candidates=\(candidates), grants=\(grants)")
+                }
+                if last == maximum { break }
+                first = last + 1
             }
-            if first == 1 || last == maximum || last % 1_000_000 == 0 {
-                log("worse_query discovery: scanned=\(last)/\(maximum), candidates=\(candidates), grants=\(grants)")
-            }
-            if last == maximum { break }
-            first = last + 1
+            log("worse_query discovery: unresolved bundle=\(bundleID), scanned=\(maximum), candidates=\(candidates), grants=\(grants)")
+            if grants == 0, let lastGrantError { throw lastGrantError }
+            throw WorseQueryError.containerDiscoveryFailed(bundleID)
         }
-        log("worse_query discovery: unresolved bundle=\(bundleID), scanned=\(maximum), candidates=\(candidates), grants=\(grants)")
-        if grants == 0, let lastGrantError { throw lastGrantError }
-        throw WorseQueryError.containerDiscoveryFailed(bundleID)
     }
 
     static func resolveAppContainerPathByMetadataScan(bundleID: String) -> String? {

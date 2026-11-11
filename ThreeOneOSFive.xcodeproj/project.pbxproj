@@ -20,6 +20,8 @@
 		3105W001 /* worse_query.m in Sources */ = {isa = PBXBuildFile; fileRef = 3105W011; };
 		3105W002 /* pathleak.m in Sources */ = {isa = PBXBuildFile; fileRef = 3105W013; };
 		3105W003 /* WorseQueryHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105W015; };
+		3105W004 /* ContainerScanProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105W016; };
+		3105W005 /* ContainerScanProgressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105W017; };
 		3105A210 /* mcm_bridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 3105A030; };
 		3105A220 /* kexploit_opa334.m in Sources */ = {isa = PBXBuildFile; fileRef = 3105A080; };
 		3105A221 /* offsets.m in Sources */ = {isa = PBXBuildFile; fileRef = 3105A081; };
@@ -107,6 +109,8 @@
 		3105W013 /* pathleak.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = pathleak.m; sourceTree = "<group>"; };
 		3105W014 /* pathleak.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = pathleak.h; sourceTree = "<group>"; };
 		3105W015 /* WorseQueryHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorseQueryHelper.swift; sourceTree = "<group>"; };
+		3105W016 /* ContainerScanProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContainerScanProgress.swift; sourceTree = "<group>"; };
+		3105W017 /* ContainerScanProgressView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContainerScanProgressView.swift; sourceTree = "<group>"; };
 		3105A030 /* mcm_bridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = mcm_bridge.m; sourceTree = "<group>"; };
 		3105A031 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		3105A040 /* bad_query.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bad_query.h; sourceTree = "<group>"; };
@@ -274,6 +278,7 @@
 				3105A098 /* DesignSystem.swift */,
 				3105A023 /* SettingsView.swift */,
 				3105A024 /* LogView.swift */,
+				3105W017 /* ContainerScanProgressView.swift */,
 				3105A105 /* AppDataBrowserView.swift */,
 				3105A112 /* FileBrowserView.swift */,
 				3105I100 /* FilesTabControls.swift */,
@@ -298,6 +303,7 @@
 			isa = PBXGroup;
 			children = (
 				3105W015 /* WorseQueryHelper.swift */,
+				3105W016 /* ContainerScanProgress.swift */,
 				3105A099 /* Localization.swift */,
 				3105A104 /* ContainerStore.swift */,
 				3105A109 /* ContainerBrowserLogic.swift */,
@@ -472,6 +478,8 @@
 				3105W001 /* worse_query.m in Sources */,
 				3105W002 /* pathleak.m in Sources */,
 				3105W003 /* WorseQueryHelper.swift in Sources */,
+				3105W004 /* ContainerScanProgress.swift in Sources */,
+				3105W005 /* ContainerScanProgressView.swift in Sources */,
 				3105A210, 3105A220, 3105A221, 3105A222, 3105A223,
 				3105A224, 3105A225,
 				3105A226,
@@ -561,7 +569,7 @@
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CODE_SIGN_ENTITLEMENTS = ThreeOneOSFive/ThreeOneOSFive.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 24;
+				CURRENT_PROJECT_VERSION = 25;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -596,7 +604,7 @@
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CODE_SIGN_ENTITLEMENTS = ThreeOneOSFive/ThreeOneOSFive.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 24;
+				CURRENT_PROJECT_VERSION = 25;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;

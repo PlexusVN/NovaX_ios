@@ -1,5 +1,25 @@
 # Rà soát worse_query và lỗi tìm container — 11/11/2026
 
+## Bổ sung build 25: khởi động và màn hình quét
+
+Người dùng báo iOS 27 văng ngay khi chạm biểu tượng, chưa thấy đăng nhập. Chưa có
+crash report `.ips`, nên chưa xác nhận được exception/signal hay lỗi chữ ký/dyld.
+Build 25 loại bỏ việc tự dò container game và probe sandbox kiểu kernel trên
+iOS 27 khi khởi động. Quét/token chỉ bắt đầu khi một chức năng thực sự cần chúng.
+Lookup App Group chuyển qua cầu nối Objective-C có chặn Foundation exception;
+Swift do/catch không chặn được loại exception này. Đây là phòng vệ cho đường
+khởi động đã tìm thấy, không phải bằng chứng đã tái hiện crash trên thiết bị.
+
+Màn hình chờ iOS 27 xuất hiện khi fallback scan thực sự chạy, không tự quét chỉ
+vì mở app. Hiện phần trăm phạm vi inode thật, số container tìm được/truy cập được,
+log có giờ, nút dừng và sao chép. Dừng chờ đoạn native hiện tại kết thúc rồi ném
+cancellation trước commit. Thành công chỉ xác nhận tìm được container, không
+đánh dấu patch đã bật. Không đổi auth/network/integrity gates.
+
+Giữ tối đa 200 log quét, 500 log chung; checkpoint lịch sử vào Application Support
+riêng của Astra, không ghi license/token. Mở lại chỉ đọc lịch sử, nhận diện phiên
+gián đoạn và không tự chạy lại exploit. Xem lại ở Cài đặt → Quét thư mục iOS 27.
+
 ## Kết luận
 
 Astra đã tích hợp lõi native worse_query, nhưng phần tìm container trước build 24 chưa theo đủ logic của bản gốc. Đã tìm thấy và sửa lỗi giới hạn 500.000 inode; lỗi này có thể bỏ sót ứng dụng khi cache/LaunchServices/MCM không trả được đường dẫn. Ảnh P06 trên iOS 27.0.1 không có log inode/token, nên chưa đủ để khẳng định đây là nguyên nhân duy nhất trên điện thoại đó.

@@ -67,6 +67,38 @@ class IntegrationContracts(unittest.TestCase):
         self.assertIn('WorseQueryHelper.acquireAccess(for: clean)', scan)
         self.assertNotIn('grantContainerAccess(appDataRoot)', scan)
 
+    def test_ios27_launch_does_not_probe_target_or_consume_tokens(self):
+        app = (ROOT / 'ThreeOneOSFive/App.swift').read_text(encoding='utf-8')
+        probe = extract_function(app, 'func checkDirectDirectoryAccessAsync(')
+        self.assertLess(probe.index('guard AppInfo.versionTuple.major < 27'), probe.index('DispatchQueue.global'))
+        kernel = (HELPERS / 'KernelExploit.swift').read_text(encoding='utf-8')
+        probe = extract_function(kernel, 'static func hasSandboxAccess(')
+        self.assertLess(probe.index('majorVersion < 27'), probe.index('sandbox_access_is_active()'))
+        helper = (HELPERS / 'WorseQueryHelper.swift').read_text(encoding='utf-8')
+        group = extract_function(helper, 'public static func resolveActiveAppGroup(')
+        self.assertIn('worse_query_group_path(group)', group)
+        self.assertNotIn('containerURL(forSecurityApplicationGroupIdentifier:', group)
+
+    def test_scan_overlay_reports_actual_discovery_and_keeps_security_overlays_above_it(self):
+        app = (ROOT / 'ThreeOneOSFive/App.swift').read_text(encoding='utf-8')
+        self.assertIn('AppInfo.versionTuple.major == 27 && containerScan.isPresented', app)
+        self.assertIn('ContainerScanProgressView(progress: containerScan)', app)
+        self.assertIn('.zIndex(2.5)', app)
+        self.assertIn('.zIndex(100)', app)
+        store = (HELPERS / 'ContainerStore.swift').read_text(encoding='utf-8')
+        scan = extract_function(store, 'private static func resolveContainerWithWorseQuery(')
+        self.assertIn('ContainerScanProgress.shared.track(bundleID: bundleID)', scan)
+        self.assertIn('ContainerScanProgress.shared.checkCancellation(sessionID)', scan)
+        self.assertIn('scanned: last, total: maximum, candidates: candidates, grants: grants', scan)
+
+    @unittest.skipUnless(sys.platform == 'darwin' and shutil.which('swiftc'), 'requires macOS Swift/Combine')
+    def test_actual_scan_monitor_lifecycle_cancellation_and_restart(self):
+        with tempfile.TemporaryDirectory() as folder:
+            binary = Path(folder) / 'scan-monitor-check'
+            subprocess.run(['swiftc', str(HELPERS / 'ContainerScanProgress.swift'),
+                            str(ROOT / 'Tests/ContainerScanProgressSelfCheck.swift'), '-o', str(binary)], check=True)
+            subprocess.run([str(binary)], check=True)
+
     @unittest.skipUnless(sys.platform == 'darwin' and shutil.which('clang'), 'requires macOS Objective-C compiler')
     def test_native_production_query_and_inode_enumerator(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -95,7 +127,7 @@ class IntegrationContracts(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             source = Path(folder) / 'Discovery.swift'; source.write_text(code, encoding='utf-8')
             binary = Path(folder) / 'discovery-check'
-            subprocess.run(['swiftc', str(source), str(ROOT / 'Tests/ContainerDiscoverySelfCheck.swift'),
+            subprocess.run(['swiftc', str(source), str(HELPERS / 'ContainerScanProgress.swift'), str(ROOT / 'Tests/ContainerDiscoverySelfCheck.swift'),
                             '-o', str(binary)], check=True)
             subprocess.run([str(binary)], check=True)
 

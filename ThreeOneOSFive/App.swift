@@ -11,6 +11,7 @@ struct ThreeOneOSFiveApp: App {
     @StateObject private var updateManager = UpdateManager.shared
     @StateObject private var gatekeeper = AirLiftGatekeeperManager.shared
     @StateObject private var networkAccess = NetworkAccessGate.shared
+    @StateObject private var containerScan = ContainerScanProgress.shared
     @AppStorage(AppLanguage.storageKey) private var languageCode = AppLanguage.vietnamese.rawValue
     @State private var showMainInterface = false
     @Environment(\.scenePhase) private var scenePhase
@@ -89,6 +90,11 @@ struct ThreeOneOSFiveApp: App {
                             .transition(.opacity)
                             .zIndex(1)
                     }
+                }
+
+                if AppInfo.versionTuple.major == 27 && containerScan.isPresented && authManager.authState == .verified {
+                    ContainerScanProgressView(progress: containerScan)
+                        .zIndex(2.5)
                 }
 
                 if let offer = updateManager.updateOffer {
@@ -209,6 +215,9 @@ class AppState: ObservableObject {
     private var isCheckingDirectAccess = false
 
     func checkDirectDirectoryAccessAsync() {
+        // iOS 27 uses scoped worse_query tokens on demand. Never query private
+        // container APIs or consume tokens while the login screen is starting.
+        guard AppInfo.versionTuple.major < 27 else { return }
         #if targetEnvironment(simulator)
         DispatchQueue.main.async { self.hasDirectDirectoryAccess = true }
         #else

@@ -9,7 +9,10 @@ class AppLog: ObservableObject {
     static let shared = AppLog()
     @Published var entries: [String] = []
     func append(_ msg: String) {
-        DispatchQueue.main.async { self.entries.append(msg) }
+        DispatchQueue.main.async {
+            self.entries.append(String(msg.prefix(8_192)))
+            if self.entries.count > 500 { self.entries.removeFirst(self.entries.count - 500) }
+        }
     }
 }
 func log(_ msg: String) { AppLog.shared.append("[3105] \(msg)") }
