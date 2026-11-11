@@ -8,6 +8,7 @@ enum ContainerStore {
     static func resolveAppContainerForPatch(bundleID: String) throws -> String { throw CatalogCheckError.failed("device resolution must not be used") }
     static func grantContainerAccess(_ path: String) -> Int64 { 0 }
 }
+enum WorseQueryError: Error { case appGroupUnavailable }
 enum WorseQueryHelper {
     static var isAvailable: Bool { false }
     static func acquireAccess(for path: String) throws -> Int64 { throw CatalogCheckError.failed("device grant must not be used") }
