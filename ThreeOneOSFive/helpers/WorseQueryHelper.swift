@@ -50,7 +50,7 @@ public enum WorseQueryError: LocalizedError {
         case .discoveryInProgress:
             return "Astra đang dò thư mục dữ liệu cho một thao tác khác. Hãy chờ thao tác đó hoàn tất rồi thử lại."
         case .preparationRequired:
-            return "Chưa chuẩn bị xong quyền truy cập iOS 27. Hãy hoàn tất màn hình quét thư mục trước khi bật chức năng."
+            return "Chưa chuẩn bị xong quyền truy cập ứng dụng. Hãy hoàn tất màn hình chuẩn bị trước khi bật chức năng."
         case .nativeException:
             return "Hệ thống phát sinh exception khi cấp quyền worse_query (WQ08). Xem dòng log cuối của phiên chuẩn bị."
         case .mainThreadAccess:
@@ -97,7 +97,8 @@ public final class WorseQueryHelper {
         // Runtime routing is read during SwiftUI rendering. Never perform the
         // Foundation/containermanager lookup there on iOS 27, even while a
         // worker is already waiting for containermanagerd.
-        if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 && Thread.isMainThread { return nil }
+        if (ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
+            || ExploitSupportPolicy.currentRequiresWorseQueryPreparation) && Thread.isMainThread { return nil }
         var resolved: String?
         for group in candidateAppGroups {
             // Foundation may raise an Objective-C exception for a group removed
@@ -200,7 +201,8 @@ public final class WorseQueryHelper {
 
     /// Cấp phát quyền Sandbox Extension cho đường dẫn mục tiêu
     public static func acquireAccess(for targetPath: String, createDir: Bool = false) throws -> Int64 {
-        if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 && Thread.isMainThread {
+        if (ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
+            || ExploitSupportPolicy.currentRequiresWorseQueryPreparation) && Thread.isMainThread {
             throw WorseQueryError.mainThreadAccess
         }
         guard !targetPath.isEmpty else {

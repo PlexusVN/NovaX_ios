@@ -2,10 +2,16 @@ import Foundation
 import Darwin
 
 enum PatchPackageError: Error { case invalidBundleIdentifier; case targetAppUnavailable(String) }
-enum AppInfo { static let osBuild = "24A-fixture" }
+enum AppInfo {
+    static let osBuild = "24A-fixture"
+    static var versionTuple: (major: Int, minor: Int, patch: Int) {
+        let v = ProcessInfo.processInfo.operatingSystemVersion
+        return (v.majorVersion, v.minorVersion, v.patchVersion)
+    }
+}
 enum ProcessInfo {
-    static let processInfo = FixtureProcessInfo()
-    struct FixtureProcessInfo { let operatingSystemVersion = OperatingSystemVersion(majorVersion: 27, minorVersion: 0, patchVersion: 1) }
+    static var processInfo = FixtureProcessInfo()
+    struct FixtureProcessInfo { var operatingSystemVersion = OperatingSystemVersion(majorVersion: 27, minorVersion: 0, patchVersion: 1) }
 }
 enum UserDefaults {
     static let suite = "astra-ios27-fixture-" + UUID().uuidString
@@ -76,6 +82,13 @@ final class RestartFlag: @unchecked Sendable {
 @main struct ContainerDiscoverySelfCheck {
     @MainActor static func drain() async { await withCheckedContinuation { c in DispatchQueue.main.async { c.resume() } } }
     @MainActor static func main() async throws {
+        for (major,minor,patch) in [(26,6,2),(26,7,0),(26,7,2),(27,0,1)] {
+            ProcessInfo.processInfo.operatingSystemVersion = OperatingSystemVersion(majorVersion:major,minorVersion:minor,patchVersion:patch)
+            DiscoveryFixture.reset()
+            try await checkVersion()
+        }
+    }
+    @MainActor static func checkVersion() async throws {
         defer { UserDefaults.standard.removePersistentDomain(forName: UserDefaults.suite); IOS27ContainerSession.reset() }
         let preparation = IOS27ContainerPreparation(progress: DiscoveryFixture.progress, operation: { try ContainerStore.prepareIOS27Access(forceScan: $0) })
         precondition(preparation.state == .idle && !preparation.didContinue)
@@ -144,6 +157,6 @@ final class RestartFlag: @unchecked Sendable {
         precondition(interruptedGate.state == .failed && !restarted.value && !interruptedGate.didContinue)
         await interruptedGate.prepareIfNeeded(force: true)
         precondition(interruptedGate.state == .ready && restarted.value && !interruptedGate.didContinue)
-        print("[PASS] actual iOS27 preparation gate: 27.0.1, high inodes, both games, cache revalidation, no legacy MCM/LS, per-UUID tokens, off-main, missing group, failure/cancel blocks entry and patch")
+        print("[PASS] actual preparation gate: \(AppInfo.versionTuple.major).\(AppInfo.versionTuple.minor).\(AppInfo.versionTuple.patch), high inodes, both games, cache revalidation, no legacy MCM/LS, per-UUID tokens, off-main, missing group, failure/cancel blocks entry and patch")
     }
 }

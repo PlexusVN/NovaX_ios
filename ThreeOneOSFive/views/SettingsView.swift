@@ -64,12 +64,12 @@ struct SettingsView: View {
 
                 AirLiftSettingsSection()
 
-                if AppInfo.versionTuple.major == 27 {
+                if AppInfo.versionTuple.major == 27 || ExploitSupportPolicy.currentRequiresWorseQueryPreparation {
                     Section {
                         Button("Xem nhật ký quét thư mục") { showContainerScanHistory = true }
                         Button("Quét lại quyền truy cập game") { ios27Preparation.reset(forceScan: true) }
                     } header: {
-                        Text("Quét thư mục iOS 27")
+                        Text("Quét thư mục iOS \(AppInfo.versionTuple.major)")
                     } footer: {
                         Text("Theo dõi tiến trình khi bật chức năng cần tìm thư mục game. Có thể sao chép nhật ký để gửi hỗ trợ.")
                     }

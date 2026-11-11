@@ -24,7 +24,7 @@ struct ContainerScanProgressView: View {
                         .foregroundColor(AppTheme.gamingBlueBright)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(title).font(.title3.bold())
-                        Text("iOS 27 · Tìm thư mục ứng dụng")
+                        Text("iOS \(AppInfo.versionTuple.major) · Tìm thư mục ứng dụng")
                             .font(.caption).foregroundColor(AppTheme.gamingTextSecondary)
                     }
                     Spacer()
@@ -128,6 +128,7 @@ struct IOS27PreparationView: View {
 
     private var isPreparing: Bool { preparation.state == .idle || preparation.state == .preparing }
     private var isReady: Bool { preparation.state == .ready }
+    private var platformLabel: String { "iOS \(AppInfo.versionTuple.major)" }
 
     var body: some View {
         ZStack {
@@ -146,7 +147,7 @@ struct IOS27PreparationView: View {
                     }
 
                     VStack(spacing: 12) {
-                        Text(isReady ? "Đã sẵn sàng cho iOS 27" : isPreparing ? "Đang chuẩn bị cho iOS 27" : "Chưa thể hoàn tất chuẩn bị")
+                        Text(isReady ? "Đã sẵn sàng cho \(platformLabel)" : isPreparing ? "Đang chuẩn bị cho \(platformLabel)" : "Chưa thể hoàn tất chuẩn bị")
                             .font(.system(size: 24, weight: .bold))
                             .multilineTextAlignment(.center)
                         Text(isReady ? "Astra đã sẵn sàng. Bạn có thể tiếp tục." : isPreparing ? "Vui lòng giữ Astra ở màn hình này." : "Hãy thử lại hoặc gửi thông tin lỗi để được hỗ trợ.")
@@ -159,7 +160,7 @@ struct IOS27PreparationView: View {
 
                     if let failure = preparation.failure {
                         VStack(alignment: .leading, spacing: 12) {
-                            Label("Không thể chuẩn bị iOS 27", systemImage: "exclamationmark.circle.fill")
+                            Label("Không thể chuẩn bị \(platformLabel)", systemImage: "exclamationmark.circle.fill")
                                 .font(.subheadline.bold())
                                 .foregroundColor(AppTheme.statusError)
                             Text(failure.replacingOccurrences(
@@ -169,7 +170,7 @@ struct IOS27PreparationView: View {
                                 .textSelection(.enabled)
                                 .fixedSize(horizontal: false, vertical: true)
                             Button(copiedError ? "Đã sao chép thông tin lỗi" : "Sao chép thông tin lỗi") {
-                                UIPasteboard.general.string = "Astra · Chuẩn bị iOS 27\n\(failure)\n\n\(progress.shareText)"
+                                UIPasteboard.general.string = "Astra · Chuẩn bị \(platformLabel)\n\(failure)\n\n\(progress.shareText)"
                                 copiedError = true
                             }
                             .font(.caption.weight(.semibold))
@@ -209,12 +210,12 @@ struct IOS27PreparationView: View {
         if isPreparing && progress.snapshot.total == 0 {
             ProgressView().progressViewStyle(.linear)
                 .tint(AppTheme.gamingBlueBright)
-                .accessibilityLabel("Đang chuẩn bị cho iOS 27")
+                .accessibilityLabel("Đang chuẩn bị cho \(platformLabel)")
         } else {
             ProgressView(value: isReady ? 1 : progress.snapshot.fraction)
                 .progressViewStyle(.linear)
                 .tint(AppTheme.gamingBlueBright)
-                .accessibilityLabel(isReady ? "Đã chuẩn bị xong" : "Tiến trình chuẩn bị iOS 27")
+                .accessibilityLabel(isReady ? "Đã chuẩn bị xong" : "Tiến trình chuẩn bị \(platformLabel)")
         }
     }
 

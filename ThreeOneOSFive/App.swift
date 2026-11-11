@@ -46,8 +46,8 @@ struct ThreeOneOSFiveApp: App {
         AppLanguage(rawValue: languageCode) ?? .vietnamese
     }
 
-    private var requiresIOS27Preparation: Bool {
-        AppInfo.versionTuple.major == 27 && ExploitSupportPolicy.currentSupportsWorseQuery
+    private var requiresWorseQueryPreparation: Bool {
+        ExploitSupportPolicy.currentRequiresWorseQueryPreparation
     }
 
     var body: some Scene {
@@ -56,7 +56,7 @@ struct ThreeOneOSFiveApp: App {
                 // Một màn hình duy nhất: SplashLoginView gộp loading + login
                 // → liền mạch, không có "chuyển cảnh" giữa 2 view (giống HTML)
                 Group {
-                    if authManager.authState == .verified && requiresIOS27Preparation && !ios27Preparation.didContinue {
+                    if authManager.authState == .verified && requiresWorseQueryPreparation && !ios27Preparation.didContinue {
                         IOS27PreparationView(preparation: ios27Preparation)
                             .zIndex(2)
                     } else if authManager.authState == .verified && gatekeeper.requiresPairingForCurrentDevice && !gatekeeper.canBypassGatekeeper {
@@ -100,7 +100,7 @@ struct ThreeOneOSFiveApp: App {
                     }
                 }
 
-                if AppInfo.versionTuple.major == 27 && containerScan.isPresented && authManager.authState == .verified && (!requiresIOS27Preparation || ios27Preparation.didContinue) {
+                if (AppInfo.versionTuple.major == 27 || requiresWorseQueryPreparation) && containerScan.isPresented && authManager.authState == .verified && (!requiresWorseQueryPreparation || ios27Preparation.didContinue) {
                     ContainerScanProgressView(progress: containerScan)
                         .zIndex(2.5)
                 }
@@ -226,7 +226,8 @@ class AppState: ObservableObject {
     func checkDirectDirectoryAccessAsync() {
         // iOS 27 uses scoped worse_query tokens on demand. Never query private
         // container APIs or consume tokens while the login screen is starting.
-        guard AppInfo.versionTuple.major < 27 else { return }
+        guard AppInfo.versionTuple.major < 27,
+              !ExploitSupportPolicy.currentRequiresWorseQueryPreparation else { return }
         #if targetEnvironment(simulator)
         DispatchQueue.main.async { self.hasDirectDirectoryAccess = true }
         #else

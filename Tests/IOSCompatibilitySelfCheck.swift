@@ -8,6 +8,13 @@ enum AppInfo {
 @main struct IOSCompatibilitySelfCheck {
     static func main() {
         typealias Policy = ExploitSupportPolicy
+        for (major,minor,patch,expected) in [(16,7,0,false),(17,0,0,false),(18,7,2,false),
+            (26,0,0,false),(26,6,0,false),(26,6,1,false),(26,6,2,true),(26,6,9,true),
+            (26,7,0,true),(26,7,1,true),(26,7,2,true),(26,7,3,false),(26,8,0,false),
+            (27,0,1,true),(27,1,0,true),(27,3,0,false)] {
+            precondition(Policy.requiresWorseQueryPreparation(major:major,minor:minor,patch:patch,build:"")==expected,
+                         "preparation boundary changed: \(major).\(minor).\(patch)")
+        }
         for minor in [0, 1, 4, 6, 7] {
             precondition(Policy.storageMode(major:16, minor:minor, patch:0, build:"") == .direct)
             precondition(Policy.pairingMode(major:16, minor:minor, patch:0, build:"") == .none)
@@ -19,10 +26,12 @@ enum AppInfo {
         precondition(Policy.supportsWorseQuery(major:27, minor:0, patch:1, build:"fixture-27.0.1"))
         precondition(Policy.storageMode(major:27, minor:0, patch:1, build:"fixture-27.0.1") == .direct)
         for build in ["24B5084k", "24B5089g"] {
+            precondition(Policy.requiresWorseQueryPreparation(major:27,minor:2,patch:0,build:build))
             precondition(Policy.storageMode(major:27, minor:2, patch:0, build:build) == .direct)
             precondition(Policy.pairingMode(major:27, minor:2, patch:0, build:build) == .none)
         }
         for build in ["", "unsupported-build", "24B5099f", "24A1"] {
+            precondition(!Policy.requiresWorseQueryPreparation(major:27,minor:2,patch:0,build:build))
             precondition(!Policy.supportsWorseQuery(major:27, minor:2, patch:0, build:build))
             precondition(Policy.storageMode(major:27, minor:2, patch:0, build:build) == .unsupported)
         }

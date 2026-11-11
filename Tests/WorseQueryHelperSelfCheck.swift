@@ -3,7 +3,10 @@ import Foundation
 // Native bridges and OS/group access are injected; the Swift helper under test
 // is the actual production file. This does not execute an exploit on the host.
 enum AppInfo {
-    static let versionTuple = (major: 27, minor: 0, patch: 0)
+    static var versionTuple: (major: Int, minor: Int, patch: Int) {
+        let v = ProcessInfo.processInfo.operatingSystemVersion
+        return (v.majorVersion, v.minorVersion, v.patchVersion)
+    }
     static let osBuild = "24A435"
 }
 enum ProcessInfo {
@@ -47,6 +50,17 @@ enum FixtureFailure: Error { case operation }
 
 @main struct WorseQueryHelperSelfCheck {
     @MainActor static func main() async throws {
+        for (major,minor,patch) in [(26,6,2),(26,7,0),(26,7,2),(27,0,1)] {
+            ProcessInfo.processInfo.operatingSystemVersion = OperatingSystemVersion(majorVersion:major,minorVersion:minor,patchVersion:patch)
+            WorseQueryHelper.invalidateActiveAppGroup()
+            precondition(WorseQueryHelper.resolveActiveAppGroup() == nil, "UI probed App Group before preparation")
+            do {
+                _ = try WorseQueryHelper.acquireAccess(for: "/var/mobile/Containers/Data/Application/fixture")
+                preconditionFailure("main-thread query reached native code")
+            } catch WorseQueryError.mainThreadAccess {}
+        }
+        precondition(NativeFixture.calls.isEmpty)
+        ProcessInfo.processInfo.operatingSystemVersion = OperatingSystemVersion(majorVersion:27,minorVersion:0,patchVersion:0)
         precondition(WorseQueryHelper.resolveActiveAppGroup() == nil, "UI performed a native group probe before preparation")
         do {
             _ = try WorseQueryHelper.acquireAccess(for: "/var/mobile/Containers/Data/Application/fixture")

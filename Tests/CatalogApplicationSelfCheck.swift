@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+enum ExploitSupportPolicy { static let currentRequiresWorseQueryPreparation = false }
 
 // Device-only resolution cannot run here. All apply/restore I/O uses temp folders.
 enum ContainerStore {

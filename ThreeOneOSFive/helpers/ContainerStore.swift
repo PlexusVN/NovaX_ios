@@ -41,6 +41,7 @@ enum ContainerStore {
     static let systemDataRoot = "/var/mobile/Containers/Data/System"
     private static var shouldUseBadQuery: Bool {
         ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 26
+            && !ExploitSupportPolicy.currentRequiresWorseQueryPreparation
     }
     private static let applicationBundleRoots: [(path: String, nested: Bool)] = [
         ("/var/containers/Bundle/Application", true),
@@ -68,9 +69,10 @@ enum ContainerStore {
             return nil
         }
 
-        // iOS 27 patching uses only roots verified by the explicit preparation
+        // Prepared worse_query routes use only roots verified by the explicit preparation
         // gate. Never enter LS/MCM class-2/bad_query before the scan UI exists.
-        if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 {
+        if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
+            || ExploitSupportPolicy.currentRequiresWorseQueryPreparation {
             return IOS27ContainerSession.path(for: bundleID)
         }
 
@@ -140,7 +142,8 @@ enum ContainerStore {
     /// query or filesystem setup into the same "app unavailable" message.
     static func resolveAppContainerForPatch(bundleID: String) throws -> String {
         _ = try PatchPathValidator.canonicalBundleIdentifier(bundleID)
-        if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 {
+        if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
+            || ExploitSupportPolicy.currentRequiresWorseQueryPreparation {
             guard let path = IOS27ContainerSession.path(for: bundleID) else {
                 throw WorseQueryError.preparationRequired
             }
@@ -315,7 +318,8 @@ enum ContainerStore {
     }
 
     static func resolveAppContainerPathByMetadataScan(bundleID: String) -> String? {
-        if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 {
+        if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
+            || ExploitSupportPolicy.currentRequiresWorseQueryPreparation {
             return IOS27ContainerSession.path(for: bundleID)
         }
         if WorseQueryHelper.isAvailable {

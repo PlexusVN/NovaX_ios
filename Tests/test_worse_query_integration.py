@@ -85,7 +85,7 @@ class IntegrationContracts(unittest.TestCase):
 
     def test_scan_overlay_reports_actual_discovery_and_keeps_security_overlays_above_it(self):
         app = (ROOT / 'ThreeOneOSFive/App.swift').read_text(encoding='utf-8')
-        self.assertIn('AppInfo.versionTuple.major == 27 && containerScan.isPresented', app)
+        self.assertIn('(AppInfo.versionTuple.major == 27 || requiresWorseQueryPreparation) && containerScan.isPresented', app)
         self.assertIn('ContainerScanProgressView(progress: containerScan)', app)
         self.assertIn('.zIndex(2.5)', app)
         self.assertIn('.zIndex(100)', app)
@@ -119,7 +119,9 @@ class IntegrationContracts(unittest.TestCase):
         helper = (HELPERS / 'WorseQueryHelper.swift').read_text(encoding='utf-8')
         validator = (HELPERS / 'PatchProjectModels.swift').read_text(encoding='utf-8')
         merger = (HELPERS / 'ContainerBrowserLogic.swift').read_text(encoding='utf-8')
-        code = helper.split('public final class WorseQueryHelper')[0]
+        policy = (HELPERS / 'KernelExploit.swift').read_text(encoding='utf-8')
+        policy = policy.split('enum ExploitSupportPolicy {', 1)[1].split('// MARK: - Sandbox & Filesystem Access Helpers', 1)[0]
+        code = helper.split('public final class WorseQueryHelper')[0] + '\nenum ExploitSupportPolicy {' + policy
         code += merger.split('enum ContainerAccessPolicy {')[0].replace('import Foundation', '')
         code += '\nenum PatchPathValidator {\n' + extract_function(validator, 'static func canonicalBundleIdentifier(') + '\n}\n'
         code += '\nenum ContainerStore {\nstatic let discoveryLock = NSLock()\nstatic let appDataRoot = "/var/mobile/Containers/Data/Application"\n'
@@ -148,7 +150,7 @@ class IntegrationContracts(unittest.TestCase):
     def test_ios27_gate_precedes_content_and_legacy_resolvers(self):
         app = (ROOT / 'ThreeOneOSFive/App.swift').read_text(encoding='utf-8')
         self.assertLess(app.index('IOS27PreparationView(preparation:'), app.index('ContentView()'))
-        self.assertIn('requiresIOS27Preparation && !ios27Preparation.didContinue', app)
+        self.assertIn('requiresWorseQueryPreparation && !ios27Preparation.didContinue', app)
         store = (HELPERS / 'ContainerStore.swift').read_text(encoding='utf-8')
         resolver = extract_function(store, 'static func resolveAppContainerForPatch(')
         self.assertLess(resolver.index('IOS27ContainerSession.path'), resolver.index('resolveAppContainerPath('))

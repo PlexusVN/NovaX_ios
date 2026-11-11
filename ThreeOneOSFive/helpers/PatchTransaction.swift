@@ -1253,7 +1253,8 @@ enum DevicePatchService {
                 // backup, writes, verification, rollback and restore.
                 handles.append(try WorseQueryHelper.acquireAccess(for: path))
             } else {
-                guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 27 else {
+                guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 27,
+                      !ExploitSupportPolicy.currentRequiresWorseQueryPreparation else {
                     throw WorseQueryError.appGroupUnavailable
                 }
                 let handle = ContainerStore.grantContainerAccess(path)
