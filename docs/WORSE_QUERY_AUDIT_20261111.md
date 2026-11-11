@@ -9,6 +9,8 @@ iOS 27 khi khởi động. Quét/token chỉ bắt đầu khi một chức năng
 Lookup App Group chuyển qua cầu nối Objective-C có chặn Foundation exception;
 Swift do/catch không chặn được loại exception này. Đây là phòng vệ cho đường
 khởi động đã tìm thấy, không phải bằng chứng đã tái hiện crash trên thiết bị.
+Giá trị animation của root view cũng được chặn bằng trạng thái đã đăng nhập;
+trước đó biểu thức canBypassGatekeeper vẫn gọi tra App Group khi dựng splash.
 
 Màn hình chờ iOS 27 xuất hiện khi fallback scan thực sự chạy, không tự quét chỉ
 vì mở app. Hiện phần trăm phạm vi inode thật, số container tìm được/truy cập được,

@@ -69,6 +69,8 @@ class IntegrationContracts(unittest.TestCase):
 
     def test_ios27_launch_does_not_probe_target_or_consume_tokens(self):
         app = (ROOT / 'ThreeOneOSFive/App.swift').read_text(encoding='utf-8')
+        self.assertIn('value: authManager.authState == .verified && gatekeeper.canBypassGatekeeper', app)
+        self.assertNotIn('value: gatekeeper.canBypassGatekeeper', app)
         probe = extract_function(app, 'func checkDirectDirectoryAccessAsync(')
         self.assertLess(probe.index('guard AppInfo.versionTuple.major < 27'), probe.index('DispatchQueue.global'))
         kernel = (HELPERS / 'KernelExploit.swift').read_text(encoding='utf-8')

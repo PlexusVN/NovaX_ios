@@ -108,7 +108,7 @@ struct ThreeOneOSFiveApp: App {
                 }
             }
             .animation(.easeInOut(duration: 0.32), value: showMainInterface)
-            .animation(.easeInOut(duration: 0.32), value: gatekeeper.canBypassGatekeeper)
+            .animation(.easeInOut(duration: 0.32), value: authManager.authState == .verified && gatekeeper.canBypassGatekeeper)
             .preferredColorScheme(.dark)
             .task(id: authManager.authState == .verified) {
                 guard authManager.authState == .verified else {
