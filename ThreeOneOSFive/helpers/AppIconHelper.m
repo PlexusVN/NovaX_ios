@@ -3,6 +3,16 @@
 #import <objc/message.h>
 #import <dlfcn.h>
 
+// A dynamically selected init still needs its Objective-C method family.
+// Casting objc_msgSend to an ordinary function loses consumed-self/retained-
+// return semantics. In particular, an initializer returning nil can destroy
+// the allocated receiver before ARC releases that temporary a second time.
+@protocol AstraApplicationRecordInitializing <NSObject>
+- (nullable instancetype)initWithBundleIdentifier:(NSString *)identifier
+                                allowPlaceholder:(BOOL)allowPlaceholder
+                                           error:(NSError * _Nullable __autoreleasing * _Nullable)error;
+@end
+
 NSArray<NSString *> *AstraSignedApplicationGroups(void) {
     // Optional binding keeps older OS versions usable. Read the code signature,
     // not the source .entitlements file or a possibly stale provisioning plist.
@@ -656,7 +666,8 @@ NSString * _Nullable containerPathForBundleID(NSString *bundleID) {
             SEL initSel = NSSelectorFromString(@"initWithBundleIdentifier:allowPlaceholder:error:");
             if ([recordClass instancesRespondToSelector:initSel]) {
                 NSError *err = nil;
-                id record = ((id (*)(id, SEL, id, BOOL, id*))objc_msgSend)([recordClass alloc], initSel, bundleID, NO, &err);
+                id record = [(id<AstraApplicationRecordInitializing>)[recordClass alloc]
+                    initWithBundleIdentifier:bundleID allowPlaceholder:NO error:&err];
                 if (record) {
                     for (NSString *selName in @[@"dataContainerURL", @"containerURL"]) {
                         SEL dataContainerSel = NSSelectorFromString(selName);
