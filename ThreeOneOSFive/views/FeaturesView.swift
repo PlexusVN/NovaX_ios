@@ -448,6 +448,14 @@ struct FeaturesView: View {
                 .font(.system(size: 12, design: .monospaced))
                 .foregroundColor(AppTheme.gamingText.opacity(0.25))
                 .multilineTextAlignment(.center)
+            if service.catalogError != nil {
+                Button("Thử tải lại") {
+                    Task { await service.syncFromServer(auth: authManager) }
+                }
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(AppTheme.gamingBlueBright)
+                .disabled(service.isLoading)
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 40)

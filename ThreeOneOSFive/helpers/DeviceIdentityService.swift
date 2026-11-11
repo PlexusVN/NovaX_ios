@@ -396,6 +396,57 @@ public final class DeviceIdentityService {
         }
     }
 
+    /// Possession check for resuming an existing installation. This path cannot
+    /// create a missing private key, even when enrollment metadata was lost.
+    func existingResumeMaterial() throws -> (signing: String, agreement: String, assurance: AssuranceLevel) {
+        try locked {
+            guard try readData(tag: seKeyTag) != nil || readData(tag: softwareKeyTag) != nil,
+                  try readData(tag: agreementSETag) != nil || readData(tag: agreementSoftwareTag) != nil else {
+                throw DeviceIdentityError.identityMissing
+            }
+            let signing = try getOrCreateKey()
+            let agreement = try getOrCreateAgreementKey()
+            return (signing.publicKeyX963Base64, agreement.publicKeyX963Base64, signing.assurance)
+        }
+    }
+
+    /// Unlike first enrollment, resume can prove the original keys without a
+    /// locally remembered installation UUID. It signs a fresh server challenge;
+    /// no metadata is changed until the signed resume response is validated.
+    func signResumeEnrollment(challengeID: String, challenge: String, key: String,
+                              hwid: String, installationID: String) throws -> String {
+        let material = try existingResumeMaterial()
+        guard UUID(uuidString: installationID) != nil else { throw DeviceIdentityError.invalidInput }
+        let fields = ["ASTRA-ENROLL-V2-RECIPIENT", challengeID, challenge,
+                      key.trimmingCharacters(in: .whitespacesAndNewlines),
+                      hwid.trimmingCharacters(in: .whitespacesAndNewlines), installationID.lowercased(),
+                      material.signing, material.assurance.rawValue, material.agreement]
+        try validateCanonicalFields(fields)
+        return try signData(Data(fields.joined(separator: "\n").utf8))
+    }
+
+    /// Call only after verifying nonce/purpose/signature and the exact license,
+    /// server key ID and BOTH public-key fingerprints in a resume response.
+    /// This repairs metadata only. Private keys and recovery generations survive.
+    func acceptResumedEnrollment(deviceKeyID: String, installationID: String, keyID: Int,
+                                 signingFingerprint: String, agreementFingerprint: String) throws {
+        try locked {
+            guard UUID(uuidString: deviceKeyID) != nil, UUID(uuidString: installationID) != nil,
+                  keyID > 0 else { throw DeviceIdentityError.invalidInput }
+            let material = try existingResumeMaterial()
+            guard try Self.publicFingerprint(material.signing) == signingFingerprint,
+                  try Self.publicFingerprint(material.agreement) == agreementFingerprint,
+                  recoveryGeneration == nil || recoveryGeneration == installationID.lowercased() else {
+                throw DeviceIdentityError.invalidIdentity
+            }
+            try persistServerKeyID(keyID)
+            // Publish the device reference last. Interrupted metadata writes can
+            // repeat this same-key handshake; no old private material is erased.
+            try saveData(Data(installationID.lowercased().utf8), tag: installIdKey)
+            try saveData(Data(deviceKeyID.lowercased().utf8), tag: deviceKeyIdKey)
+        }
+    }
+
     public var assuranceLevel: AssuranceLevel {
         (try? getOrCreateKey().assurance) ?? .softwareKeychain
     }

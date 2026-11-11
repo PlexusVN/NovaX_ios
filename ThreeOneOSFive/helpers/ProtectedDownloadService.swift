@@ -36,9 +36,11 @@ enum ProtectedDownloadError: LocalizedError {
             case "replay_detected":
                 return "Yêu cầu tải không còn hợp lệ. Hãy thử lại để tạo yêu cầu mới."
             case "device_recovery_required", "device_already_enrolled":
-                return "Định danh cài đặt chưa khớp thiết bị đã đăng ký. Hãy liên hệ hỗ trợ để khôi phục quyền thiết bị."
+                return "Key hợp lệ nhưng định danh cài đặt chưa khớp thiết bị đã đăng ký. Astra chưa thể khôi phục bằng khóa cũ. Hãy liên hệ hỗ trợ với mã: \(code)."
             case "device_key_invalid", "device_signature_invalid", "device_proof_missing", "hwid_mismatch":
-                return "Máy chủ chưa xác minh được định danh thiết bị. Hãy liên hệ hỗ trợ để kiểm tra quyền thiết bị."
+                return "Máy chủ chưa xác minh được định danh thiết bị. Hãy thử tải lại; nếu vẫn lỗi, gửi hỗ trợ mã: \(code)."
+            case "identity_resume_unavailable":
+                return "Máy chủ chưa có bản sửa khôi phục định danh cho Astra 2.2. Hãy cập nhật server rồi thử tải lại. Mã: identity_resume_unavailable."
             case "recipient_upgrade_required", "recipient_enrollment_required", "device_environment_upgrade_required", "protocol_required":
                 return "Bản cài đặt chưa đáp ứng giao thức bảo mật hiện tại. Hãy cài đúng bản ứng dụng mới nhất được cung cấp."
             case "app_integrity_rejected", "integrity_report_invalid", "release_upgrade_required":
@@ -132,6 +134,11 @@ struct ProtectedRecoveryChallenge {
     let value: String
     let keyID: Int
     let recoveryAuthorized: Bool
+
+    static func permitsResume(after error: Error) -> Bool {
+        if case ProtectedDownloadError.rejected("device_signature_invalid") = error { return true }
+        return permitsAttempt(after: error)
+    }
 
     static func permitsAttempt(after error: Error) -> Bool {
         switch error {
@@ -265,7 +272,8 @@ final class ProtectedDownloadService: ObservableObject {
                        response.statusCode == 401 || (object["session_revoked"] as? Bool) == true {
                         clearSession()
                     }
-                    if detachedSession == nil { accessNotice = rejection.errorDescription }
+                    // Intermediate failures may be repaired with the same keys.
+                    // Publish only the final operation error, after bounded retries.
                     if case .quarantined = rejection, detachedSession == nil {
                         // Keep the license and persistent device identities. A
                         // later retry opens a fresh server-authorized session.
@@ -356,7 +364,7 @@ final class ProtectedDownloadService: ObservableObject {
                         // identity from being used. Keep both archives intact.
                     }
                 } catch ProtectedDownloadError.rejected(let code)
-                    where ["key_expired", "key_invalid", "key_banned", "key_revoked", "device_revoked", "device_key_invalid", "device_key_revoked", "license_policy_banned", "HTTP_401", "HTTP_403"].contains(code) {
+                    where ["key_expired", "key_invalid", "key_banned", "key_revoked", "device_revoked", "device_key_invalid", "device_key_revoked", "license_policy_banned"].contains(code) {
                     // Preserve an unusable archive. A different license gets its
                     // own fresh identity and can never inherit this old device.
                 }
@@ -372,13 +380,83 @@ final class ProtectedDownloadService: ObservableObject {
         let epoch = contextEpoch
         do {
             try await ensureCurrentSession(auth: auth)
+        } catch ProtectedDownloadError.rejected(let code) where ["session_expired", "session_required"].contains(code) {
+            try requireRecoveryContext(context, epoch: epoch)
+            clearSession()
+            try await ensureCurrentSession(auth: auth)
         } catch {
-            guard ProtectedRecoveryChallenge.permitsAttempt(after: error) else { throw error }
-            try await recoverInstallation(context: context, epoch: epoch)
+            let permitsReplacement = ProtectedRecoveryChallenge.permitsAttempt(after: error)
+            guard ProtectedRecoveryChallenge.permitsResume(after: error) else { throw error }
+            do {
+                try await resumeExistingInstallation(context: context, epoch: epoch)
+            } catch ProtectedDownloadError.rejected("device_recovery_required") where permitsReplacement {
+                try await recoverInstallation(context: context, epoch: epoch)
+            } catch DeviceIdentityError.identityMissing where permitsReplacement {
+                try await recoverInstallation(context: context, epoch: epoch)
+            }
             // Exactly one recovery per operation. A second failure propagates;
             // artifact requests and one-use content are never replayed here.
             try await ensureCurrentSession(auth: auth)
         }
+    }
+
+    private func resumeExistingInstallation(context: ProtectedAuthContext, epoch: UInt64) async throws {
+        try requireRecoveryContext(context, epoch: epoch)
+        let selected = try identity ?? DeviceIdentityService.scoped(to: context.binding)
+        guard selected.licenseBinding == context.binding else { throw DeviceIdentityError.invalidIdentity }
+        let material = try selected.existingResumeMaterial()
+        let installationID = try selected.existingInstallationID() ?? UUID().uuidString.lowercased()
+        let (challengeData, _) = try await post("/api/v2/device/challenge", body: [
+            "key": context.licenseKey, "hwid": context.hwid, "install_id": installationID
+        ], signed: false, purpose: "device-challenge")
+        try requireRecoveryContext(context, epoch: epoch)
+        guard let challenge = ProtectedRecoveryChallenge(try dictionary(challengeData),
+            licenseBinding: context.binding, expectedKeyID: try selected.persistedServerKeyID()) else {
+            throw ProtectedDownloadError.invalidResponse
+        }
+        let signature = try selected.signResumeEnrollment(challengeID: challenge.id,
+            challenge: challenge.value, key: context.licenseKey, hwid: context.hwid,
+            installationID: installationID)
+        let resumedData: Data
+        do {
+            (resumedData, _) = try await post("/api/v2/device/resume", body: [
+                "challenge_id": challenge.id, "challenge": challenge.value,
+                "key": context.licenseKey, "hwid": context.hwid, "install_id": installationID,
+                "public_key_x963": material.signing, "agreement_public_key_x963": material.agreement,
+                "assurance_level": material.assurance.rawValue, "enrollment_revision": 2,
+                "signature": signature
+            ], signed: false, purpose: "device-resume-v2")
+        } catch ProtectedDownloadError.rejected("HTTP_404") {
+            throw ProtectedDownloadError.rejected("identity_resume_unavailable")
+        }
+        try requireRecoveryContext(context, epoch: epoch)
+        let resumed = try dictionary(resumedData)
+        let fingerprint: (String) throws -> String = { value in
+            guard let bytes = Data(base64Encoded: value), bytes.count == 65 else {
+                throw ProtectedDownloadError.invalidResponse
+            }
+            return SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        }
+        guard resumed["license_binding"] as? String == context.binding,
+              resumed["key_id"] as? Int == challenge.keyID,
+              resumed["enrollment_revision"] as? Int == 2,
+              let deviceID = resumed["device_key_id"] as? String,
+              let serverInstallID = resumed["install_id"] as? String,
+              resumed["public_key_fingerprint"] as? String == (try fingerprint(material.signing)),
+              resumed["agreement_public_key_fingerprint"] as? String == (try fingerprint(material.agreement)) else {
+            throw ProtectedDownloadError.invalidResponse
+        }
+        try selected.acceptResumedEnrollment(deviceKeyID: deviceID, installationID: serverInstallID,
+            keyID: challenge.keyID, signingFingerprint: try fingerprint(material.signing),
+            agreementFingerprint: try fingerprint(material.agreement))
+        identity = selected
+        clearSession()
+    }
+
+    private func recordAccessFailure(_ error: Error, context: ProtectedAuthContext) {
+        guard !(error is CancellationError), currentAuthContext === context,
+              (try? context.validate()) != nil else { return }
+        accessNotice = error.localizedDescription
     }
 
     private func requireRecoveryContext(_ context: ProtectedAuthContext, epoch: UInt64) throws {
@@ -552,12 +630,28 @@ final class ProtectedDownloadService: ObservableObject {
         do {
             try Task.checkCancellation()
             try beginOperation(requestedContext)
+            accessNotice = nil
             try await ensureSession(auth: auth)
             try await ensureReleaseLease()
-            let (data, _) = try await post("/api/v2/artifacts/sync", body: [:], signed: true, purpose: "artifact-sync")
+            let data = try await syncCatalogWithSessionRetry(auth: auth)
             await gate.release()
             return data
-        } catch { await gate.release(); throw error }
+        } catch { recordAccessFailure(error, context: requestedContext); await gate.release(); throw error }
+    }
+
+    /// Catalog sync is read-only. A signed expired-session rejection permits
+    /// ONE fresh session/proof/nonce retry. One-use grants/content are never replayed.
+    private func syncCatalogWithSessionRetry(auth: AuthManager) async throws -> Data {
+        do {
+            return try await post("/api/v2/artifacts/sync", body: [:], signed: true, purpose: "artifact-sync").0
+        } catch ProtectedDownloadError.rejected(let code) where ["session_expired", "session_required"].contains(code) {
+            guard let context = currentAuthContext else { throw FeaturePatchError.notAuthenticated }
+            try context.validate()
+            clearSession()
+            try await ensureSession(auth: auth)
+            try await ensureReleaseLease()
+            return try await post("/api/v2/artifacts/sync", body: [:], signed: true, purpose: "artifact-sync").0
+        }
     }
 
     /// Best-effort telemetry is a device-authenticated signal, never a license

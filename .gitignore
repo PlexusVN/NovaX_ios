@@ -89,3 +89,5 @@ release-registry.json
 !/Tests/ContainerDiscoverySelfCheck.swift
 !/Tests/ContainerScanProgressSelfCheck.swift
 !/Tests/DirectPatchExecutorSelfCheck.swift
+!/Tests/extract_identity_resume.py
+!/Tests/ProtectedIdentityResumeSelfCheck.swift
