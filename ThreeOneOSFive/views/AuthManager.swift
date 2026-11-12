@@ -1,6 +1,8 @@
 import SwiftUI
 import Foundation
 import Combine
+import UIKit
+import Security
 
 @MainActor
 final class AuthManager: ObservableObject {
@@ -19,7 +21,8 @@ final class AuthManager: ObservableObject {
             }
         }
     }
-    @Published var hwid: String = DeviceUtils.hwid
+    @Published private(set) var hwid: String = ""
+    @Published private(set) var hwidFailure: String?
     @Published var deviceName: String = DeviceUtils.deviceMarketingName
     @Published var keyType: KeyType = .basic
     @Published var expiresAt: Date?
@@ -38,11 +41,59 @@ final class AuthManager: ObservableObject {
 
     private let defaults = UserDefaults.standard
     private let keyKey = "saved_license_key"
+    private var hwidObservers = Set<AnyCancellable>()
+    private var hwidRetryTask: Task<Void, Never>?
+    private var hwidRetryable = false
+    private var loginBlockedByHWID: String?
 
     init() {
         loadSavedKey()
+        refreshDeviceHWID()
+        NotificationCenter.default.publisher(for: UIApplication.protectedDataDidBecomeAvailableNotification)
+            .merge(with: NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification))
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.retryDeviceHWID() }
+            .store(in: &hwidObservers)
+        retryDeviceHWID()
         let _ = DecoyAuth.deriveHWID(from: DeviceUtils.deviceModel)
         let _ = DecoyAuth.generateToken()
+    }
+
+    deinit { hwidRetryTask?.cancel() }
+
+    @discardableResult
+    private func refreshDeviceHWID() -> Bool {
+        if UUID(uuidString: hwid) != nil { return true }
+        do {
+            let value = try DeviceUtils.resolveHWID()
+            hwid = value
+            hwidFailure = nil
+            hwidRetryable = false
+            if let hardwareError = loginBlockedByHWID {
+                loginBlockedByHWID = nil
+                if authState == .error(hardwareError) { authState = .idle }
+            }
+            return true
+        } catch {
+            hwidFailure = StableDeviceHWID.failureMessage(error,
+                protectedDataAvailable: UIApplication.shared.isProtectedDataAvailable)
+            hwidRetryable = StableDeviceHWID.isRetryable(error)
+            return false
+        }
+    }
+
+    private func retryDeviceHWID() {
+        guard hwid.isEmpty, hwidRetryTask == nil else { return }
+        guard !refreshDeviceHWID(), hwidRetryable else { return }
+        hwidRetryTask = Task { [weak self] in
+            defer { self?.hwidRetryTask = nil }
+            for delay in [250, 500, 1000] {
+                do { try await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000) }
+                catch { return }
+                guard let self, !Task.isCancelled else { return }
+                if self.refreshDeviceHWID() || !self.hwidRetryable { return }
+            }
+        }
     }
 
     private func loadSavedKey() {
@@ -52,8 +103,9 @@ final class AuthManager: ObservableObject {
         }
         if let saved = defaults.string(forKey: keyKey), !saved.isEmpty {
             licenseKey = saved
-            _ = KeychainUtils.save(key: "novax_saved_license_key", value: saved)
-            defaults.removeObject(forKey: keyKey)
+            if KeychainUtils.save(key: "novax_saved_license_key", value: saved) {
+                defaults.removeObject(forKey: keyKey)
+            }
         }
     }
 
@@ -68,9 +120,11 @@ final class AuthManager: ObservableObject {
             return
         }
 
-        if hwid.isEmpty { hwid = DeviceUtils.hwid }
-        guard UUID(uuidString: hwid) != nil else {
-            authState = .error("Chưa đọc được định danh thiết bị. Hãy mở khóa iPhone rồi thử lại.")
+        guard refreshDeviceHWID() else {
+            let message = hwidFailure ?? "Chưa thể đọc định danh thiết bị (HW06)."
+            loginBlockedByHWID = message
+            authState = .error(message)
+            retryDeviceHWID()
             return
         }
 
@@ -141,8 +195,11 @@ final class AuthManager: ObservableObject {
             }
 
             licenseKey = key
-            guard KeychainUtils.save(key: "novax_saved_license_key", value: key) else {
-                authState = .error("Không thể lưu phiên bảo mật. Hãy mở khóa iPhone rồi thử lại.")
+            let saveStatus = KeychainUtils.saveStatus(key: "novax_saved_license_key", value: key)
+            guard saveStatus == errSecSuccess else {
+                authState = .error("Không thể lưu phiên bảo mật. " + StableDeviceHWID.failureMessage(
+                    DeviceIdentityError.keychain(saveStatus),
+                    protectedDataAvailable: UIApplication.shared.isProtectedDataAvailable))
                 return
             }
             defaults.removeObject(forKey: keyKey)

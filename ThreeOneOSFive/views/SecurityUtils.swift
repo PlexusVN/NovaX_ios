@@ -5,13 +5,17 @@ import Security
 import CommonCrypto
 import CFNetwork
 
-// MARK: - Keychain helpers (sideload-safe: no entitlement dependency)
+// MARK: - Keychain helpers (default signing access group; no hard-coded Team ID)
 
 enum KeychainUtils {
     private static let lock = NSLock()
     static func save(key: String, value: String) -> Bool {
+        saveStatus(key: key, value: value) == errSecSuccess
+    }
+
+    static func saveStatus(key: String, value: String) -> OSStatus {
         lock.lock(); defer { lock.unlock() }
-        guard let data = value.data(using: .utf8) else { return false }
+        guard let data = value.data(using: .utf8) else { return errSecParam }
 
         let identityQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -24,16 +28,16 @@ enum KeychainUtils {
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         ]
         let update = SecItemUpdate(identityQuery as CFDictionary, values as CFDictionary)
-        if update == errSecSuccess { return true }
-        guard update == errSecItemNotFound else { return false }
+        if update == errSecSuccess { return update }
+        guard update == errSecItemNotFound else { return update }
         var insert = identityQuery
         values.forEach { insert[$0.key] = $0.value }
         let added = SecItemAdd(insert as CFDictionary, nil)
-        if added == errSecSuccess { return true }
+        if added == errSecSuccess { return added }
         if added == errSecDuplicateItem {
-            return SecItemUpdate(identityQuery as CFDictionary, values as CFDictionary) == errSecSuccess
+            return SecItemUpdate(identityQuery as CFDictionary, values as CFDictionary)
         }
-        return false
+        return added
     }
 
     static func read(key: String) -> String? {
@@ -351,30 +355,130 @@ var expectedServerPin: String { "7NfgIVpP+fdJQCMiloG7ljIWxP5OZEiAGfsc6+jgcQA=" }
 
 // BEGIN STABLE HWID POLICY — compiled with isolated storage by regression tests.
 enum StableDeviceHWID {
-    static func resolve(storage: DeviceIdentityStorage, vendorID: String?) throws -> String {
-        if let data = try storage.read("deviceHwid") {
-            guard let stored = String(data: data, encoding: .utf8), UUID(uuidString: stored) != nil else {
-                throw DeviceIdentityError.invalidIdentity
-            }
-            return stored
+    private static let lock = NSLock()
+    private static let tag = "deviceHwid"
+
+    private static func validated(_ data: Data) throws -> String {
+        guard let stored = String(data: data, encoding: .utf8), UUID(uuidString: stored) != nil else {
+            throw DeviceIdentityError.invalidIdentity
         }
-        // IDFV can be nil before the first unlock. Do not manufacture a new
-        // hardware identity or consume another license slot while it is absent.
+        return stored // Preserve case and the exact registered UUID; never substitute IDFV.
+    }
+
+    /// The mirror contains a public HWID only, never keys, license or credentials.
+    /// A primary read error without a known saved ID must not create a new device.
+    static func resolve(storage: DeviceIdentityStorage, vendorID: String?,
+                        mirror: DeviceIdentityStorage? = nil) throws -> String {
+        lock.lock(); defer { lock.unlock() }
+        let saved: Data?
+        do { saved = try storage.read(tag) }
+        catch {
+            if let mirror, let data = try mirror.read(tag) { return try validated(data) }
+            throw error
+        }
+        if let saved {
+            let value = try validated(saved)
+            if let mirror, let backup = try mirror.read(tag) {
+                guard try validated(backup) == value else { throw DeviceIdentityError.ambiguousIdentity }
+            }
+            try? mirror?.write(tag, saved)
+            return value
+        }
+        if let mirror, let backup = try mirror.read(tag) {
+            let value = try validated(backup)
+            // A changed signing profile can make old Keychain items disappear.
+            // Restore the same ID; failure must not replace the durable backup.
+            try? storage.write(tag, backup)
+            return value
+        }
         guard let vendorID, UUID(uuidString: vendorID) != nil else {
             throw DeviceIdentityError.identityMissing
         }
-        try storage.write("deviceHwid", Data(vendorID.utf8))
+        let data = Data(vendorID.utf8)
+        do { try storage.write(tag, data) }
+        catch {
+            let writeError = error
+            // Another writer can win SecItemAdd. Read its ID rather than
+            // overwriting the winner with a newly observed IDFV.
+            if let winner = try storage.read(tag) {
+                let value = try validated(winner)
+                try? mirror?.write(tag, winner)
+                return value
+            }
+            guard let mirror else { throw writeError }
+            try mirror.write(tag, data) // Publish only after durable local storage succeeds.
+            return vendorID
+        }
+        try? mirror?.write(tag, data)
         return vendorID
+    }
+
+    static func isRetryable(_ error: Error) -> Bool {
+        guard let identity = error as? DeviceIdentityError else { return false }
+        switch identity {
+        case .identityMissing: return true
+        case .keychain(let status): return status == -25308 || status == -25291
+        default: return false
+        }
+    }
+
+    static func failureMessage(_ error: Error, protectedDataAvailable: Bool) -> String {
+        if let identity = error as? DeviceIdentityError {
+            switch identity {
+            case .keychain(let status):
+                if status == -34018 {
+                    return "Bản ký Astra không có quyền truy cập Keychain. Hãy kiểm tra profile và quyền Keychain khi ký lại (HW02; OSStatus \(status))."
+                }
+                if !protectedDataAvailable {
+                    return "Dữ liệu bảo mật chưa sẵn sàng. Hãy mở khóa iPhone rồi thử lại (HW01; OSStatus \(status))."
+                }
+                return "Keychain từ chối truy cập định danh thiết bị. Hãy thử lại; nếu vẫn lỗi, gửi mã này để kiểm tra bản ký (HW03; OSStatus \(status))."
+            case .identityMissing:
+                return protectedDataAvailable
+                    ? "iOS chưa trả về định danh thiết bị. Astra sẽ tự đọc lại khi ứng dụng hoạt động; hãy thử lại sau giây lát (HW04)."
+                    : "Định danh thiết bị chưa sẵn sàng. Hãy mở khóa iPhone rồi thử lại (HW01)."
+            case .invalidIdentity, .ambiguousIdentity:
+                return "Định danh thiết bị đã lưu không hợp lệ. Astra giữ nguyên dữ liệu để tránh đổi thiết bị đã đăng ký; hãy gửi thông tin lỗi để khôi phục (HW05)."
+            case .invalidInput: break
+            }
+        }
+        let detail = error as NSError
+        return "Không thể đọc hoặc lưu định danh thiết bị trong ứng dụng (HW06; \(detail.domain) \(detail.code))."
     }
 }
 // END STABLE HWID POLICY
 
 struct DeviceUtils {
 
-    /// Keep the original device-local UID across launches and app updates.
-    static var hwid: String {
-        (try? StableDeviceHWID.resolve(storage: .keychain,
-            vendorID: UIDevice.current.identifierForVendor?.uuidString)) ?? ""
+    /// Public identity backup in this application's private, protected storage.
+    /// Private keys continue to use DeviceIdentityStorage.keychain exclusively.
+    private static func hwidMirrorURL(create: Bool) throws -> URL {
+        let base = try FileManager.default.url(for: .applicationSupportDirectory,
+            in: .userDomainMask, appropriateFor: nil, create: create)
+        let directory = base.appendingPathComponent("AstraDeviceIdentity", isDirectory: true)
+        if create {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
+                attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
+            var excluded = directory
+            var values = URLResourceValues(); values.isExcludedFromBackup = true
+            try excluded.setResourceValues(values)
+        }
+        return directory.appendingPathComponent("hwid-v1")
+    }
+
+    private static let hwidMirror = DeviceIdentityStorage(read: { _ in
+        do { return try Data(contentsOf: hwidMirrorURL(create: false)) }
+        catch CocoaError.fileReadNoSuchFile { return nil }
+    }, write: { _, data in
+        let url = try hwidMirrorURL(create: true)
+        try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }, remove: { _ in
+        // Identity is deliberately retained across logout and transient errors.
+    })
+
+    static func resolveHWID() throws -> String {
+        try StableDeviceHWID.resolve(storage: .keychain,
+            vendorID: UIDevice.current.identifierForVendor?.uuidString, mirror: hwidMirror)
     }
 
     static var deviceModel: String {

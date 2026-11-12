@@ -1,3 +1,7 @@
+## Bản sửa local 2.2 (35): HWID trước đăng nhập
+
+Đã sửa lỗi nuốt lỗi đọc/lưu HWID thành chuỗi rỗng và luôn hướng dẫn mở khóa. Thêm bản dự phòng HWID công khai trong Application Support có Data Protection và loại khỏi backup; giữ nguyên khóa ký/giải mã trong Keychain. Đọc lại khi foreground/unlock, retry có giới hạn, báo mã HW01–HW06/OSStatus và cho sao chép thông tin lỗi. Giữ nguyên định tuyến engine build 34. Đã qua 38 kiểm tra mã Swift thực, 60 bài local; 7 bài chỉ chạy macOS được bỏ qua. Chưa build IPA hoặc push GitHub cho bản local này.
+
 ## Cập nhật 2.2 (34): định tuyến engine theo upstream
 
 3105 được ưu tiên cho toàn bộ phạm vi upstream, cộng nhánh iOS 16 của Astra. Worse_query chỉ dùng từ 26.6.2 trong phạm vi được hỗ trợ, trừ các build 27 beta đã thuộc 3105. Các bản 18.x/26.x còn lại dùng AirLift + file pairing. Không tự đổi engine theo App Group. Xem [bảng và giới hạn kiểm chứng](docs/ENGINE_ROUTING_ASTRA_2_2.md).

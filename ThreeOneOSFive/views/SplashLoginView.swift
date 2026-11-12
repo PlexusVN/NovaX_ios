@@ -464,7 +464,7 @@ struct SplashLoginView: View {
                         .font(.system(size: 10, weight: .semibold))
                         .tracking(0.5)
                         .foregroundStyle(Color(hex: 0x91A4C0))
-                    Text(auth.hwid)
+                    Text(auth.hwid.isEmpty ? "Chưa sẵn sàng" : auth.hwid)
                         .font(.system(size: 12, design: .monospaced))
                         .foregroundStyle(Color(hex: 0xD6E5FF))
                         .lineLimit(1)
@@ -473,7 +473,9 @@ struct SplashLoginView: View {
                 Spacer()
                 Button {
                     Haptics.light()
-                    UIPasteboard.general.string = auth.hwid
+                    UIPasteboard.general.string = auth.hwid.isEmpty
+                        ? "Astra · HWID\niOS=\(AppInfo.osVersion) (\(AppInfo.osBuild))\n" + (auth.hwidFailure ?? "Đang chờ định danh thiết bị.")
+                        : auth.hwid
                     Haptics.success()
                 } label: {
                     Image(systemName: "doc.on.doc.fill")
@@ -561,6 +563,7 @@ struct SplashLoginView: View {
                     .foregroundStyle(Color(hex: 0xFB7185))
 
                 Text(message)
+                    .textSelection(.enabled)
                     .font(.system(size: 12.5, weight: .medium))
                     .foregroundStyle(Color(hex: 0xD6E5FF))
                     .fixedSize(horizontal: false, vertical: true)
