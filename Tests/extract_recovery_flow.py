@@ -15,6 +15,7 @@ policy=section('// BEGIN RECOVERY CHALLENGE CONTRACT', '// END RECOVERY CHALLENG
 dictionary=section('    private func dictionary(', '    private func clearSession(')
 checks=section('    private func requireRecoveryContext(', '    private func recoverInstallation(')
 recovery=section('    private func recoverInstallation(', '    private func ensureCurrentSession(')
+controller=section('    private func recoveryController(', '    private func bootstrapEnrollment(')
 prefix='''import Foundation
 import CryptoKit
 
@@ -57,4 +58,4 @@ harness='''
         return (try JSONSerialization.data(withJSONObject:payload),String(repeating:"1",count:32))
     }
 '''
-Path(sys.argv[2]).write_text(prefix+errors+context+policy+harness+dictionary+checks+recovery+'\n}\n',encoding='utf-8')
+Path(sys.argv[2]).write_text(prefix+errors+context+policy+harness+dictionary+checks+controller+recovery+'\n}\n',encoding='utf-8')

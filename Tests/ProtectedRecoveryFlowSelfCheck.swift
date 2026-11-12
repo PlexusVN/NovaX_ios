@@ -1,5 +1,5 @@
 // Tests the extracted ACTUAL recoverInstallation body with real identity storage.
-// Transport fixtures represent signature-verified server payloads, never real APIs.
+// Transport fixtures represent pinned-TLS verified payloads, never real APIs.
 import Foundation
 import CryptoKit
 
@@ -19,6 +19,7 @@ private final class RecoveryMemoryStore {
     var changedKeyID: Int?
     var failFirstEnrollment = false
     var wrongRecipient = false
+    var wrongEnrollmentField: String?
     var onEnroll: (() -> Void)?
     var enrollments: [[String: Any]] = []
     let deviceID=UUID().uuidString.lowercased()
@@ -37,13 +38,22 @@ private final class RecoveryMemoryStore {
                 "recovery_authorized":authorized]
         }
         guard route=="/api/v2/device/enroll" else { throw FlowCheckError.failed("unexpected route") }
+        guard body["canonical_enrollment"] as? Bool == true else { throw FlowCheckError.failed("recovery is not canonical") }
         enrollments.append(body)
         onEnroll?()
         if failFirstEnrollment && enrollments.count==1 { throw URLError(.networkConnectionLost) }
         let recipient=Data(base64Encoded:body["agreement_public_key_x963"] as? String ?? "")!
+        let signing=Data(base64Encoded:body["public_key_x963"] as? String ?? "")!
         let fingerprint=SHA256.hash(data:recipient).map { String(format:"%02x",$0) }.joined()
-        return ["success":true,"device_key_id":deviceID,"enrollment_revision":2,
+        var response: [String: Any] = ["success":true,"device_key_id":deviceID,"enrollment_revision":2,
+            "license_binding":binding,"key_id":7,"install_id":body["install_id"]!,
+            "public_key_fingerprint":SHA256.hash(data:signing).map { String(format:"%02x",$0) }.joined(),
             "agreement_public_key_fingerprint":wrongRecipient ? String(repeating:"0",count:64) : fingerprint]
+        if let field=wrongEnrollmentField {
+            if field == "key_id" || field == "enrollment_revision" { response[field]=99 }
+            else { response[field]=String(repeating:"0",count:64) }
+        }
+        return response
     }
 }
 
@@ -116,11 +126,36 @@ private final class RecoveryMemoryStore {
             try require(flow.currentIdentity === old,"context invalidation prevents promotion")
             try require(flow.clearedSessionCount==0,"stale reply cannot clear a newer session")
         }
+        for corruptSuffix in ["missing", "novax_software_p256_key", "novax_agreement_software_p256_v2"] {
+            let(memory,old,_,transport,flow)=try fixture()
+            let candidate=try old.prepareRecoveryCandidate(installationID:UUID().uuidString.lowercased(),keyID:7,hwid:"hardware-A")
+            let candidateID=try candidate.existingInstallationID()!
+            let prefix="astra.identity.v3.\(old.licenseBinding!).generation.\(candidateID)."
+            if corruptSuffix != "missing" { memory.values[prefix+corruptSuffix]=Data([1,2,3]) }
+            else { memory.values.removeValue(forKey:prefix+"novax_agreement_software_p256_v2") }
+            let before=memory.values
+            transport.authorized=false
+            do { try await flow.recover();throw FlowCheckError.failed("broken pending replaced without ticket") }
+            catch ProtectedDownloadError.rejected("device_recovery_required") {}
+            try require(memory.values==before && transport.enrollments.isEmpty,"false ticket preserves unreadable pending archive")
+            transport.authorized=true
+            try await flow.recover()
+            try require(try flow.currentIdentity.existingInstallationID() != candidateID,"fresh ticket can replace unreadable pending generation")
+            try require(before.filter{$0.key.contains("generation.")}.allSatisfy{memory.values[$0.key]==$0.value},"authorized repair retains old pending archive")
+        }
         do {
-            let(_,old,_,transport,flow)=try fixture();transport.wrongRecipient=true
+            let(_,old,_,transport,flow)=try fixture()
+            let task=Task { @MainActor in try await flow.recover() }
+            transport.onEnroll={task.cancel()}
+            do { try await task.value;throw FlowCheckError.failed("cancelled response promoted") }
+            catch is CancellationError {}
+            try require(flow.currentIdentity === old && flow.clearedSessionCount==0,"task cancellation prevents durable promotion")
+        }
+        for field in ["license_binding","key_id","install_id","device_key_id","enrollment_revision","public_key_fingerprint","agreement_public_key_fingerprint"] {
+            let(_,old,_,transport,flow)=try fixture();transport.wrongEnrollmentField=field
             do { try await flow.recover();throw FlowCheckError.failed("wrong recipient promoted") }
             catch ProtectedDownloadError.invalidResponse {}
-            try require(flow.currentIdentity === old,"wrong signed recipient fingerprint prevents promotion")
+            try require(flow.currentIdentity === old,"mismatched canonical \(field) prevents promotion")
         }
         print("Protected recovery flow self-check: \(checks) checks passed")
     }

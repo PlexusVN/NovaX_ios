@@ -91,3 +91,5 @@ release-registry.json
 !/Tests/DirectPatchExecutorSelfCheck.swift
 !/Tests/extract_identity_resume.py
 !/Tests/ProtectedIdentityResumeSelfCheck.swift
+!/Tests/test_recovery_session.py
+!/Tests/ProtectedSessionRecoverySelfCheck.swift

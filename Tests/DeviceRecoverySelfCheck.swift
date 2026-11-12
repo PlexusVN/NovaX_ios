@@ -159,6 +159,40 @@ struct DeviceRecoverySelfCheck {
             _ = try first.promoteRecoveryCandidate(ready, deviceKeyID: newDevice, keyID: 7, hwid: otherHWID)
         }
         try require(try interrupted.selected(binding).persistedEnrollmentID() == oldDevice, "rejected promotion never switches identity")
+        let initial = RecoveryMemoryStore()
+        let initialIdentity = initial.identity(binding)
+        let initialInstall = UUID().uuidString.lowercased()
+        try require(try initialIdentity.prepareInitialEnrollment(installationID: initialInstall), "pristine identity publishes preparation")
+        _ = try initialIdentity.getOrCreateKey()
+        let firstSigner = try initialIdentity.getOrCreateKey().publicKeyX963Base64
+        let retryInitial = initial.identity(binding)
+        try require(try retryInitial.initialEnrollmentInstallationID() == initialInstall, "interrupted first creation retains installation")
+        try require(try retryInitial.prepareInitialEnrollment(installationID: initialInstall), "unsubmitted first creation may finish recipient")
+        try require(try retryInitial.getOrCreateKey().publicKeyX963Base64 == firstSigner, "initial retry preserves signer")
+        _ = try retryInitial.getOrCreateAgreementKey()
+        let initialTag = prefix + "initial_enrollment_v1"
+        initial.failTag = initialTag
+        try rejects("failed submit marker aborts first enrollment") {
+            try retryInitial.finishInitialEnrollmentPreparation(installationID: initialInstall)
+        }
+        initial.failTag = nil
+        try require(try retryInitial.prepareInitialEnrollment(installationID: initialInstall), "failed submission remains safely unsubmitted")
+        try retryInitial.finishInitialEnrollmentPreparation(installationID: initialInstall)
+        initial.values.removeValue(forKey: prefix + "novax_agreement_software_p256_v2")
+        try require(try initial.identity(binding).prepareInitialEnrollment(installationID: initialInstall) == false, "submitted initial identity cannot create missing keys")
+        try rejects("submitted missing material requires server recovery") { _ = try initial.identity(binding).existingResumeMaterial() }
+
+        // Active generation key loss must not hide control metadata or pending
+        // recovery. Reading a controller cannot parse or regenerate old keys.
+        store.values = committed
+        store.values.removeValue(forKey: generationPrefix + "novax_agreement_software_p256_v2")
+        let controller = try DeviceIdentityService.recoveryController(for: binding, storage: store.storage, useSecureEnclave: false)
+        let partial = store.values
+        try require(try controller.recoveryExpectedServerKeyID() == 7, "active key loss preserves metadata-only server scope")
+        try require(store.values == partial, "control lookup does not regenerate active material")
+        let replacementID = UUID().uuidString.lowercased()
+        _ = try controller.prepareRecoveryCandidate(installationID: replacementID, keyID: 7, hwid: hwid)
+        try require(try controller.pendingRecoveryCandidate(hwid: hwid)?.existingInstallationID() == replacementID, "new authorized candidate works despite broken active generation")
         print("Device recovery self-check: \(checks) checks passed")
     }
 }

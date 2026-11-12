@@ -38,10 +38,10 @@ private enum RecoveryCheckError: Error { case failed(String) }
             changed = base; changed.removeValue(forKey: field)
             try require(parsed(changed) == nil, "missing " + field + " fails closed")
         }
-        for code in ["device_key_invalid", "device_recovery_required", "device_already_enrolled"] {
+        for code in ["device_key_invalid", "device_recovery_required", "device_already_enrolled", "device_key_revoked", "device_revoked"] {
             try require(ProtectedRecoveryChallenge.permitsAttempt(after: ProtectedDownloadError.rejected(code)), "eligible signed " + code)
         }
-        for code in ["HTTP_401", "HTTP_503", "session_expired", "key_banned", "license_policy_banned",
+        for code in ["HTTP_401", "HTTP_503", "session_expired", "key_banned", "key_revoked", "license_policy_banned",
             "device_quarantined", "device_jailbreak_quarantined", "release_policy_unavailable",
             "app_integrity_rejected", "timestamp_invalid", "replay_detected", "device_signature_invalid"] {
             try require(!ProtectedRecoveryChallenge.permitsAttempt(after: ProtectedDownloadError.rejected(code)), "ineligible " + code)

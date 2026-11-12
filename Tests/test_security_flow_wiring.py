@@ -45,15 +45,25 @@ class SecurityFlowWiringTests(unittest.TestCase):
         self.assertIn('data.count <= 256 * 1024', errors)
         self.assertIn('(object["session_revoked"] as? Bool) == true', errors)
 
-    def test_normal_bootstrap_has_no_resume_or_replacement_dependency(self):
+    def test_same_key_bootstrap_and_authorized_recovery_share_canonical_contract(self):
         text = source('helpers/ProtectedDownloadService.swift')
         active = text.split('    private func ensureSession(')[1].split('    private func recordAccessFailure(')[0]
         self.assertNotIn('/api/v2/device/resume', text)
         self.assertNotIn('identity_resume_unavailable', text)
-        self.assertNotIn('recoverInstallation(', active)
+        bootstrap = active.split('    private func bootstrapEnrollment(')[1]
+        self.assertNotIn('recoverInstallation(', bootstrap)
+        self.assertIn('ProtectedRecoveryChallenge.permitsAttempt(after: error)', active)
+        self.assertLess(active.index('pendingRecoveryCandidate'), active.index('ensureCurrentSession(auth: auth)'))
+        self.assertIn('prepareInitialEnrollment(installationID: installID)', bootstrap)
+        self.assertLess(bootstrap.index('finishInitialEnrollmentPreparation'), bootstrap.index('post("/api/v2/device/enroll"'))
         self.assertIn('canonical_enrollment', active)
         self.assertIn('existingResumeMaterial()', active)
         self.assertIn('acceptCanonicalEnrollment(', active)
+        recovery = text.split('    private func recoverInstallation(')[1].split('    private func ensureCurrentSession(')[0]
+        self.assertIn('guard challenge.recoveryAuthorized else', recovery)
+        self.assertIn('"canonical_enrollment": true', recovery)
+        self.assertIn('enrolled["public_key_fingerprint"]', recovery)
+        self.assertIn('enrolled["license_binding"]', recovery)
 
     def test_airlift_cannot_claim_a_restore_without_writing_originals(self):
         text = source('helpers/FeaturePatchService.swift')

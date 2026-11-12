@@ -116,6 +116,86 @@ public final class DeviceIdentityService {
         guard try selected.persistedEnrollmentID() != nil else { throw DeviceIdentityError.invalidIdentity }
         return selected
     }
+    /// Recovery control must remain readable when the selected generation has
+    /// lost a private key. This handle never loads, creates or replaces keys.
+    static func recoveryController(for binding: String, storage: DeviceIdentityStorage = .keychain,
+                                   useSecureEnclave: Bool = true) throws -> DeviceIdentityService {
+        guard binding.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil else {
+            throw DeviceIdentityError.invalidInput
+        }
+        return DeviceIdentityService(namespace: binding, storage: storage, useSecureEnclave: useSecureEnclave)
+    }
+    func recoveryController() throws -> DeviceIdentityService {
+        guard let licenseBinding else { throw DeviceIdentityError.invalidInput }
+        return try Self.recoveryController(for: licenseBinding, storage: storage, useSecureEnclave: useSecureEnclave)
+    }
+    /// Read the selected generation's scope without parsing its private keys.
+    func recoveryExpectedServerKeyID() throws -> Int? {
+        if let generation = try readGeneration("active_generation_v1"),
+           let keyID = try recoveryIdentity(generation).persistedServerKeyID() { return keyID }
+        return try persistedServerKeyID()
+    }
+    /// Partial Keychain loss is an existing identity, not first enrollment.
+    /// Check before getOrCreateKey so missing material cannot be regenerated
+    /// in the old namespace without administrator-authorized recovery.
+    func hasRememberedIdentity() throws -> Bool {
+        for base in Self.identityTags + ["server_license_key_id"] {
+            if try readData(tag: storageTag(base)) != nil { return true }
+        }
+        return false
+    }
+    /// Only first enrollment can finish interrupted key creation. The marker
+    /// proves a verified challenge found this namespace pristine before any
+    /// key write. Submission is recorded BEFORE enrollment can reach the server.
+    private struct InitialEnrollmentRecord: Codable {
+        let installationID: String
+        let licenseBinding: String
+        let submitted: Bool
+    }
+    private func initialEnrollmentRecord() throws -> InitialEnrollmentRecord? {
+        guard let data = try readData(tag: storageTag("initial_enrollment_v1")) else { return nil }
+        guard data.count <= 1024, let record = try? JSONDecoder().decode(InitialEnrollmentRecord.self, from: data),
+              recoveryGeneration == nil, record.licenseBinding == licenseBinding,
+              UUID(uuidString: record.installationID)?.uuidString.lowercased() == record.installationID else {
+            throw DeviceIdentityError.invalidIdentity
+        }
+        return record
+    }
+    func initialEnrollmentInstallationID() throws -> String? {
+        try initialEnrollmentRecord()?.installationID
+    }
+    func prepareInitialEnrollment(installationID: String) throws -> Bool {
+        try locked {
+            if let pending = try initialEnrollmentRecord() {
+                guard !pending.submitted else { return false }
+                guard pending.installationID == installationID,
+                      try persistedEnrollmentID() == nil, try persistedServerKeyID() == nil else {
+                    throw DeviceIdentityError.invalidIdentity
+                }
+                return true
+            }
+            guard try hasRememberedIdentity() == false else { return false }
+            guard recoveryGeneration == nil, let licenseBinding,
+                  UUID(uuidString: installationID)?.uuidString.lowercased() == installationID else {
+                throw DeviceIdentityError.invalidInput
+            }
+            let record = InitialEnrollmentRecord(installationID: installationID, licenseBinding: licenseBinding, submitted: false)
+            try saveData(JSONEncoder().encode(record), tag: storageTag("initial_enrollment_v1"))
+            return true
+        }
+    }
+    func finishInitialEnrollmentPreparation(installationID: String) throws {
+        try locked {
+            guard let pending = try initialEnrollmentRecord(), !pending.submitted else { return }
+            guard pending.installationID == installationID else { throw DeviceIdentityError.invalidIdentity }
+            _ = try existingResumeMaterial()
+            // A failed write aborts the request; after submission, key loss can
+            // never be mistaken for an interrupted, unsubmitted first install.
+            let submitted = InitialEnrollmentRecord(installationID: installationID,
+                licenseBinding: pending.licenseBinding, submitted: true)
+            try saveData(JSONEncoder().encode(submitted), tag: storageTag("initial_enrollment_v1"))
+        }
+    }
     private func storageTag(_ base: String) -> String {
         guard let licenseBinding else { return base }
         let prefix = "astra.identity.v3.\(licenseBinding)"
@@ -163,6 +243,16 @@ public final class DeviceIdentityService {
         }
         return SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
     }
+    private static func storedSoftwareSigningKey(_ data: Data) throws -> P256.Signing.PrivateKey {
+        // Storage errors have already propagated. Only parsing the saved raw
+        // scalar is normalized; Secure Enclave availability errors stay intact.
+        do { return try P256.Signing.PrivateKey(rawRepresentation: data) }
+        catch { throw DeviceIdentityError.invalidIdentity }
+    }
+    private static func storedSoftwareAgreementKey(_ data: Data) throws -> P256.KeyAgreement.PrivateKey {
+        do { return try P256.KeyAgreement.PrivateKey(rawRepresentation: data) }
+        catch { throw DeviceIdentityError.invalidIdentity }
+    }
     /// This path never creates keys or backend markers. A published recovery
     /// candidate with lost/corrupt material must not silently rotate its keys.
     private func existingRecoveryPublicKeys() throws -> (signing: String, agreement: String) {
@@ -179,7 +269,7 @@ public final class DeviceIdentityService {
                 .publicKey.x963Representation.base64EncodedString()
         case AssuranceLevel.softwareKeychain.rawValue:
             guard let signingSoftware, signingSE == nil else { throw DeviceIdentityError.invalidIdentity }
-            signing = try P256.Signing.PrivateKey(rawRepresentation: signingSoftware)
+            signing = try Self.storedSoftwareSigningKey(signingSoftware)
                 .publicKey.x963Representation.base64EncodedString()
         default: throw DeviceIdentityError.identityMissing
         }
@@ -191,7 +281,7 @@ public final class DeviceIdentityService {
                 .publicKey.x963Representation.base64EncodedString()
         case AssuranceLevel.softwareKeychain.rawValue:
             guard let agreementSoftware, agreementSE == nil else { throw DeviceIdentityError.invalidIdentity }
-            agreement = try P256.KeyAgreement.PrivateKey(rawRepresentation: agreementSoftware)
+            agreement = try Self.storedSoftwareAgreementKey(agreementSoftware)
                 .publicKey.x963Representation.base64EncodedString()
         default: throw DeviceIdentityError.identityMissing
         }
@@ -239,7 +329,7 @@ public final class DeviceIdentityService {
     /// challenge for this exact license, HWID, server key ID and installation.
     /// No enrolled data or old private key is deleted or overwritten.
     func prepareRecoveryCandidate(installationID: String, keyID: Int,
-                                  hwid: String) throws -> DeviceIdentityService {
+                                  hwid: String, replacingUnreadablePending: Bool = false) throws -> DeviceIdentityService {
         try locked {
             guard keyID > 0, let licenseBinding,
                   UUID(uuidString: installationID)?.uuidString.lowercased() == installationID,
@@ -248,13 +338,24 @@ public final class DeviceIdentityService {
                 throw DeviceIdentityError.invalidInput
             }
             let hwidHash = try Self.recoveryHWIDHash(hwid)
-            if let existingKeyID = try persistedServerKeyID(), existingKeyID != keyID {
+            if let existingKeyID = try recoveryExpectedServerKeyID(), existingKeyID != keyID {
                 throw DeviceIdentityError.invalidIdentity
             }
-            if let pending = try pendingRecoveryCandidate(hwid: hwid) {
-                guard try pending.existingInstallationID() == installationID,
-                      try pending.persistedServerKeyID() == keyID else { throw DeviceIdentityError.ambiguousIdentity }
-                return pending
+            do {
+                if let pending = try pendingRecoveryCandidate(hwid: hwid) {
+                    guard try pending.existingInstallationID() == installationID,
+                          try pending.persistedServerKeyID() == keyID else { throw DeviceIdentityError.ambiguousIdentity }
+                    return pending
+                }
+            } catch {
+                // Caller must first verify a NEW administrator ticket. Only an
+                // unreadable candidate may be superseded; all archived data and
+                // the old pointer survive until the replacement is durable.
+                switch error {
+                case DeviceIdentityError.identityMissing, DeviceIdentityError.invalidIdentity:
+                    guard replacingUnreadablePending else { throw error }
+                default: throw error
+                }
             }
             let candidate = recoveryIdentity(installationID)
             try candidate.persistInstallationID(installationID)
@@ -581,7 +682,7 @@ public final class DeviceIdentityService {
                 result = .enclave(try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: seData))
             case AssuranceLevel.softwareKeychain.rawValue:
                 guard let softData else { throw DeviceIdentityError.identityMissing }
-                result = .software(try P256.Signing.PrivateKey(rawRepresentation: softData))
+                result = .software(try Self.storedSoftwareSigningKey(softData))
             default: throw DeviceIdentityError.invalidIdentity
             }
         } else if seData != nil && softData != nil {
@@ -590,7 +691,7 @@ public final class DeviceIdentityService {
             result = .enclave(try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: seData))
             try saveData(Data(AssuranceLevel.secureEnclave.rawValue.utf8), tag: signingBackendTag)
         } else if let softData {
-            result = .software(try P256.Signing.PrivateKey(rawRepresentation: softData))
+            result = .software(try Self.storedSoftwareSigningKey(softData))
             try saveData(Data(AssuranceLevel.softwareKeychain.rawValue.utf8), tag: signingBackendTag)
         } else {
             guard try readText(deviceKeyIdKey) == nil else { throw DeviceIdentityError.identityMissing }
@@ -626,7 +727,7 @@ public final class DeviceIdentityService {
                 result = .enclave(try SecureEnclave.P256.KeyAgreement.PrivateKey(dataRepresentation: seData))
             case AssuranceLevel.softwareKeychain.rawValue:
                 guard let softData else { throw DeviceIdentityError.identityMissing }
-                result = .software(try P256.KeyAgreement.PrivateKey(rawRepresentation: softData))
+                result = .software(try Self.storedSoftwareAgreementKey(softData))
             default: throw DeviceIdentityError.invalidIdentity
             }
         } else if seData != nil && softData != nil {
@@ -635,7 +736,7 @@ public final class DeviceIdentityService {
             result = .enclave(try SecureEnclave.P256.KeyAgreement.PrivateKey(dataRepresentation: seData))
             try saveData(Data(AssuranceLevel.secureEnclave.rawValue.utf8), tag: agreementBackendTag)
         } else if let softData {
-            result = .software(try P256.KeyAgreement.PrivateKey(rawRepresentation: softData))
+            result = .software(try Self.storedSoftwareAgreementKey(softData))
             try saveData(Data(AssuranceLevel.softwareKeychain.rawValue.utf8), tag: agreementBackendTag)
         } else {
             guard try readText(deviceKeyIdKey) == nil || allowCreatingForLegacyUpgrade else {

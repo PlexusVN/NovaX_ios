@@ -90,6 +90,7 @@ for start,end in [
  ('    private func ensureSession(', '    private func recordAccessFailure('),
  ('    private func recordAccessFailure(', '    private func requireRecoveryContext('),
  ('    private func requireRecoveryContext(', '    private func recoverInstallation('),
+ ('    private func recoverInstallation(', '    private func ensureCurrentSession('),
  ('    private func ensureCurrentSession(', '    private func acceptSession('),
  ('    private func acceptSession(', '    func sync(auth:'),
  ('    func sync(auth:', '    /// Best-effort telemetry')]:

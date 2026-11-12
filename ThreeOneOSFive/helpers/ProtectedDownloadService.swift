@@ -36,7 +36,7 @@ enum ProtectedDownloadError: LocalizedError {
             case "replay_detected":
                 return "Yêu cầu tải không còn hợp lệ. Hãy thử lại để tạo yêu cầu mới."
             case "device_recovery_required", "device_already_enrolled":
-                return "Key hợp lệ nhưng định danh cài đặt chưa khớp thiết bị đã đăng ký. Astra chưa thể khôi phục bằng khóa cũ. Hãy liên hệ hỗ trợ với mã: \(code)."
+                return "Bản cài đặt này cần được cấp lại quyền thiết bị. Hãy nhờ quản trị viên cấp lại quyền cho thiết bị này, sau đó thử tải lại danh sách chức năng. Mã hỗ trợ: \(code)."
             case "device_key_invalid", "device_signature_invalid", "device_proof_missing", "hwid_mismatch":
                 return "Máy chủ chưa xác minh được định danh thiết bị. Hãy thử tải lại; nếu vẫn lỗi, gửi hỗ trợ mã: \(code)."
             case "recipient_upgrade_required", "recipient_enrollment_required", "device_environment_upgrade_required", "protocol_required":
@@ -143,11 +143,21 @@ struct ProtectedRecoveryChallenge {
     static func permitsAttempt(after error: Error) -> Bool {
         switch error {
         case ProtectedDownloadError.rejected(let code):
-            return ["device_key_invalid", "device_recovery_required", "device_already_enrolled"].contains(code)
+            // Eligibility only: a fresh, scoped server ticket still decides
+            // whether a replacement identity may be prepared.
+            return ["device_key_invalid", "device_recovery_required", "device_already_enrolled",
+                    "device_key_revoked", "device_revoked"].contains(code)
         case DeviceIdentityError.identityMissing, DeviceIdentityError.invalidIdentity:
             return true
         default:
             return false
+        }
+    }
+
+    static func permitsPendingRepair(after error: Error) -> Bool {
+        switch error {
+        case DeviceIdentityError.identityMissing, DeviceIdentityError.invalidIdentity: return true
+        default: return false
         }
     }
 
@@ -359,21 +369,53 @@ final class ProtectedDownloadService: ObservableObject {
     private func ensureSession(auth: AuthManager) async throws {
         guard let context = currentAuthContext else { throw FeaturePatchError.notAuthenticated }
         let epoch = contextEpoch
-        do {
+        // A previous enrollment may have committed and consumed its ticket
+        // before its response arrived. Retry the durable candidate first.
+        let controller = try recoveryController(context)
+        let hasPending: Bool
+        do { hasPending = try controller.pendingRecoveryCandidate(hwid: context.hwid) != nil }
+        catch {
+            guard ProtectedRecoveryChallenge.permitsPendingRepair(after: error) else { throw error }
+            try await recoverInstallation(context: context, epoch: epoch)
             try await ensureCurrentSession(auth: auth)
-        } catch ProtectedDownloadError.rejected(let code)
-            where ["session_expired", "session_required", "device_key_invalid", "device_signature_invalid"].contains(code) {
+            return
+        }
+        if hasPending {
+            try await recoverInstallation(context: context, epoch: epoch)
+            try await ensureCurrentSession(auth: auth)
+            return
+        }
+        do {
+            do {
+                try await ensureCurrentSession(auth: auth)
+            } catch ProtectedDownloadError.rejected(let code)
+                where ["session_expired", "session_required", "device_key_invalid", "device_signature_invalid"].contains(code) {
+                try requireRecoveryContext(context, epoch: epoch)
+                clearSession()
+                // One ordinary bootstrap retry with the SAME private keys.
+                try await ensureCurrentSession(auth: auth)
+            }
+        } catch {
+            guard ProtectedRecoveryChallenge.permitsAttempt(after: error) else { throw error }
             try requireRecoveryContext(context, epoch: epoch)
             clearSession()
-            // One normal bootstrap retry with the SAME keys. No resume route,
-            // recovery ticket, key replacement or unauthenticated file fallback.
+            // No recursive retry: only a fresh admin-authorized ticket can
+            // create a candidate. Policy/network failures never authorize it.
+            try await recoverInstallation(context: context, epoch: epoch)
             try await ensureCurrentSession(auth: auth)
         }
     }
 
+    private func recoveryController(_ context: ProtectedAuthContext) throws -> DeviceIdentityService {
+        if let identity, identity.licenseBinding == context.binding {
+            return try identity.recoveryController()
+        }
+        return try DeviceIdentityService.recoveryController(for: context.binding)
+    }
+
     private func bootstrapEnrollment(_ context: ProtectedAuthContext, epoch: UInt64) async throws -> DeviceIdentityService {
         let selected = try await prepareIdentity(context)
-        let installID = try selected.existingInstallationID() ?? UUID().uuidString.lowercased()
+        let installID = try selected.existingInstallationID() ?? selected.initialEnrollmentInstallationID() ?? UUID().uuidString.lowercased()
         let (challengeData, _) = try await post("/api/v2/device/challenge", body: [
             "key": context.licenseKey, "hwid": context.hwid, "install_id": installID
         ], signed: false, purpose: "device-challenge")
@@ -384,12 +426,14 @@ final class ProtectedDownloadService: ObservableObject {
         }
         // A remembered enrollment cannot silently generate replacement keys.
         // New users may create keys only after the active license challenge.
-        if try selected.persistedEnrollmentID() != nil { _ = try selected.existingResumeMaterial() }
+        let initialPreparation = try selected.prepareInitialEnrollment(installationID: installID)
+        if !initialPreparation { _ = try selected.existingResumeMaterial() }
         let signing = try selected.getOrCreateKey()
         let agreement = try selected.getOrCreateAgreementKey()
         let material = try selected.existingResumeMaterial()
         let signature = try selected.signResumeEnrollment(challengeID: challenge.id,
             challenge: challenge.value, key: context.licenseKey, hwid: context.hwid, installationID: installID)
+        try selected.finishInitialEnrollmentPreparation(installationID: installID)
         let (enrolledData, _) = try await post("/api/v2/device/enroll", body: [
             "challenge_id": challenge.id, "challenge": challenge.value,
             "key": context.licenseKey, "hwid": context.hwid, "install_id": installID,
@@ -427,17 +471,25 @@ final class ProtectedDownloadService: ObservableObject {
     }
 
     private func requireRecoveryContext(_ context: ProtectedAuthContext, epoch: UInt64) throws {
+        try Task.checkCancellation()
         guard contextEpoch == epoch, currentAuthContext === context else { throw CancellationError() }
         try context.validate()
     }
 
     private func recoverInstallation(context: ProtectedAuthContext, epoch: UInt64) async throws {
         try requireRecoveryContext(context, epoch: epoch)
-        let original = try identity ?? DeviceIdentityService.scoped(to: context.binding)
+        let original = try recoveryController(context)
         guard original.licenseBinding == context.binding else { throw DeviceIdentityError.invalidIdentity }
-        let pending = try original.pendingRecoveryCandidate(hwid: context.hwid)
+        let pending: DeviceIdentityService?
+        var replacingUnreadablePending = false
+        do { pending = try original.pendingRecoveryCandidate(hwid: context.hwid) }
+        catch {
+            guard ProtectedRecoveryChallenge.permitsPendingRepair(after: error) else { throw error }
+            pending = nil
+            replacingUnreadablePending = true
+        }
         let installID = try pending?.existingInstallationID() ?? UUID().uuidString.lowercased()
-        let expectedKeyID = try pending?.persistedServerKeyID() ?? original.persistedServerKeyID()
+        let expectedKeyID = try pending?.persistedServerKeyID() ?? original.recoveryExpectedServerKeyID()
         let (data, _) = try await post("/api/v2/device/challenge", body: [
             "key": context.licenseKey, "hwid": context.hwid, "install_id": installID,
             "recover_installation": true
@@ -449,7 +501,7 @@ final class ProtectedDownloadService: ObservableObject {
         }
         let candidate: DeviceIdentityService
         if let pending {
-            // The durable candidate was prepared after a previous signed true
+            // The durable candidate was prepared after a previously verified true
             // ticket. A lost enrollment response may have consumed that ticket;
             // only these exact keys may retry the server's idempotent enroll.
             guard try pending.existingInstallationID() == installID,
@@ -462,7 +514,8 @@ final class ProtectedDownloadService: ObservableObject {
                 throw ProtectedDownloadError.rejected("device_recovery_required")
             }
             candidate = try original.prepareRecoveryCandidate(installationID: installID,
-                keyID: challenge.keyID, hwid: context.hwid)
+                keyID: challenge.keyID, hwid: context.hwid,
+                replacingUnreadablePending: replacingUnreadablePending)
         }
         try requireRecoveryContext(context, epoch: epoch)
         let (signing, assurance) = try candidate.getOrCreateKey()
@@ -474,13 +527,22 @@ final class ProtectedDownloadService: ObservableObject {
             "challenge_id": challenge.id, "challenge": challenge.value,
             "key": context.licenseKey, "hwid": context.hwid, "install_id": installID,
             "public_key_x963": signing, "agreement_public_key_x963": agreement,
-            "assurance_level": assurance.rawValue, "enrollment_revision": 2, "signature": signature
+            "assurance_level": assurance.rawValue, "enrollment_revision": 2, "signature": signature,
+            "canonical_enrollment": true
         ], signed: false, purpose: "device-enroll")
         try requireRecoveryContext(context, epoch: epoch)
         let enrolled = try dictionary(enrolledData)
-        guard let deviceID = enrolled["device_key_id"] as? String, UUID(uuidString: deviceID) != nil,
+        let signingBytes = Data(base64Encoded: signing)
+        let agreementBytes = Data(base64Encoded: agreement)
+        guard enrolled["license_binding"] as? String == context.binding,
+              enrolled["key_id"] as? Int == challenge.keyID,
+              enrolled["install_id"] as? String == installID,
+              let deviceID = enrolled["device_key_id"] as? String, UUID(uuidString: deviceID) != nil,
               enrolled["enrollment_revision"] as? Int == 2,
-              let agreementBytes = Data(base64Encoded: agreement),
+              let signingBytes, signingBytes.count == 65,
+              let agreementBytes, agreementBytes.count == 65,
+              enrolled["public_key_fingerprint"] as? String ==
+                SHA256.hash(data: signingBytes).map({ String(format: "%02x", $0) }).joined(),
               enrolled["agreement_public_key_fingerprint"] as? String ==
                 SHA256.hash(data: agreementBytes).map({ String(format: "%02x", $0) }).joined() else {
             throw ProtectedDownloadError.invalidResponse
@@ -556,7 +618,12 @@ final class ProtectedDownloadService: ObservableObject {
     private func syncCatalogWithSessionRetry(auth: AuthManager) async throws -> Data {
         do {
             return try await post("/api/v2/artifacts/sync", body: [:], signed: true, purpose: "artifact-sync").0
-        } catch ProtectedDownloadError.rejected(let code) where ["session_expired", "session_required"].contains(code) {
+        } catch {
+            let expiredSession: Bool
+            if case ProtectedDownloadError.rejected(let code) = error {
+                expiredSession = ["session_expired", "session_required"].contains(code)
+            } else { expiredSession = false }
+            guard expiredSession || ProtectedRecoveryChallenge.permitsAttempt(after: error) else { throw error }
             guard let context = currentAuthContext else { throw FeaturePatchError.notAuthenticated }
             try context.validate()
             clearSession()

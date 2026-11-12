@@ -23,6 +23,13 @@ private final class ResumeMemory {
     var statusOverride: Int?
     var corruptRSAEnvelope = false
     var fractionalExpiry = false
+    var recoveryAuthorized = false
+    var normalEnrollmentFailures: [ProtectedDownloadError] = []
+    var recoveryInstallations = Set<String>()
+    var enrollments: [[String:Any]] = []
+    var dropRecoveryResponse = false
+    private var acceptedDeviceID: String?
+    private var acceptedInstallID: String?
     init(binding: String) { self.binding = binding }
     func send(_ request: URLRequest) async throws -> (Data,HTTPURLResponse) {
         if rejectTLS { throw FixtureNetworkError.untrustedTLS }
@@ -37,12 +44,19 @@ private final class ResumeMemory {
         do {
             if route == "/api/v2/device/challenge" {
                 if let challengeFailure { throw challengeFailure }
-                guard body["key"] as? String == "RESUME-FIXTURE", body["hwid"] as? String == "hardware-A",
-                      body["recover_installation"] == nil else { throw ResumeCheckError.failed("replacement recovery requested") }
+                guard body["key"] as? String == "RESUME-FIXTURE", body["hwid"] as? String == "hardware-A" else {
+                    throw ResumeCheckError.failed("challenge lost scope")
+                }
+                if body["recover_installation"] as? Bool == true {
+                    recoveryInstallations.insert(body["install_id"] as! String)
+                }
                 payload = ["success":true,"challenge_id":UUID().uuidString.lowercased(),
                     "challenge":Data(repeating:6,count:32).base64EncodedString(),"key_id":7,
-                    "license_binding":binding,"recovery_authorized":false]
+                    "license_binding":binding,"recovery_authorized":recoveryAuthorized]
             } else if route == "/api/v2/device/enroll" {
+                enrollments.append(body)
+                let recovering=recoveryInstallations.contains(body["install_id"] as! String)
+                if !recovering && !normalEnrollmentFailures.isEmpty { throw normalEnrollmentFailures.removeFirst() }
                 guard body["canonical_enrollment"] as? Bool == true else { throw ResumeCheckError.failed("normal enrollment not canonical") }
                 let fields = ["ASTRA-ENROLL-V2-RECIPIENT", body["challenge_id"] as! String,
                     body["challenge"] as! String, "RESUME-FIXTURE", "hardware-A", body["install_id"] as! String,
@@ -54,18 +68,29 @@ private final class ResumeMemory {
                     throw ResumeCheckError.failed("enrollment did not prove existing private key")
                 }
                 func fp(_ text:String) -> String { SHA256.hash(data:Data(base64Encoded:text)!).map{String(format:"%02x",$0)}.joined() }
+                if recovering {
+                    if acceptedInstallID == nil {
+                        acceptedInstallID=body["install_id"] as? String
+                        acceptedDeviceID=UUID().uuidString.lowercased()
+                    }
+                    guard acceptedInstallID == body["install_id"] as? String else { throw ResumeCheckError.failed("pending candidate was replaced") }
+                }
                 var response: [String:Any] = ["success":true,"license_binding":binding,"key_id":7,
-                    "device_key_id":deviceID,"install_id":installID,"enrollment_revision":2,
+                    "device_key_id":acceptedDeviceID ?? deviceID,"install_id":acceptedInstallID ?? installID,"enrollment_revision":2,
                     "public_key_fingerprint":fp(fields[6]),"agreement_public_key_fingerprint":fp(fields[8])]
                 if let corrupt {
                     if corrupt == "key_id" || corrupt == "enrollment_revision" { response[corrupt] = 99 }
                     else { response[corrupt] = String(repeating:"a",count:64) }
                 }
+                if recovering && dropRecoveryResponse {
+                    dropRecoveryResponse=false
+                    throw URLError(.networkConnectionLost)
+                }
                 onEnrollment?()
                 payload = response
             } else if route == "/api/v2/novax/session/open" {
                 if !openFailures.isEmpty { throw openFailures.removeFirst() }
-                guard request.value(forHTTPHeaderField:"X-Astra-Device-Key") == deviceID else {
+                guard request.value(forHTTPHeaderField:"X-Astra-Device-Key") == acceptedDeviceID ?? deviceID else {
                     throw ResumeCheckError.failed("session used stale device reference")
                 }
                 let formatter = ISO8601DateFormatter()
@@ -196,8 +221,35 @@ private final class ResumeMemory {
             let (memory,_,_,transport,flow) = try fixture()
             let tag = memory.values.keys.first{$0.hasSuffix("novax_software_p256_key")}!
             memory.values.removeValue(forKey:tag); let before = memory.values
-            do { try await flow.session(); throw ResumeCheckError.failed("lost private key regenerated") } catch DeviceIdentityError.identityMissing {}
+            do { try await flow.session(); throw ResumeCheckError.failed("lost private key regenerated") }
+            catch ProtectedDownloadError.rejected("device_recovery_required") {}
             try require(memory.values == before && !transport.calls.contains("/api/v2/device/enroll"),"lost private keys need explicit authorization")
+        }
+        for suffix in ["novax_software_p256_key","novax_signing_backend_v2","novax_agreement_software_p256_v2","novax_agreement_backend_v2"] {
+            let (memory,identity,_,transport,flow)=try fixture(enrolled:false)
+            let prefix="astra.identity.v3.\(identity.licenseBinding!)."
+            memory.failTag=prefix+suffix
+            do { try await flow.session();throw ResumeCheckError.failed("interrupted first provisioning ignored") }
+            catch ResumeCheckError.writeFailure {}
+            try require(!transport.calls.contains("/api/v2/device/enroll"),"failed initial key persistence never sends enrollment")
+            let initialID=try identity.initialEnrollmentInstallationID()
+            try require(initialID != nil,"first provisioning persists its installation before keys")
+            let savedKeys=memory.values.filter{$0.key.contains("p256_key") || $0.key.contains("p256_v2")}
+            memory.failTag=nil
+            try await flow.session()
+            try require(transport.openCount==1,"interrupted pristine provisioning can finish without admin reset")
+            for(tag,data)in savedKeys { try require(memory.values[tag]==data,"initial retry preserves every already-created key") }
+        }
+        do {
+            let(memory,identity,_,transport,flow)=try fixture(enrolled:false)
+            transport.onEnrollment={ memory.values.removeValue(forKey:"astra.identity.v3.\(identity.licenseBinding!).novax_agreement_software_p256_v2") }
+            do { try await flow.session();throw ResumeCheckError.failed("key lost after submission ignored") }
+            catch ProtectedDownloadError.rejected("device_recovery_required") {}
+            transport.onEnrollment=nil
+            let before=memory.values
+            do { try await flow.session();throw ResumeCheckError.failed("submitted missing key recreated") }
+            catch ProtectedDownloadError.rejected("device_recovery_required") {}
+            try require(memory.values==before,"submitted first enrollment cannot regenerate a missing key")
         }
         do {
             let (memory,_,_,transport,flow) = try fixture(enrolled:false); transport.challengeFailure = .rejected("key_expired")
@@ -228,6 +280,60 @@ private final class ResumeMemory {
             let (memory,_,_,transport,flow) = try fixture(); let before = memory.values; transport.rejectTLS = true
             do { try await flow.session(); throw ResumeCheckError.failed("untrusted transport accepted") } catch FixtureNetworkError.untrustedTLS {}
             try require(memory.values == before && transport.calls.isEmpty,"TLS failure never yields an API payload")
+        }
+        for missingOldKey in [false,true] {
+            let(memory,old,_,transport,flow)=try fixture()
+            let oldSigning=try old.getOrCreateKey().publicKeyX963Base64
+            if missingOldKey {
+                memory.values.removeValue(forKey:"astra.identity.v3.\(old.licenseBinding!).novax_software_p256_key")
+            } else { transport.normalEnrollmentFailures=[.rejected("device_already_enrolled")] }
+            transport.recoveryAuthorized=true
+            try await flow.session()
+            let selected=try DeviceIdentityService.scoped(to:old.licenseBinding!,storage:memory.storage,useSecureEnclave:false)
+            try require(try selected.getOrCreateKey().publicKeyX963Base64 != oldSigning,"actual ensureSession selects fresh authorized keys")
+            try require(transport.openCount==1 && transport.recoveryInstallations.count==1,"actual missing/revoked identity reaches ticketed enrollment and session")
+        }
+        for suffix in ["novax_software_p256_key","novax_agreement_software_p256_v2"] {
+            let(memory,old,auth,transport,_)=try fixture()
+            memory.values["astra.identity.v3.\(old.licenseBinding!)."+suffix]=Data([1,2,3])
+            let reloaded=try DeviceIdentityService.scoped(to:old.licenseBinding!,storage:memory.storage,useSecureEnclave:false)
+            let flow=IdentityResumeHarness(auth:auth,identity:reloaded)
+            let before=memory.values
+            do { try await flow.session();throw ResumeCheckError.failed("corrupt software key replaced without ticket") }
+            catch ProtectedDownloadError.rejected("device_recovery_required") {}
+            try require(memory.values==before && transport.enrollments.isEmpty,"malformed stored software material requires administrator ticket")
+            transport.recoveryAuthorized=true
+            try await flow.session()
+            try require(transport.openCount==1,"authorized recovery can replace malformed stored "+suffix)
+            try require(before.allSatisfy{memory.values[$0.key]==$0.value},"malformed old material remains archived")
+        }
+        do {
+            let(memory,old,auth,transport,flow)=try fixture()
+            transport.normalEnrollmentFailures=[.rejected("device_already_enrolled")]
+            transport.recoveryAuthorized=true;transport.dropRecoveryResponse=true
+            do { try await flow.session();throw ResumeCheckError.failed("committed recovery lost response ignored") }
+            catch let error as URLError { try require(error.code == .networkConnectionLost,"recovery interruption propagates") }
+            let recovery=transport.enrollments.last!
+            memory.values.removeValue(forKey:"astra.identity.v3.\(old.licenseBinding!).novax_software_p256_key")
+            let restarted=IdentityResumeHarness(auth:auth,identity:old)
+            transport.recoveryAuthorized=false
+            try await restarted.session()
+            let repeated=transport.enrollments[transport.enrollments.count-2]
+            for field in ["install_id","public_key_x963","agreement_public_key_x963"] {
+                try require(recovery[field] as? String == repeated[field] as? String,"restart repeats exact committed candidate "+field)
+            }
+            try require(transport.openCount==1,"pending restart works despite missing old signer and consumed ticket")
+        }
+        do {
+            let(_,old,auth,transport,flow)=try fixture()
+            try await flow.session()
+            transport.syncFailures=[.rejected("device_key_revoked")]
+            transport.normalEnrollmentFailures=[.rejected("device_already_enrolled")]
+            transport.recoveryAuthorized=true
+            _ = try await flow.sync(auth:auth)
+            try require(transport.openCount==2 && transport.recoveryInstallations.count==1,"live catalog revocation recovers without another user retry")
+            try require(transport.calls.filter{$0 == "/api/v2/artifacts/sync"}.count==2,"live reset retries only read-only catalog once")
+            try require(try old.persistedEnrollmentID() != nil,"live recovery preserves old archived identity")
         }
         print("Pinned-TLS enrollment/session regression: \(checks) checks passed")
     }
