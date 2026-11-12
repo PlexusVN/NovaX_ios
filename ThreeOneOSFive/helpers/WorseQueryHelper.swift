@@ -154,14 +154,32 @@ public final class WorseQueryHelper {
 
     static func preparationDiagnostics() throws -> String {
         guard !Thread.isMainThread else { throw WorseQueryError.mainThreadAccess }
-        let header = preparationContext
-        guard let group = resolveActiveAppGroup() else {
-            throw WorseQueryError.localFilesystemFailure("\(header)\nFAIL stage=resolve_group; không có App Group truy cập được.")
+        var reports = [preparationContext]
+        // A Foundation group URL can exist even when the sandbox denies writes.
+        // Do not pin the first readable directory or expose a half-tested group
+        // to runtime routing while the worker checks the remaining candidates.
+        groupStateLock.lock()
+        verifiedGroup = nil
+        groupProbeCompleted = true
+        groupStateLock.unlock()
+        for group in candidateAppGroups {
+            guard let path = worse_query_group_path(group) else {
+                reports.append("SKIP group=\(group) stage=resolve_group; không có thư mục truy cập được.")
+                continue
+            }
+            reports.append("CHECK group=\(group) root=\(path)")
+            let ready = worse_query_preflight(group)
+            reports.append(worse_query_diagnostics() ?? "Không có chẩn đoán native.")
+            guard ready else { continue }
+            groupStateLock.lock()
+            verifiedGroup = group
+            groupProbeCompleted = true
+            groupStateLock.unlock()
+            reports.append("SELECTED writable_group=\(group)")
+            return reports.joined(separator: "\n")
         }
-        let ready = worse_query_preflight(group)
-        let detail = "\(header)\n\(worse_query_diagnostics() ?? "Không có chẩn đoán native.")"
-        guard ready else { throw WorseQueryError.localFilesystemFailure(detail) }
-        return detail
+        reports.append("Không có App Group nào vượt qua kiểm tra ghi/symlink. Hãy ký lại Astra bằng profile cấp App Group tương ứng; chỉ thêm tên group vào IPA không tự cấp quyền truy cập.")
+        throw WorseQueryError.localFilesystemFailure(reports.joined(separator: "\n"))
     }
 
     static var nativeDiagnostics: String { worse_query_diagnostics() ?? "Không có chẩn đoán native." }

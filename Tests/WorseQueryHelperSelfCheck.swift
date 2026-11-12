@@ -19,7 +19,7 @@ final class FileManager {
     static let `default` = FileManager()
     var groupAvailable = true
     func containerURL(forSecurityApplicationGroupIdentifier group: String) -> URL? {
-        groupAvailable && group == "group.esign.rewritten" ? Foundation.FileManager.default.temporaryDirectory : nil
+        groupAvailable && ["group.esign.readonly", "group.esign.rewritten"].contains(group) ? Foundation.FileManager.default.temporaryDirectory : nil
     }
     func fileExists(atPath path: String) -> Bool { Foundation.FileManager.default.fileExists(atPath: path) }
     func createDirectory(at url: URL, withIntermediateDirectories value: Bool) throws {
@@ -30,12 +30,13 @@ final class FileManager {
         try Foundation.FileManager.default.contentsOfDirectory(atPath: path)
     }
 }
-func AstraSignedApplicationGroups() -> [String] { ["group.esign.rewritten"] }
+func AstraSignedApplicationGroups() -> [String] { ["group.esign.readonly", "group.esign.rewritten"] }
 func worse_query_group_path(_ group: String) -> String? {
     FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group)?.path
 }
 enum NativeFixture {
     static var preflightReady = true
+    static var preflightGroups: [String] = []
     static var result: Int64 = 42
     static var calls: [(String, String, Bool, Bool)] = []
     static var released: [Int64] = []
@@ -45,7 +46,10 @@ func worse_query(_ path: String, _ group: String, _ alt: Bool, _ create: Bool) -
     return NativeFixture.result
 }
 func worse_query_release(_ handle: Int64) { NativeFixture.released.append(handle) }
-func worse_query_preflight(_ group: String) -> Bool { NativeFixture.preflightReady }
+func worse_query_preflight(_ group: String) -> Bool {
+    NativeFixture.preflightGroups.append(group)
+    return NativeFixture.preflightReady && group == "group.esign.rewritten"
+}
 func worse_query_diagnostics() -> String? { "stage=fixture domain=NSPOSIXErrorDomain code=13" }
 func pathleak(_ path: String, _ maximum: UInt64) -> NSArray? { nil }
 func pathleak_range(_ path: String, _ first: UInt64, _ last: UInt64, _ code: UnsafeMutablePointer<Int32>?) -> NSArray? { [] }
@@ -74,18 +78,26 @@ enum FixtureFailure: Error { case operation }
     static func checkBackground() throws {
         let root = "/var/mobile/Containers/Data/Application/00000000-0000-0000-0000-000000000001"
         let canonicalRoot = "/private" + root
-        precondition(WorseQueryHelper.resolveActiveAppGroup() == "group.esign.rewritten")
+        precondition(WorseQueryHelper.resolveActiveAppGroup() == "group.esign.readonly")
         precondition(WorseQueryHelper.isAvailable)
         let preflight = try WorseQueryHelper.preparationDiagnostics()
         precondition(preflight.contains("group.esign.rewritten"))
+        precondition(preflight.contains("CHECK group=group.esign.readonly") && preflight.contains("SELECTED writable_group=group.esign.rewritten"))
+        precondition(NativeFixture.preflightGroups == ["group.esign.readonly", "group.esign.rewritten"])
+        precondition(WorseQueryHelper.resolveActiveAppGroup() == "group.esign.rewritten")
+        precondition(NativeFixture.calls.isEmpty, "group selection sent a container query")
         NativeFixture.preflightReady = false
         do {
             _ = try WorseQueryHelper.preparationDiagnostics()
             preconditionFailure("failed write probe allowed discovery")
         } catch WorseQueryError.localFilesystemFailure(let detail) {
             precondition(detail.contains("NSPOSIXErrorDomain code=13"))
+            precondition(detail.contains("group.esign.readonly") && detail.contains("group.esign.rewritten"))
         }
+        precondition(WorseQueryHelper.resolveActiveAppGroup() == nil && !WorseQueryHelper.isAvailable,
+                     "readable but unwritable group remained cached after all probes failed")
         NativeFixture.preflightReady = true
+        _ = try WorseQueryHelper.preparationDiagnostics()
         NativeFixture.result = -4
         do {
             _ = try WorseQueryHelper.acquireAccess(for: root)
