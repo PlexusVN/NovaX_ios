@@ -527,7 +527,12 @@ final class ProtectedDownloadService: ObservableObject {
               let expiryString = session["session_expires_at"] as? String else { throw ProtectedDownloadError.invalidResponse }
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        guard let expiry = formatter.date(from: expiryString), expiry > Date() else { throw ProtectedDownloadError.invalidResponse }
+        var expiry = expiryString.utf8.count <= 64 ? formatter.date(from: expiryString) : nil
+        if expiry == nil && expiryString.utf8.count <= 64 {
+            formatter.formatOptions = [.withInternetDateTime]
+            expiry = formatter.date(from: expiryString)
+        }
+        guard let expiry, expiry > Date() else { throw ProtectedDownloadError.invalidResponse }
         sessionID = id; sessionToken = token; sessionExpiry = expiry
     }
 

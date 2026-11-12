@@ -22,6 +22,7 @@ private final class ResumeMemory {
     var calls: [String] = []
     var statusOverride: Int?
     var corruptRSAEnvelope = false
+    var fractionalExpiry = false
     init(binding: String) { self.binding = binding }
     func send(_ request: URLRequest) async throws -> (Data,HTTPURLResponse) {
         if rejectTLS { throw FixtureNetworkError.untrustedTLS }
@@ -67,8 +68,10 @@ private final class ResumeMemory {
                 guard request.value(forHTTPHeaderField:"X-Astra-Device-Key") == deviceID else {
                     throw ResumeCheckError.failed("session used stale device reference")
                 }
+                let formatter = ISO8601DateFormatter()
+                formatter.formatOptions = fractionalExpiry ? [.withInternetDateTime,.withFractionalSeconds] : [.withInternetDateTime]
                 payload = ["success":true,"license_binding":binding,"key_id":7,"app_session_id":UUID().uuidString.lowercased(),
-                    "app_session_token":"fixture-token","session_expires_at":ISO8601DateFormatter().string(from:Date().addingTimeInterval(3600))]
+                    "app_session_token":"fixture-token","session_expires_at":formatter.string(from:Date().addingTimeInterval(3600))]
             } else if route == "/api/v2/artifacts/sync" {
                 if !syncFailures.isEmpty { throw syncFailures.removeFirst() }
                 guard request.value(forHTTPHeaderField:"Authorization") == "Bearer fixture-token" else { throw ResumeCheckError.failed("catalog was anonymous") }
@@ -135,6 +138,7 @@ private final class ResumeMemory {
         }
         for enrolled in [false,true] {
             let (memory,identity,_,transport,flow) = try fixture(enrolled:enrolled)
+            transport.fractionalExpiry = enrolled
             let keys = memory.values.filter{$0.key.contains("p256_key")}
             try await flow.session()
             try require(try identity.persistedEnrollmentID() == transport.deviceID,"canonical device reference stored")
