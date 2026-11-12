@@ -2,6 +2,14 @@
 
 All notable user-facing changes are documented in this file.
 
+## [2.3] - 2026-11-12
+
+### Changed
+
+- Bumped app version to 2.3 (build 36).
+- Unified engine routing across iOS 16–27 (legacy 3105, worse_query on-device direct container access, AirLift fallback).
+- Hardened HWID persistence, Keychain recovery and authentication resilience.
+
 ## [2.0] - 2026-11-07
 
 ### Changed

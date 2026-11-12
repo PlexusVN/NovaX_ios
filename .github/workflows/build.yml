@@ -164,8 +164,8 @@ jobs:
           test -n "$APP_NAME"
           test -d "$APP_NAME"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$APP_NAME/Info.plist")" = "Astra"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_NAME/Info.plist")" = "2.2"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_NAME/Info.plist")" = "35"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_NAME/Info.plist")" = "2.3"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_NAME/Info.plist")" = "36"
           EXECUTABLE=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP_NAME/Info.plist")
           test -x "$APP_NAME/$EXECUTABLE"
           python3 ReleaseTools/verify_native_compatibility.py --app "$APP_NAME" --max-ios 16.0
@@ -210,5 +210,5 @@ jobs:
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Astra-Unsigned-IPA-2.2-35
+          name: Astra-Unsigned-IPA-2.3-36
           path: build/Astra.ipa

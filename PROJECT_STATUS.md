@@ -1,3 +1,7 @@
+## Build 2.3 (36): Nâng cấp phiên bản Astra 2.3
+
+Nâng cấp phiên bản chính thức lên Astra 2.3 (build 36). Đồng bộ toàn bộ các cập nhật định tuyến động cơ worse_query / 3105 / AirLift, tối ưu hóa lưu trữ định danh HWID và truy cập container game.
+
 ## Build 2.2 (35): HWID trước đăng nhập
 
 Đã sửa lỗi nuốt lỗi đọc/lưu HWID thành chuỗi rỗng và luôn hướng dẫn mở khóa. Thêm bản dự phòng HWID công khai trong Application Support có Data Protection và loại khỏi backup; giữ nguyên khóa ký/giải mã trong Keychain. Đọc lại khi foreground/unlock, retry có giới hạn, báo mã HW01–HW06/OSStatus và cho sao chép thông tin lỗi. Giữ nguyên định tuyến engine build 34. Đã qua 38 kiểm tra mã Swift thực, 60 bài local; 7 bài chỉ chạy macOS được bỏ qua. Source đã được push lên GitHub; CI đang xác minh và đóng gói IPA build 35.
