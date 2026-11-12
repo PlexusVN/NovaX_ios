@@ -109,7 +109,7 @@ class IntegrationContracts(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             for name in ['PathLeakSelfCheck', 'WorseQueryNativeSelfCheck', 'BadQueryEnumerationSelfCheck']:
                 binary = Path(folder) / name
-                subprocess.run(['clang', '-fobjc-arc', '-framework', 'Foundation',
+                subprocess.run(['clang', '-fno-objc-arc' if name == 'BadQueryEnumerationSelfCheck' else '-fobjc-arc', '-framework', 'Foundation',
                                 str(ROOT / 'Tests' / (name + '.m')), '-o', str(binary)], check=True)
                 subprocess.run([str(binary)], check=True)
 
