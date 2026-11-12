@@ -2,6 +2,16 @@
 
 All notable user-facing changes are documented in this file.
 
+## [2.4] - 2026-11-12
+
+### Changed
+
+- Bumped app version to 2.4 (build 37).
+
+### Fixed
+
+- Included administrator-authorized device recovery after reinstall/reset, durable enrollment retries and recovery during catalog refresh. See [verification and deployment limits](docs/IDENTITY_RECOVERY_FIX_20261112.md).
+
 ## [2.3] - 2026-11-12
 
 ### Changed

@@ -1,3 +1,7 @@
+## Build 2.4 (37): Khôi phục định danh thiết bị
+
+Astra 2.4 (build 37) đóng gói bản sửa recovery sau cài lại/reset thiết bị: dùng lại khóa hợp lệ, hoàn tất recovery được admin cấp quyền và tiếp tục đúng bộ khóa đã lưu khi mất phản hồi đăng ký. Đồng bộ phiên bản trong Info.plist, hai cấu hình Xcode và artifact CI. Xem [phạm vi, kiểm thử và giới hạn triển khai](docs/IDENTITY_RECOVERY_FIX_20261112.md).
+
 ## Build 2.3 (36): Nâng cấp phiên bản Astra 2.3
 
 Nâng cấp phiên bản chính thức lên Astra 2.3 (build 36). Đồng bộ toàn bộ các cập nhật định tuyến động cơ worse_query / 3105 / AirLift, tối ưu hóa lưu trữ định danh HWID và truy cập container game.
