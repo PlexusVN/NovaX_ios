@@ -20,7 +20,6 @@ final class IOS27ContainerPreparation: ObservableObject {
     @Published private(set) var state: State = .idle
     @Published private(set) var didContinue = false
     @Published private(set) var failure: String?
-    @Published private(set) var canUseAirLift = false
     private var work: Task<[String: String], Error>?
     private var generation: UInt64 = 0
     private let progress: ContainerScanProgress
@@ -42,7 +41,7 @@ final class IOS27ContainerPreparation: ObservableObject {
         }
         generation &+= 1
         let revision = generation
-        state = .preparing; failure = nil; canUseAirLift = false; didContinue = false
+        state = .preparing; failure = nil; didContinue = false
         IOS27ContainerSession.reset()
         let operation = self.operation
         let forceScan = force || forceNextScan
@@ -60,7 +59,6 @@ final class IOS27ContainerPreparation: ObservableObject {
             guard revision == generation else { return }
             state = .failed
             failure = error is CancellationError ? "Đã dừng chuẩn bị. Chọn Thử lại để quét tiếp trước khi vào ứng dụng." : error.localizedDescription
-            if case WorseQueryError.appGroupUnavailable = error { canUseAirLift = true }
         }
         if revision == generation { work = nil }
     }
@@ -71,17 +69,11 @@ final class IOS27ContainerPreparation: ObservableObject {
         didContinue = true
     }
 
-    func chooseAirLift() {
-        guard state == .failed, canUseAirLift else { return }
-        progress.dismiss()
-        didContinue = true
-    }
-
     func reset(forceScan: Bool = false) {
         generation &+= 1
         work?.cancel(); work = nil
         IOS27ContainerSession.reset()
-        state = .idle; failure = nil; didContinue = false; canUseAirLift = false
+        state = .idle; failure = nil; didContinue = false
         forceNextScan = forceScan
     }
 }

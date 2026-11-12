@@ -63,7 +63,12 @@ final class StorageEngineCoordinator: ObservableObject {
         try NetworkAccessGate.shared.validateGeneration(networkGeneration)
 
         // 1. Ưu tiên ghi trực tiếp qua WorseQuery trên thiết bị (Không cần pairing máy tính)
-        if WorseQueryHelper.isAvailable && WorseQueryHelper.isScopeSupported(for: destinationPath) {
+        guard ExploitSupportPolicy.currentStorageMode != .unsupported else {
+            throw WorseQueryError.unsupportedOS(AppInfo.osBuild)
+        }
+        if ExploitSupportPolicy.currentAccessProvider == .worseQuery {
+            guard WorseQueryHelper.isScopeSupported(for: destinationPath) else { throw WorseQueryError.invalidPath(destinationPath) }
+            guard WorseQueryHelper.isAvailable else { throw WorseQueryError.appGroupUnavailable }
             log("storage: routing write via on-device WorseQuery provider for \(destinationPath)")
             try await DirectPatchExecutor.run(validation: { try NetworkAccessGate.shared.validateGeneration(networkGeneration) }) {
                 try IntegrityCommitBarrier.withCommit {
@@ -89,18 +94,27 @@ final class StorageEngineCoordinator: ObservableObject {
         } else {
             log("storage: routing write via Direct/Kernel provider for \(destinationPath)")
             let url = URL(fileURLWithPath: destinationPath)
-            let parent = url.deletingLastPathComponent()
-            if !FileManager.default.fileExists(atPath: parent.path) {
-                try? FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+            try await DirectPatchExecutor.run(validation: { try NetworkAccessGate.shared.validateGeneration(networkGeneration) }) {
+                let handle = ContainerStore.grantContainerAccess(destinationPath)
+                defer { if handle >= 0 { sandbox_extension_release_handle(handle) } }
+                let parent = url.deletingLastPathComponent()
+                if !FileManager.default.fileExists(atPath: parent.path) {
+                    try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+                }
+                try IntegrityCommitBarrier.withCommit { try data.write(to:url,options:.atomic) }
             }
-            try IntegrityCommitBarrier.withCommit { try data.write(to:url,options:.atomic) }
         }
     }
 
     /// Reads a file from a path using the optimal engine.
     func readFile(atPath path: String) async throws -> Data {
         // 1. Ưu tiên đọc trực tiếp qua WorseQuery trên thiết bị
-        if WorseQueryHelper.isAvailable && WorseQueryHelper.isScopeSupported(for: path) {
+        guard ExploitSupportPolicy.currentStorageMode != .unsupported else {
+            throw WorseQueryError.unsupportedOS(AppInfo.osBuild)
+        }
+        if ExploitSupportPolicy.currentAccessProvider == .worseQuery {
+            guard WorseQueryHelper.isScopeSupported(for: path) else { throw WorseQueryError.invalidPath(path) }
+            guard WorseQueryHelper.isAvailable else { throw WorseQueryError.appGroupUnavailable }
             log("storage: routing read via on-device WorseQuery provider for \(path)")
             return try await DirectPatchExecutor.run(validation: {}) { try WorseQueryHelper.readFile(at: path) }
         }
@@ -110,7 +124,11 @@ final class StorageEngineCoordinator: ObservableObject {
             }
             return try await AirTrafficProtocolClient.shared.readFile(at: path)
         } else {
-            return try Data(contentsOf: URL(fileURLWithPath: path))
+            return try await DirectPatchExecutor.run(validation: {}) {
+                let handle = ContainerStore.grantContainerAccess(path)
+                defer { if handle >= 0 { sandbox_extension_release_handle(handle) } }
+                return try Data(contentsOf: URL(fileURLWithPath: path))
+            }
         }
     }
 
@@ -130,7 +148,10 @@ final class StorageEngineCoordinator: ObservableObject {
         guard !project.rules.isEmpty else { throw PatchPackageError.invalidProject }
 
         // 1. Nếu worse_query sẵn sàng trên máy, áp dụng patch trực tiếp không cần AirLift
-        if WorseQueryHelper.isAvailable {
+        guard ExploitSupportPolicy.currentStorageMode != .unsupported else {
+            throw WorseQueryError.unsupportedOS(AppInfo.osBuild)
+        }
+        if ExploitSupportPolicy.currentStorageMode == .direct {
             // Direct access must use the journalled transaction, just like the
             // catalog path. Never mark these writes as an AirLift application.
             let roots = try await DevicePatchService.prepareContainers(bundleIDs: project.allBundleIdentifiers)

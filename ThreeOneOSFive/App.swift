@@ -100,7 +100,7 @@ struct ThreeOneOSFiveApp: App {
                     }
                 }
 
-                if (AppInfo.versionTuple.major == 27 || requiresWorseQueryPreparation) && containerScan.isPresented && authManager.authState == .verified && (!requiresWorseQueryPreparation || ios27Preparation.didContinue) {
+                if requiresWorseQueryPreparation && containerScan.isPresented && authManager.authState == .verified && (!requiresWorseQueryPreparation || ios27Preparation.didContinue) {
                     ContainerScanProgressView(progress: containerScan)
                         .zIndex(2.5)
                 }
@@ -224,10 +224,9 @@ class AppState: ObservableObject {
     private var isCheckingDirectAccess = false
 
     func checkDirectDirectoryAccessAsync() {
-        // iOS 27 uses scoped worse_query tokens on demand. Never query private
-        // container APIs or consume tokens while the login screen is starting.
-        guard AppInfo.versionTuple.major < 27,
-              !ExploitSupportPolicy.currentRequiresWorseQueryPreparation else { return }
+        // Probe only the selected 3105 route. Worse_query waits for its explicit
+        // preparation gate; AirLift waits for pairing and transport checks.
+        guard ExploitSupportPolicy.currentAccessProvider == .legacy3105 else { return }
         #if targetEnvironment(simulator)
         DispatchQueue.main.async { self.hasDirectDirectoryAccess = true }
         #else

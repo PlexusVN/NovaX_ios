@@ -31,7 +31,7 @@ public enum WorseQueryError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .appGroupUnavailable:
-            return "Bản ký Astra hiện tại không có App Group truy cập được nên chưa thể dùng worse_query không cần VPN/pairing. Hãy ký lại bằng profile có App Group hợp lệ và giữ quyền App Group khi ký ESign. Nếu dùng AirLift dự phòng, cần bật LocalDevVPN và ghép đôi thiết bị."
+            return "Bản ký Astra hiện tại không có App Group truy cập được nên chưa thể dùng worse_query không cần VPN/pairing. Hãy ký lại bằng profile có App Group hợp lệ và giữ quyền App Group khi ký ESign."
         case .targetNotFound(let path):
             return "Đường dẫn mục tiêu không tồn tại trên thiết bị: \(path)"
         case .dlopenOrSymbolsFailed:
@@ -247,6 +247,12 @@ public final class WorseQueryHelper {
 
     /// Cấp phát quyền Sandbox Extension cho đường dẫn mục tiêu
     public static func acquireAccess(for targetPath: String, createDir: Bool = false) throws -> Int64 {
+        guard isOSSupported else {
+            let v = "\(ProcessInfo.processInfo.operatingSystemVersion.majorVersion).\(ProcessInfo.processInfo.operatingSystemVersion.minorVersion)"
+            throw WorseQueryError.unsupportedOS(v)
+        }
+
+
         if (ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
             || ExploitSupportPolicy.currentRequiresWorseQueryPreparation) && Thread.isMainThread {
             throw WorseQueryError.mainThreadAccess
@@ -260,10 +266,6 @@ public final class WorseQueryHelper {
         guard isScopeSupported(for: canonical) else { throw WorseQueryError.invalidPath(targetPath) }
         let effectiveTarget = containerRoot(for: canonical) ?? canonical
 
-        guard isOSSupported else {
-            let v = "\(ProcessInfo.processInfo.operatingSystemVersion.majorVersion).\(ProcessInfo.processInfo.operatingSystemVersion.minorVersion)"
-            throw WorseQueryError.unsupportedOS(v)
-        }
 
         guard let group = resolveActiveAppGroup() else {
             throw WorseQueryError.appGroupUnavailable

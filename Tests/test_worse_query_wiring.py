@@ -71,14 +71,14 @@ class WorseQueryWiringTests(unittest.TestCase):
     def test_feature_patch_restore_supported_with_worse_query(self):
         patch_path = ROOT / 'ThreeOneOSFive' / 'helpers' / 'FeaturePatchService.swift'
         content = patch_path.read_text(encoding='utf-8')
-        self.assertIn('!WorseQueryHelper.isAvailable &&', content)
+        self.assertIn('let isAirLift = StorageEngineCoordinator.shared.isAirLiftActive ||', content)
         self.assertIn('WorseQueryHelper.removeItem', content)
 
     def test_exploit_support_policy_covers_worse_query(self):
         policy_path = ROOT / 'ThreeOneOSFive' / 'helpers' / 'KernelExploit.swift'
         content = policy_path.read_text(encoding='utf-8')
         self.assertIn('supportsWorseQuery', content)
-        self.assertIn('26.0–26.7.2 on-device (worse_query, không cần pairing)', content)
+        self.assertIn('26.0–26.6.1 3105 · 26.6.2–26.7.2 worse_query', content)
 
     def test_container_resolution_wiring(self):
         icon_h = ROOT / 'ThreeOneOSFive' / 'helpers' / 'AppIconHelper.h'

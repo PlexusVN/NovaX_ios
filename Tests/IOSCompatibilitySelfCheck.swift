@@ -35,19 +35,49 @@ enum AppInfo {
             precondition(!Policy.supportsWorseQuery(major:27, minor:2, patch:0, build:build))
             precondition(Policy.storageMode(major:27, minor:2, patch:0, build:build) == .unsupported)
         }
-        for major in [26, 27] {
-            let noGroup = Policy.runtimeStorageMode(major:major, minor:0, patch:0, build:"",
-                                                   hasSandboxAccess:false, worseQueryAvailable:false)
-            precondition(noGroup == .airLift)
-            precondition(Policy.pairingMode(for:noGroup, major:major) == (major == 27 ? .onDeviceOrImportedFile : .importedFile))
-            for sandbox in [false, true] {
-                let ready = Policy.runtimeStorageMode(major:major, minor:0, patch:0, build:"",
-                                                     hasSandboxAccess:sandbox, worseQueryAvailable:true)
-                precondition(ready == .direct && Policy.pairingMode(for:ready, major:major) == .none)
+        var comparisons = 0
+        let builds = ["", "24A5355q", "24A5370h", "24A5380h", "24A5390f", "24A435", "24B5084k", "24B5089g", "24B5099f"]
+        for major in 15...28 {
+            for minor in -1...12 {
+                for patch in -1...12 {
+                    for build in builds {
+                        let legacy = Upstream3105SupportPolicy.isSupported(major:major,minor:minor,patch:patch,build:build)
+                        let expectedLegacy = legacy || (major == 16 && minor >= 0 && patch >= 0)
+                        precondition(Policy.supports3105(major:major,minor:minor,patch:patch,build:build) == expectedLegacy)
+                        precondition(Policy.supportsKernelExploit(major:major,minor:minor,patch:patch) ==
+                            Upstream3105SupportPolicy.supportsKernelExploit(major:major,minor:minor,patch:patch))
+                        let provider = Policy.accessProvider(major:major,minor:minor,patch:patch,build:build)
+                        precondition((provider == .legacy3105) == expectedLegacy)
+                        precondition((provider == .worseQuery) == Policy.requiresWorseQueryPreparation(major:major,minor:minor,patch:patch,build:build))
+                        precondition(!expectedLegacy || !Policy.supportsWorseQuery(major:major,minor:minor,patch:patch,build:build))
+                        let mode = Policy.storageMode(major:major,minor:minor,patch:patch,build:build)
+                        for sandbox in [false, true] {
+                            for group in [false, true] {
+                                precondition(Policy.runtimeStorageMode(major:major,minor:minor,patch:patch,build:build,
+                                    hasSandboxAccess:sandbox,worseQueryAvailable:group) == mode,
+                                    "permission probe changed engine for \(major).\(minor).\(patch) \(build)")
+                            }
+                        }
+                        if provider == .airLift {
+                            precondition((major == 18 || major == 26) && Policy.pairingMode(for:mode,major:major) == .importedFile)
+                        }
+                        comparisons += 1
+                    }
+                }
             }
-            precondition(Policy.runtimeStorageMode(major:major, minor:0, patch:0, build:"",
-                                                  hasSandboxAccess:true, worseQueryAvailable:false) == .direct)
         }
+        for build in ["24A5355q", "24A5370h", "24A5380h", "24A5390f"] {
+            precondition(Policy.accessProvider(major:27,minor:0,patch:0,build:build) == .legacy3105)
+            precondition(!Policy.requiresWorseQueryPreparation(major:27,minor:0,patch:0,build:build))
+            // Build-only matching must not accidentally override a different version.
+            precondition(Policy.accessProvider(major:27,minor:0,patch:1,build:build) == .worseQuery)
+        }
+        precondition(Policy.accessProvider(major:26,minor:6,patch:1,build:"") == .legacy3105)
+        precondition(Policy.accessProvider(major:26,minor:6,patch:2,build:"") == .worseQuery)
+        precondition(Policy.accessProvider(major:26,minor:7,patch:3,build:"") == .airLift)
+        precondition(Policy.accessProvider(major:18,minor:7,patch:2,build:"") == .airLift)
+        precondition(Policy.accessProvider(major:17,minor:8,patch:0,build:"") == .unsupported)
+        print("[PASS] \(comparisons) OS/build comparisons against upstream 3105, fixed engine priority under all sandbox/App Group states")
         precondition(Policy.storageMode(major:26, minor:6, patch:1, build:"") == .direct)
         precondition(Policy.pairingMode(major:26, minor:6, patch:2, build:"") == .none)
         precondition(Policy.pairingMode(major:26, minor:7, patch:0, build:"") == .none)
@@ -55,6 +85,6 @@ enum AppInfo {
         precondition(Policy.pairingMode(major:26, minor:8, patch:0, build:"") == .importedFile)
         precondition(Policy.storageMode(major:18, minor:7, patch:1, build:"") == .direct)
         precondition(Policy.pairingMode(major:18, minor:7, patch:2, build:"") == .importedFile)
-        print("[PASS] Actual routing policy: iOS 16 direct/no pair; iOS 26 & supported iOS 27 direct via worse_query (no pairing); AirLift retained for 18.7.2+ and fallback")
+        print("[PASS] Strict 3105 / worse_query / imported-pairing AirLift routing, patched 27.2 builds blocked")
     }
 }

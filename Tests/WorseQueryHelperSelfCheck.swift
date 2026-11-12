@@ -7,7 +7,7 @@ enum AppInfo {
         let v = ProcessInfo.processInfo.operatingSystemVersion
         return (v.majorVersion, v.minorVersion, v.patchVersion)
     }
-    static let osBuild = "24A435"
+    static var osBuild = "24A435"
 }
 enum ProcessInfo {
     static var processInfo = FixtureProcessInfo()
@@ -57,6 +57,20 @@ enum FixtureFailure: Error { case operation }
 
 @main struct WorseQueryHelperSelfCheck {
     @MainActor static func main() async throws {
+        for (major,minor,patch,build) in [(16,7,12,""),(17,7,9,""),(18,7,1,""),
+            (26,0,0,""),(26,6,1,""),(27,0,0,"24A5355q"),(27,0,0,"24A5390f"),
+            (18,7,2,""),(26,7,3,""),(27,2,0,"24B5099f")] {
+            AppInfo.osBuild = build
+            ProcessInfo.processInfo.operatingSystemVersion = OperatingSystemVersion(majorVersion:major,minorVersion:minor,patchVersion:patch)
+            WorseQueryHelper.invalidateActiveAppGroup()
+            precondition(!WorseQueryHelper.isOSSupported && !WorseQueryHelper.isAvailable)
+            do {
+                _ = try WorseQueryHelper.acquireAccess(for: "/var/mobile/Containers/Data/Application/AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")
+                preconditionFailure("worse_query ran outside its selected OS/build route")
+            } catch WorseQueryError.unsupportedOS {}
+        }
+        precondition(NativeFixture.calls.isEmpty && NativeFixture.preflightGroups.isEmpty)
+        AppInfo.osBuild = "24A435"
         for (major,minor,patch) in [(26,6,2),(26,7,0),(26,7,2),(27,0,1)] {
             ProcessInfo.processInfo.operatingSystemVersion = OperatingSystemVersion(majorVersion:major,minorVersion:minor,patchVersion:patch)
             WorseQueryHelper.invalidateActiveAppGroup()
@@ -152,7 +166,7 @@ enum FixtureFailure: Error { case operation }
         FileManager.default.groupAvailable = true
         WorseQueryHelper.invalidateActiveAppGroup()
         NativeFixture.result = 43
-        ProcessInfo.processInfo.operatingSystemVersion = OperatingSystemVersion(majorVersion: 26, minorVersion: 1, patchVersion: 0)
+        ProcessInfo.processInfo.operatingSystemVersion = OperatingSystemVersion(majorVersion: 26, minorVersion: 6, patchVersion: 2)
         let handle = try WorseQueryHelper.acquireAccess(for: "/var/mobile/Containers/Shared/AppGroup/test")
         precondition(NativeFixture.calls.last!.2)
         WorseQueryHelper.releaseAccess(handle: handle)

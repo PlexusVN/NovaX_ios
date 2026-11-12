@@ -64,7 +64,7 @@ struct SettingsView: View {
 
                 AirLiftSettingsSection()
 
-                if AppInfo.versionTuple.major == 27 || ExploitSupportPolicy.currentRequiresWorseQueryPreparation {
+                if ExploitSupportPolicy.currentRequiresWorseQueryPreparation {
                     Section {
                         Button("Xem nhật ký quét thư mục") { showContainerScanHistory = true }
                         Button("Quét lại quyền truy cập game") { ios27Preparation.reset(forceScan: true) }
@@ -87,7 +87,7 @@ struct SettingsView: View {
                     LabeledContent("iOS 18", value: ExploitSupportPolicy.verifiedIOS18Range)
                     LabeledContent("iOS 26", value: ExploitSupportPolicy.verifiedIOS26Range)
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("iOS 27 · worse_query / AirLift")
+                        Text("iOS 27 · 3105 / worse_query")
                             .font(.body)
                         ForEach(ExploitSupportPolicy.verifiedIOS27Builds, id: \.build) { version in
                             Text(versionLabel(version))

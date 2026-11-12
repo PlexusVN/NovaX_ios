@@ -601,7 +601,7 @@ final class FeaturePatchService: ObservableObject {
                 throw ProtectedDownloadError.invalidResponse
             }
             stage = .access
-            log("patch engine: iOS=\(AppInfo.versionTuple) build=\(AppInfo.osBuild) worseQueryOS=\(WorseQueryHelper.isOSSupported) appGroup=\(WorseQueryHelper.isAppGroupConfigured) storage=\(ExploitSupportPolicy.currentStorageMode)")
+            log("patch engine: iOS=\(AppInfo.versionTuple) build=\(AppInfo.osBuild) worseQueryOS=\(WorseQueryHelper.isOSSupported) worseQueryReady=\(WorseQueryHelper.isAvailable) storage=\(ExploitSupportPolicy.currentStorageMode)")
             guard ExploitSupportPolicy.currentStorageMode != .unsupported else {
                 throw WorseQueryError.unsupportedOS(AppInfo.osBuild)
             }
@@ -676,9 +676,8 @@ final class FeaturePatchService: ObservableObject {
             projectID = summary.packageID
         }
 
-        let isAirLift = !WorseQueryHelper.isAvailable && (StorageEngineCoordinator.shared.isAirLiftActive ||
-            (projectID != nil && StorageEngineCoordinator.shared.isProjectAppliedThroughAirLift(projectID!)) ||
-            AppInfo.versionTuple.major >= 27)
+        let isAirLift = StorageEngineCoordinator.shared.isAirLiftActive ||
+            (projectID != nil && StorageEngineCoordinator.shared.isProjectAppliedThroughAirLift(projectID!))
 
         if isAirLift {
             // No original bytes were restored: retain ON and its association.

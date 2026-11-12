@@ -1,3 +1,7 @@
+## Cập nhật 2.2 (34): định tuyến engine theo upstream
+
+3105 được ưu tiên cho toàn bộ phạm vi upstream, cộng nhánh iOS 16 của Astra. Worse_query chỉ dùng từ 26.6.2 trong phạm vi được hỗ trợ, trừ các build 27 beta đã thuộc 3105. Các bản 18.x/26.x còn lại dùng AirLift + file pairing. Không tự đổi engine theo App Group. Xem [bảng và giới hạn kiểm chứng](docs/ENGINE_ROUTING_ASTRA_2_2.md).
+
 # Astra — trạng thái tích hợp on-device AirLift
 
 > Cập nhật 11/11/2026: source hiện ưu tiên worse_query khi OS và App Group cho

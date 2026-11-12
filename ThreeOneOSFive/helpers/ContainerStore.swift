@@ -40,8 +40,8 @@ enum ContainerStore {
     static let appDataRoot = "/var/mobile/Containers/Data/Application"
     static let systemDataRoot = "/var/mobile/Containers/Data/System"
     private static var shouldUseBadQuery: Bool {
-        ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 26
-            && !ExploitSupportPolicy.currentRequiresWorseQueryPreparation
+        ExploitSupportPolicy.currentAccessProvider == .legacy3105
+            && ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 26
     }
     private static let applicationBundleRoots: [(path: String, nested: Bool)] = [
         ("/var/containers/Bundle/Application", true),
@@ -71,10 +71,10 @@ enum ContainerStore {
 
         // Prepared worse_query routes use only roots verified by the explicit preparation
         // gate. Never enter LS/MCM class-2/bad_query before the scan UI exists.
-        if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
-            || ExploitSupportPolicy.currentRequiresWorseQueryPreparation {
+        if ExploitSupportPolicy.currentRequiresWorseQueryPreparation {
             return IOS27ContainerSession.path(for: bundleID)
         }
+        guard ExploitSupportPolicy.currentAccessProvider == .legacy3105 else { return nil }
 
         let cacheKey = "astra.resolved_container.\(bundleID)"
 
@@ -98,18 +98,7 @@ enum ContainerStore {
             }
         }
 
-        // 2. Tra cứu trực tiếp qua LaunchServices (LSApplicationRecord / LSApplicationProxy / installedAppInfo)
-        if let lsPath = containerPathForBundleID(bundleID) {
-            let cleanLS = ContainerDiscoveryMerger.canonicalPath(lsPath)
-            if isApplicationContainerPath(cleanLS) {
-                log("patch: LaunchServices resolved \(bundleID) -> \(cleanLS)")
-                UserDefaults.standard.set(cleanLS, forKey: cacheKey)
-                if retainAccess { _ = grantContainerAccess(lsPath) }
-                return cleanLS
-            }
-        }
-
-        // 3. Tra cứu qua MobileContainerManager (iOS <= 18.1 hoặc môi trường hỗ trợ MCM)
+        // 2. Upstream 3105 primary lookup: MobileHouseArrest / MCM class 2.
         var lookupError: NSString?
         if let path = MCMActivateContainerPath(2, bundleID, false, &lookupError) {
             let cleanMCM = ContainerDiscoveryMerger.canonicalPath(path)
@@ -122,6 +111,17 @@ enum ContainerStore {
         }
         let detail = lookupError.map(String.init) ?? "unavailable"
         log("patch: MHA-C2 could not resolve \(bundleID), detail=\(detail)")
+
+        // 3. Safe typed-ARC LaunchServices fallback.
+        if let lsPath = containerPathForBundleID(bundleID) {
+            let cleanLS = ContainerDiscoveryMerger.canonicalPath(lsPath)
+            if isApplicationContainerPath(cleanLS) {
+                log("patch: LaunchServices resolved \(bundleID) -> \(cleanLS)")
+                UserDefaults.standard.set(cleanLS, forKey: cacheKey)
+                if retainAccess { _ = grantContainerAccess(lsPath) }
+                return cleanLS
+            }
+        }
 
         guard allowMetadataScan else { return nil }
 
@@ -142,12 +142,14 @@ enum ContainerStore {
     /// query or filesystem setup into the same "app unavailable" message.
     static func resolveAppContainerForPatch(bundleID: String) throws -> String {
         _ = try PatchPathValidator.canonicalBundleIdentifier(bundleID)
-        if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
-            || ExploitSupportPolicy.currentRequiresWorseQueryPreparation {
+        if ExploitSupportPolicy.currentRequiresWorseQueryPreparation {
             guard let path = IOS27ContainerSession.path(for: bundleID) else {
                 throw WorseQueryError.preparationRequired
             }
             return path
+        }
+        guard ExploitSupportPolicy.currentAccessProvider == .legacy3105 else {
+            throw WorseQueryError.unsupportedOS(AppInfo.osBuild)
         }
         if let path = resolveAppContainerPath(bundleID: bundleID, allowMetadataScan: false, retainAccess: false) {
             return path
@@ -330,15 +332,15 @@ enum ContainerStore {
     }
 
     static func resolveAppContainerPathByMetadataScan(bundleID: String) -> String? {
-        if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
-            || ExploitSupportPolicy.currentRequiresWorseQueryPreparation {
+        if ExploitSupportPolicy.currentRequiresWorseQueryPreparation {
             return IOS27ContainerSession.path(for: bundleID)
         }
+        guard ExploitSupportPolicy.currentAccessProvider == .legacy3105 else { return nil }
         if WorseQueryHelper.isAvailable {
             do { return try resolveContainerWithWorseQuery(bundleID: bundleID) }
             catch { log("worse_query discovery failed: \(error.localizedDescription)"); return nil }
         }
-        guard KernelExploit.hasSandboxAccess() || WorseQueryHelper.isAvailable || shouldUseBadQuery else {
+        guard !KernelExploit.requiresSandboxEscape || KernelExploit.hasSandboxAccess() || shouldUseBadQuery else {
             return nil
         }
 
@@ -711,7 +713,7 @@ enum ContainerStore {
             return names.map { (clean as NSString).appendingPathComponent($0) }
         }
 
-        guard KernelExploit.hasSandboxAccess() || shouldUseBadQuery else {
+        guard ExploitSupportPolicy.currentAccessProvider == .legacy3105 else {
             return []
         }
 

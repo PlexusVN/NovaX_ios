@@ -243,10 +243,7 @@ struct IOS27PreparationView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
             .buttonStyle(GamingPressButtonStyle())
-            if preparation.canUseAirLift {
-                Button("Thiết lập AirLift dự phòng") { preparation.chooseAirLift() }
-                    .font(.subheadline).foregroundColor(AppTheme.gamingBlueBright)
-            }
+
         }
     }
 }

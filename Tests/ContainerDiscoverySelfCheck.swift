@@ -133,7 +133,7 @@ final class RestartFlag: @unchecked Sendable {
 
         preparation.reset(); DiscoveryFixture.reset(); DiscoveryFixture.missingGroup = true
         await preparation.prepareIfNeeded(force: true); await drain()
-        precondition(preparation.state == .failed && preparation.canUseAirLift && !preparation.didContinue)
+        precondition(preparation.state == .failed && !preparation.didContinue)
         preparation.enterApplication(); precondition(!preparation.didContinue)
         precondition(DiscoveryFixture.calls == 0 && DiscoveryFixture.ranges.isEmpty)
 

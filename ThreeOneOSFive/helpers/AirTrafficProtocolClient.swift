@@ -178,6 +178,9 @@ final class AirTrafficProtocolClient: ObservableObject {
 
     @discardableResult
     func checkRealAirLiftHealth() async -> (isHealthy: Bool, message: String) {
+        guard ExploitSupportPolicy.currentAccessProvider == .airLift else {
+            return (false, "Phiên bản iOS này không được chọn dùng AirLift.")
+        }
         guard !isBusy else {
             return (engineHealthState.isHealthy, "Đang có phiên ghi file, bỏ qua kiểm tra.")
         }
@@ -505,15 +508,15 @@ final class AirTrafficProtocolClient: ObservableObject {
     }
 
     private func verifyTransportAndPairing() async throws {
+        guard ExploitSupportPolicy.currentAccessProvider == .airLift else {
+            throw AirLiftError.executionFailed("Phiên bản iOS này không được chọn dùng AirLift.")
+        }
         let tunnel = AirLiftTunnelManager.shared
         await tunnel.verifyLoopbackService()
         // QueryType is a useful UI diagnostic, but it must not be the sole gate:
         // AirliftFFI performs the authoritative authenticated RSD/Lockdown probe
         // and can use transport routes that the lightweight 62078 check cannot.
         guard tunnel.isOperational else {
-            if WorseQueryHelper.isOSSupported && !WorseQueryHelper.isAppGroupConfigured {
-                throw WorseQueryError.appGroupUnavailable
-            }
             throw AirLiftError.socketConnectionFailed(
                 tunnel.lastErrorMessage ?? "Hãy mở ứng dụng LocalDevVPN, bật tunnel rồi thử lại."
             )

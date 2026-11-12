@@ -52,7 +52,8 @@ class IntegrationContracts(unittest.TestCase):
     def test_missing_group_and_no_vpn_do_not_reach_native_timeout(self):
         client = (HELPERS / 'AirTrafficProtocolClient.swift').read_text(encoding='utf-8')
         guard = client.split('private func verifyTransportAndPairing()')[1].split('private func activePairingPath()')[0]
-        self.assertIn('throw WorseQueryError.appGroupUnavailable', guard)
+        self.assertIn('currentAccessProvider == .airLift', guard)
+        self.assertLess(guard.index('currentAccessProvider == .airLift'), guard.index('verifyLoopbackService()'))
         tunnel = (HELPERS / 'AirLiftTunnelManager.swift').read_text(encoding='utf-8')
         self.assertNotIn('hasAnyTunnelInterface()', tunnel)
         self.assertIn('guard Self.hasTunnelRoute(to: host) else { continue }', tunnel)
@@ -74,10 +75,10 @@ class IntegrationContracts(unittest.TestCase):
         self.assertIn('value: ios27Preparation.didContinue', app)
         self.assertNotIn('value: gatekeeper.canBypassGatekeeper', app)
         probe = extract_function(app, 'func checkDirectDirectoryAccessAsync(')
-        self.assertLess(probe.index('guard AppInfo.versionTuple.major < 27'), probe.index('DispatchQueue.global'))
+        self.assertLess(probe.index('guard ExploitSupportPolicy.currentAccessProvider == .legacy3105'), probe.index('DispatchQueue.global'))
         kernel = (HELPERS / 'KernelExploit.swift').read_text(encoding='utf-8')
         probe = extract_function(kernel, 'static func hasSandboxAccess(')
-        self.assertLess(probe.index('majorVersion < 27'), probe.index('sandbox_access_is_active()'))
+        self.assertLess(probe.index('currentAccessProvider == .legacy3105'), probe.index('sandbox_access_is_active()'))
         helper = (HELPERS / 'WorseQueryHelper.swift').read_text(encoding='utf-8')
         group = extract_function(helper, 'public static func resolveActiveAppGroup(')
         self.assertIn('worse_query_group_path(group)', group)
@@ -85,7 +86,7 @@ class IntegrationContracts(unittest.TestCase):
 
     def test_scan_overlay_reports_actual_discovery_and_keeps_security_overlays_above_it(self):
         app = (ROOT / 'ThreeOneOSFive/App.swift').read_text(encoding='utf-8')
-        self.assertIn('(AppInfo.versionTuple.major == 27 || requiresWorseQueryPreparation) && containerScan.isPresented', app)
+        self.assertIn('requiresWorseQueryPreparation && containerScan.isPresented', app)
         self.assertIn('ContainerScanProgressView(progress: containerScan)', app)
         self.assertIn('.zIndex(2.5)', app)
         self.assertIn('.zIndex(100)', app)
@@ -159,10 +160,10 @@ class IntegrationContracts(unittest.TestCase):
         self.assertNotIn('containerPathForBundleID(', scan)
         self.assertIn('chunkSize: UInt64 = 50_000', scan)
         self.assertIn('checkpoint(sessionID', scan)
-        self.assertIn('majorVersion == 26', store.split('private static var shouldUseBadQuery: Bool')[1].split('private static let')[0])
+        self.assertIn('currentAccessProvider == .legacy3105', store.split('private static var shouldUseBadQuery: Bool')[1].split('private static let')[0])
         native_mcm = (ROOT / 'ThreeOneOSFive/exploit/mcm_bridge.m').read_text(encoding='utf-8')
         activate = extract_function(native_mcm, 'NSString *MCMActivateContainerPath(')
-        self.assertLess(activate.index('majorVersion >= 27'), activate.index('MCMActiveLeases()'))
+        self.assertLess(activate.index('!AstraUses3105ContainerAccess()'), activate.index('MCMActiveLeases()'))
         service = (HELPERS / 'FeaturePatchService.swift').read_text(encoding='utf-8')
         self.assertGreaterEqual(service.count('try await DirectPatchExecutor.run(validation:'), 3)
 
@@ -192,7 +193,7 @@ class IntegrationContracts(unittest.TestCase):
                             str(ROOT / 'Tests/WorseQueryHelperSelfCheck.swift'), '-o', str(binary)], check=True)
             subprocess.run([str(binary)], check=True)
             binary = folder / 'routing-check'
-            subprocess.run(['swiftc', str(policy), str(ROOT / 'Tests/IOSCompatibilitySelfCheck.swift'),
+            subprocess.run(['swiftc', str(policy), str(ROOT / 'Tests/IOSCompatibilitySelfCheck.swift'), str(ROOT / 'Tests/Upstream3105SupportPolicy.swift'),
                             '-o', str(binary)], check=True)
             subprocess.run([str(binary)], check=True)
 

@@ -38,10 +38,10 @@ jobs:
             Tests/CertificatePinSelfCheck.swift -o "$RUNNER_TEMP/astra-pins-selfcheck"
           "$RUNNER_TEMP/astra-pins-selfcheck"
 
-      - name: Verify unchanged iOS 16 and iOS 27 storage pairing routes
+      - name: Verify strict 3105, worse_query and AirLift OS/build routing
         run: |
           python3 Tests/extract_support_policy.py ThreeOneOSFive/helpers/KernelExploit.swift "$RUNNER_TEMP/SupportPolicy.swift"
-          swiftc "$RUNNER_TEMP/SupportPolicy.swift" Tests/IOSCompatibilitySelfCheck.swift -o "$RUNNER_TEMP/astra-os-routes-selfcheck"
+          swiftc "$RUNNER_TEMP/SupportPolicy.swift" Tests/IOSCompatibilitySelfCheck.swift Tests/Upstream3105SupportPolicy.swift -o "$RUNNER_TEMP/astra-os-routes-selfcheck"
           "$RUNNER_TEMP/astra-os-routes-selfcheck"
 
       - name: Verify protected lease renewal under latency and clock skew
@@ -165,13 +165,14 @@ jobs:
           test -d "$APP_NAME"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$APP_NAME/Info.plist")" = "Astra"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_NAME/Info.plist")" = "2.2"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_NAME/Info.plist")" = "33"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_NAME/Info.plist")" = "34"
           EXECUTABLE=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP_NAME/Info.plist")
           test -x "$APP_NAME/$EXECUTABLE"
           python3 ReleaseTools/verify_native_compatibility.py --app "$APP_NAME" --max-ios 16.0
           nm -gj "$APP_NAME/$EXECUTABLE" | grep -Fx "_ALGetGrappaToken"
           # Release uses hidden C visibility. These bridges are internal app
           # symbols, so include local symbols rather than requiring exports.
+          nm -j "$APP_NAME/$EXECUTABLE" | grep -Fx "_AstraUses3105ContainerAccess"
           nm -j "$APP_NAME/$EXECUTABLE" | grep -Fx "_worse_query"
           nm -j "$APP_NAME/$EXECUTABLE" | grep -Fx "_worse_query_release"
           nm -j "$APP_NAME/$EXECUTABLE" | grep -Fx "_worse_query_group_path"
@@ -209,5 +210,5 @@ jobs:
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Astra-Unsigned-IPA-2.2-33
+          name: Astra-Unsigned-IPA-2.2-34
           path: build/Astra.ipa
