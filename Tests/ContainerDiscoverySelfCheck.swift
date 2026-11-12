@@ -29,14 +29,23 @@ enum DiscoveryFixture {
     static var calls = 0, legacyCalls = 0
     static var reject = false, noMatch = false, setupError = false, missingGroup = false, cancel = false
     static var ranOnMain = false
+    static var preflightFailed = false, localLinkFailed = false
     static func reset(clearCache: Bool = true) {
         ranges = []; active = [:]; next = 1; calls = 0; legacyCalls = 0
         reject = false; noMatch = false; setupError = false; missingGroup = false; cancel = false; ranOnMain = false
+        preflightFailed = false; localLinkFailed = false
         if clearCache { UserDefaults.standard.removePersistentDomain(forName: UserDefaults.suite) }
         IOS27ContainerSession.reset()
     }
 }
 enum WorseQueryHelper {
+    static let preparationContext = "fixture signed groups"
+    static let nativeDiagnostics = "stage=create_Caches_symlink domain=NSPOSIXErrorDomain code=13"
+    static func preparationDiagnostics() throws -> String {
+        precondition(!Thread.isMainThread)
+        if DiscoveryFixture.preflightFailed { throw WorseQueryError.localFilesystemFailure("preflight denied: NSPOSIXErrorDomain code=13") }
+        return "preflight passed"
+    }
     static func invalidateActiveAppGroup() {}
     static let isOSSupported = true
     static var isAppGroupConfigured: Bool { !DiscoveryFixture.missingGroup }
@@ -56,6 +65,7 @@ enum WorseQueryHelper {
     static func acquireAccess(for path: String) throws -> Int64 {
         precondition(!Thread.isMainThread, "native query executed on main thread")
         DiscoveryFixture.calls += 1
+        if DiscoveryFixture.localLinkFailed { throw WorseQueryError.localFilesystemFailure(nativeDiagnostics) }
         if DiscoveryFixture.reject { throw WorseQueryError.queryRejected }
         let handle = DiscoveryFixture.next; DiscoveryFixture.next += 1
         DiscoveryFixture.active[handle] = path
@@ -126,6 +136,20 @@ final class RestartFlag: @unchecked Sendable {
         precondition(preparation.state == .failed && preparation.canUseAirLift && !preparation.didContinue)
         preparation.enterApplication(); precondition(!preparation.didContinue)
         precondition(DiscoveryFixture.calls == 0 && DiscoveryFixture.ranges.isEmpty)
+
+        preparation.reset(); DiscoveryFixture.reset(); DiscoveryFixture.preflightFailed = true
+        await preparation.prepareIfNeeded(force: true); await drain()
+        precondition(preparation.state == .failed && !preparation.didContinue)
+        precondition(DiscoveryFixture.calls == 0 && DiscoveryFixture.ranges.isEmpty,
+                     "failed local write probe still scanned the entire filesystem")
+        precondition(DiscoveryFixture.progress.shareText.contains("NSPOSIXErrorDomain code=13"))
+
+        preparation.reset(); DiscoveryFixture.reset(); DiscoveryFixture.localLinkFailed = true
+        await preparation.prepareIfNeeded(force: true); await drain()
+        precondition(preparation.state == .failed && !preparation.didContinue)
+        precondition(DiscoveryFixture.calls == 1 && DiscoveryFixture.ranges.count == 1,
+                     "global Caches failure retried on every unrelated container")
+        precondition(DiscoveryFixture.progress.shareText.contains("stage=create_Caches_symlink"))
 
         preparation.reset(); DiscoveryFixture.reset(); DiscoveryFixture.reject = true
         await preparation.prepareIfNeeded(force: true); await drain()

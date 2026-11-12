@@ -137,7 +137,11 @@ final class ContainerScanProgress: ObservableObject {
     }
 
     var shareText: String {
-        (["Astra · Nhật ký quét thư mục", "Ứng dụng: \(snapshot.bundleID)",
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+        return (["Astra · Nhật ký quét thư mục · \(version) (\(build))",
+          "OS: \(Foundation.ProcessInfo.processInfo.operatingSystemVersionString)",
+          "Bundle: \(Bundle.main.bundleIdentifier ?? "?")", "Ứng dụng: \(snapshot.bundleID)",
           "Trạng thái: \(snapshot.phase.rawValue)",
           "Đã dò: \(snapshot.scanned)/\(snapshot.total); thư mục: \(snapshot.candidates); truy cập được: \(snapshot.grants)", ""]
          + snapshot.logs).joined(separator: "\n")

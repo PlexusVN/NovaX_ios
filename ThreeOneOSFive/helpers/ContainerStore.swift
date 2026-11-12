@@ -168,7 +168,9 @@ enum ContainerStore {
             guard WorseQueryHelper.isOSSupported else { throw WorseQueryError.unsupportedOS(AppInfo.osBuild) }
             ContainerScanProgress.shared.checkpoint(sessionID, message: "Kiểm tra App Group của bản ký hiện tại…")
             WorseQueryHelper.invalidateActiveAppGroup()
+            ContainerScanProgress.shared.checkpoint(sessionID, message: WorseQueryHelper.preparationContext)
             guard WorseQueryHelper.isAppGroupConfigured else { throw WorseQueryError.appGroupUnavailable }
+            ContainerScanProgress.shared.checkpoint(sessionID, message: try WorseQueryHelper.preparationDiagnostics())
             var found: [String: String] = [:]
             var seen = Set<String>()
             var candidates = 0, grants = 0
@@ -182,7 +184,11 @@ enum ContainerStore {
                 ContainerScanProgress.shared.checkpoint(sessionID, message: "worse_query: cấp token cho \(clean)")
                 let handle: Int64
                 do { handle = try WorseQueryHelper.acquireAccess(for: clean) }
-                catch { lastGrantError = error; throw error }
+                catch {
+                    lastGrantError = error
+                    ContainerScanProgress.shared.checkpoint(sessionID, message: WorseQueryHelper.nativeDiagnostics)
+                    throw error
+                }
                 defer { WorseQueryHelper.releaseAccess(handle: handle) }
                 grants += 1
                 ContainerScanProgress.shared.checkpoint(sessionID, message: "Token hợp lệ; đọc định danh container…")
@@ -210,7 +216,10 @@ enum ContainerStore {
                 if let cached = UserDefaults.standard.string(forKey: "astra.resolved_container.\(bundleID)") {
                     do { try inspect(cached) }
                     catch is CancellationError { throw CancellationError() }
-                    catch { ContainerScanProgress.shared.checkpoint(sessionID, message: "Cache không dùng được: \(error.localizedDescription)") }
+                    catch {
+                        if (error as? WorseQueryError)?.blocksContainerPreparation == true { throw error }
+                        ContainerScanProgress.shared.checkpoint(sessionID, message: "Cache không dùng được: \(error.localizedDescription)")
+                    }
                 }
             }
             ContainerScanProgress.shared.report(sessionID, scanned: 0, total: 0, candidates: candidates, grants: grants,
@@ -228,7 +237,10 @@ enum ContainerStore {
                 for path in paths {
                     do { try inspect(path) }
                     catch is CancellationError { throw CancellationError() }
-                    catch { ContainerScanProgress.shared.checkpoint(sessionID, message: "Không cấp được quyền: \(error.localizedDescription)") }
+                    catch {
+                        if (error as? WorseQueryError)?.blocksContainerPreparation == true { throw error }
+                        ContainerScanProgress.shared.checkpoint(sessionID, message: "Không cấp được quyền: \(error.localizedDescription)")
+                    }
                 }
                 ContainerScanProgress.shared.report(sessionID, scanned: last, total: maximum, candidates: candidates, grants: grants,
                     message: "Đã dò \(last)/\(maximum) inode; \(candidates) container, \(grants) token hợp lệ, \(found.count) game.")

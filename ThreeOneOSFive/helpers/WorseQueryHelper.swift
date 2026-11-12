@@ -15,6 +15,7 @@ public enum WorseQueryError: LocalizedError {
     case dlopenOrSymbolsFailed
     case queryCreationFailed
     case symlinkCreationFailed
+    case localFilesystemFailure(String)
     case queryRejected
     case kernelRefusedExtension
     case extensionConsumptionFailed
@@ -39,6 +40,8 @@ public enum WorseQueryError: LocalizedError {
             return "Khởi tạo container query thất bại."
         case .symlinkCreationFailed:
             return "Không thể tạo liên kết symlink trong App Group Caches."
+        case .localFilesystemFailure(let detail):
+            return "Không thể chuẩn bị App Group Caches (WQ04).\n\(detail)"
         case .queryRejected:
             return "containermanagerd đã từ chối query."
         case .kernelRefusedExtension:
@@ -61,6 +64,13 @@ public enum WorseQueryError: LocalizedError {
             return "Phiên bản hệ điều hành \(version) không nằm trong phạm vi hỗ trợ của worse_query."
         case .invalidPath(let path):
             return "Đường dẫn không hợp lệ cho container sandbox escape: \(path)"
+        }
+    }
+
+    var blocksContainerPreparation: Bool {
+        switch self {
+        case .localFilesystemFailure, .symlinkCreationFailed, .appGroupUnavailable: return true
+        default: return false
         }
     }
 }
@@ -137,6 +147,24 @@ public final class WorseQueryHelper {
     public static var isAvailable: Bool {
         isOSSupported && isAppGroupConfigured
     }
+
+    static var preparationContext: String {
+        "OS build=\(AppInfo.osBuild)\nSigned App Groups=\(AstraSignedApplicationGroups().joined(separator: ", "))\nCandidates=\(candidateAppGroups.joined(separator: ", "))"
+    }
+
+    static func preparationDiagnostics() throws -> String {
+        guard !Thread.isMainThread else { throw WorseQueryError.mainThreadAccess }
+        let header = preparationContext
+        guard let group = resolveActiveAppGroup() else {
+            throw WorseQueryError.localFilesystemFailure("\(header)\nFAIL stage=resolve_group; không có App Group truy cập được.")
+        }
+        let ready = worse_query_preflight(group)
+        let detail = "\(header)\n\(worse_query_diagnostics() ?? "Không có chẩn đoán native.")"
+        guard ready else { throw WorseQueryError.localFilesystemFailure(detail) }
+        return detail
+    }
+
+    static var nativeDiagnostics: String { worse_query_diagnostics() ?? "Không có chẩn đoán native." }
 
     /// Kiểm tra xem đường dẫn có thuộc phạm vi cho phép của worse_query hay không
     public static func isScopeSupported(for path: String) -> Bool {
@@ -240,7 +268,7 @@ public final class WorseQueryHelper {
         case -3:
             throw WorseQueryError.queryCreationFailed
         case -4:
-            throw WorseQueryError.symlinkCreationFailed
+            throw WorseQueryError.localFilesystemFailure(nativeDiagnostics)
         case -5:
             throw WorseQueryError.queryRejected
         case -6:

@@ -26,6 +26,7 @@ static BOOL groupAvailable = YES, libraryAvailable = YES, rejectQuery = NO, refu
 static BOOL failCreate = NO, missingSymbol = NO;
 static BOOL throwGroupException = NO;
 static BOOL throwQueryException = NO;
+static BOOL denyProbeLink = NO, denyCachesRemoval = NO;
 static int statError = EACCES;
 static int64_t consumedHandle = 42, releasedHandle = -1;
 static NSUInteger created = 0, freed = 0, activeQueries = 0;
@@ -35,8 +36,25 @@ static NSString *groupID = @"group.astra.native.fixture";
 
 @interface NSFileManager (AstraQueryFixture)
 - (NSURL *)astra_fixtureGroup:(NSString *)identifier;
+- (BOOL)astra_fixtureLink:(NSString *)path withDestinationPath:(NSString *)destination error:(NSError **)error;
+- (BOOL)astra_fixtureRemove:(NSString *)path error:(NSError **)error;
 @end
 @implementation NSFileManager (AstraQueryFixture)
+- (BOOL)astra_fixtureLink:(NSString *)path withDestinationPath:(NSString *)destination error:(NSError **)error {
+    if (denyProbeLink && [path containsString:@".astra-wq-probe-"]) {
+        if (error) *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileWriteNoPermissionError userInfo:
+            @{NSUnderlyingErrorKey: [NSError errorWithDomain:NSPOSIXErrorDomain code:EACCES userInfo:nil], NSFilePathErrorKey:path}];
+        errno = EACCES; return NO;
+    }
+    return [self astra_fixtureLink:path withDestinationPath:destination error:error];
+}
+- (BOOL)astra_fixtureRemove:(NSString *)path error:(NSError **)error {
+    if (denyCachesRemoval && [path hasSuffix:@"/Library/Caches"]) {
+        if (error) *error = [NSError errorWithDomain:NSPOSIXErrorDomain code:EPERM userInfo:@{NSFilePathErrorKey:path}];
+        errno = EPERM; return NO;
+    }
+    return [self astra_fixtureRemove:path error:error];
+}
 - (NSURL *)astra_fixtureGroup:(NSString *)identifier {
     if (throwGroupException) @throw [NSException exceptionWithName:NSInvalidArgumentException reason:@"fixture: re-signed group denied" userInfo:nil];
     return groupAvailable && [identifier isEqualToString:groupID] ? groupRoot : nil;
@@ -127,9 +145,36 @@ int main(void) {
         Method original = class_getInstanceMethod(object_getClass(files), @selector(containerURLForSecurityApplicationGroupIdentifier:));
         Method replacement = class_getInstanceMethod(NSFileManager.class, @selector(astra_fixtureGroup:));
         method_exchangeImplementations(original, replacement);
+        Method linkOriginal = class_getInstanceMethod(NSFileManager.class, @selector(createSymbolicLinkAtPath:withDestinationPath:error:));
+        Method linkReplacement = class_getInstanceMethod(NSFileManager.class, @selector(astra_fixtureLink:withDestinationPath:error:));
+        Method removeOriginal = class_getInstanceMethod(NSFileManager.class, @selector(removeItemAtPath:error:));
+        Method removeReplacement = class_getInstanceMethod(NSFileManager.class, @selector(astra_fixtureRemove:error:));
+        method_exchangeImplementations(linkOriginal, linkReplacement);
+        method_exchangeImplementations(removeOriginal, removeReplacement);
         @try {
             NSString *target = @"/private/var/mobile/Containers/Data/Application/AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA";
             NSCAssert(worse_query_group_path(groupID) != nil, @"valid App Group lookup failed");
+            NSURL *sentinel = [groupRoot URLByAppendingPathComponent:@"Library/Caches/sentinel"];
+            [@"keep" writeToURL:sentinel atomically:YES encoding:NSUTF8StringEncoding error:NULL];
+            NSUInteger beforeProbe = created;
+            NSCAssert(worse_query_preflight(groupID), @"valid filesystem probe failed");
+            NSCAssert(created == beforeProbe, @"preflight sent a container query");
+            NSCAssert([[NSString stringWithContentsOfURL:sentinel encoding:NSUTF8StringEncoding error:NULL] isEqual:@"keep"], @"probe replaced existing Caches");
+            denyProbeLink = YES;
+            NSCAssert(!worse_query_preflight(groupID), @"denied probe link was accepted");
+            NSString *probeFailure = worse_query_diagnostics();
+            NSCAssert([probeFailure containsString:@"stage=preflight_create_symlink"] &&
+                [probeFailure containsString:@"NSCocoaErrorDomain"] && [probeFailure containsString:@"NSPOSIXErrorDomain code=13"], @"underlying filesystem error lost");
+            NSArray *libraryChildren = [files contentsOfDirectoryAtPath:[groupRoot.path stringByAppendingPathComponent:@"Library"] error:NULL];
+            for (NSString *name in libraryChildren) NSCAssert(![name hasPrefix:@".astra-wq-probe-"], @"failed probe leaked its directory");
+            denyProbeLink = NO;
+            denyCachesRemoval = YES;
+            NSCAssert(worse_query(target, groupID, NO, NO) == -4, @"existing Caches failure hidden");
+            NSString *cacheFailure = worse_query_diagnostics();
+            NSCAssert([cacheFailure containsString:@"stage=remove_Caches"] && [cacheFailure containsString:@"stage=create_Caches_symlink"] &&
+                [cacheFailure containsString:@"NSPOSIXErrorDomain code=1"] && [cacheFailure containsString:@"Caches_before_cleanup"], @"first failure overwritten by link/cleanup");
+            denyCachesRemoval = NO;
+            checkClean();
             throwGroupException = YES;
             NSCAssert(worse_query_group_path(groupID) == nil, @"Foundation exception escaped into Swift");
             NSCAssert(worse_query(target, groupID, NO, NO) == -1, @"native query did not handle group exception");
@@ -173,17 +218,25 @@ int main(void) {
             groupRoot = [base URLByAppendingPathComponent:@"not-a-directory"];
             [@"fixture" writeToURL:groupRoot atomically:YES encoding:NSUTF8StringEncoding error:NULL];
             NSCAssert(worse_query(target, groupID, NO, NO) == -4, @"symlink failure was not reported");
+            NSCAssert([worse_query_diagnostics() containsString:@"stage=create_Library"], @"Library failure missing");
+            NSUInteger beforeBadProbe = created;
+            NSCAssert(!worse_query_preflight(groupID) && created == beforeBadProbe, @"invalid Library reached native query");
+            NSCAssert([worse_query_diagnostics() containsString:@"stage=preflight_create_Library"], @"preflight error stage missing");
             NSCAssert(created == freed, @"symlink failure leaked a query");
             groupRoot = validGroup; consumedHandle = 42;
             dispatch_apply(12, dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^(size_t index) {
                 @autoreleasepool {
                     NSString *path = [target stringByAppendingFormat:@"-%zu", index];
                     NSCAssert(worse_query(path, groupID, NO, NO) == 42, @"parallel query failed");
+                    NSCAssert([worse_query_diagnostics() containsString:[@"target=" stringByAppendingString:path]], @"another thread overwrote the diagnostic");
                 }
             });
             checkClean();
+            puts("[PASS] WQ diagnostics: nondestructive preflight, Cocoa/POSIX underlying errors, Caches removal vs symlink failure, cleanup preservation, no leaked probes");
             puts("[PASS] production worse_query C: query/flags/link order, denied stat, cleanup, errors, zero handle, release and serialization");
         } @finally {
+            method_exchangeImplementations(linkOriginal, linkReplacement);
+            method_exchangeImplementations(removeOriginal, removeReplacement);
             method_exchangeImplementations(original, replacement);
             [files removeItemAtURL:base error:NULL];
         }
