@@ -107,7 +107,7 @@ class IntegrationContracts(unittest.TestCase):
     @unittest.skipUnless(sys.platform == 'darwin' and shutil.which('clang'), 'requires macOS Objective-C compiler')
     def test_native_production_query_and_inode_enumerator(self):
         with tempfile.TemporaryDirectory() as folder:
-            for name in ['PathLeakSelfCheck', 'WorseQueryNativeSelfCheck']:
+            for name in ['PathLeakSelfCheck', 'WorseQueryNativeSelfCheck', 'BadQueryEnumerationSelfCheck']:
                 binary = Path(folder) / name
                 subprocess.run(['clang', '-fobjc-arc', '-framework', 'Foundation',
                                 str(ROOT / 'Tests' / (name + '.m')), '-o', str(binary)], check=True)

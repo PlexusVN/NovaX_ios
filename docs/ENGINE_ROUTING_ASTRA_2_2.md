@@ -21,6 +21,7 @@ Chính sách duy nhất nằm trong `ThreeOneOSFive/helpers/KernelExploit.swift`
 ## Ranh giới giữa các cơ chế
 
 - `WorseQueryHelper.isOSSupported/isAvailable` chỉ đúng trên tuyến worse_query đã chọn. Có App Group không thể chuyển iOS 26.6.1 hoặc beta 27 thuộc 3105 sang worse_query.
+- Nhánh liệt kê inode bad_query tôn trọng phạm vi do caller yêu cầu như upstream 3105; bỏ clamp 100.000 cũ làm bỏ sót container, trả lỗi cho range không hợp lệ. Mặc định legacy trở lại 2.000.000 như upstream.
 - MCM native dùng cầu nối `AstraUses3105ContainerAccess` để đọc cùng chính sách Swift. Tuyến 3105 ưu tiên MHA-C2 trước LaunchServices; giữ bản sửa ownership ARC đã xử lý crash build 29.
 - Tuyến worse_query chỉ lấy root đã xác minh trong màn hình chuẩn bị; giữ nguyên native query class/part/flags, chọn App Group có thể ghi, token theo UUID và vòng đời token trong giao dịch.
 - Thiếu App Group hoặc chuẩn bị thất bại phải báo lỗi; không cho bỏ qua màn hình bằng nút AirLift dự phòng và không rơi xuống ghi tệp thô.

@@ -345,7 +345,7 @@ enum ContainerStore {
         }
 
         // 1. Quét nhanh các container thông qua pathleak (fsgetpath)
-        let maxInode = (try? WorseQueryHelper.currentFilesystemMaxInode()) ?? 100_000
+        let maxInode = (try? WorseQueryHelper.currentFilesystemMaxInode()) ?? 2_000_000
         let leakDirs = (pathleak(appDataRoot, maxInode) as? [String]) ?? []
 
         let candidateDirs: [String]
@@ -705,7 +705,7 @@ enum ContainerStore {
 
     // MARK: Filesystem discovery
 
-    static func enumerateDirectories(path: String, maxInode: Int64 = 100_000) -> [String] {
+    static func enumerateDirectories(path: String, maxInode: Int64 = 2_000_000) -> [String] {
         let clean = path.hasSuffix("/") ? String(path.dropLast()) : path
         guard clean.hasPrefix("/") else { return [] }
 
