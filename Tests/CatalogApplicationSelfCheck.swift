@@ -1,6 +1,11 @@
 import Foundation
 import CryptoKit
-enum ExploitSupportPolicy { static let currentRequiresWorseQueryPreparation = false }
+// Catalog I/O fixture stays on the 3105 route; actual OS dispatch is exercised
+// separately against the complete production policy and resolver.
+enum ExploitSupportPolicy {
+    enum AccessProvider { case legacy3105 }
+    static let currentAccessProvider = AccessProvider.legacy3105
+}
 
 // Device-only resolution cannot run here. All apply/restore I/O uses temp folders.
 enum ContainerStore {
