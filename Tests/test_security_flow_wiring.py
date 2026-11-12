@@ -30,15 +30,30 @@ class SecurityFlowWiringTests(unittest.TestCase):
         self.assertTrue(text.rstrip().endswith('return false\n    }\n}'))
         self.assertIn('AppSecurityConfiguration.tlsCertificatePins', text)
 
-    def test_release_snapshot_and_signed_errors_only(self):
+    def test_release_snapshot_and_pinned_transport_errors(self):
         text = source('helpers/ProtectedDownloadService.swift')
         lease = text.split('private func ensureReleaseLease()')[1].split('func reportIntegrityFailure')[0]
         self.assertIn('AppIntegrityRuntime.shared.acceptedResult', lease)
         self.assertIn('guard AppSecurityConfiguration.localIntegrityEnforced else { return }', lease)
         self.assertNotIn('AntiTamper.checkAtLaunch()', lease)
-        errors = text.split('guard (200..<300).contains(response.statusCode)')[1].split('let payload: Data')[0]
-        self.assertNotIn('clearSession()', errors.split('for errorPurpose')[0])
+        post = text.split('    private func post(')[1].split('    private func dictionary(')[0]
+        self.assertLess(post.index('SecureAPIClient.shared.data(for: request)'), post.index('ProtectedDownloadError.fromPinnedPayload'))
+        self.assertIn('RequestProofService.shared.signRequest', post)
+        self.assertNotIn('ServerSignatureVerifier', post)
+        self.assertIn('X-Astra-Response-Mode', post)
+        errors = post.split('guard (200..<300).contains(response.statusCode)')[1].split('let payload = data')[0]
+        self.assertIn('data.count <= 256 * 1024', errors)
         self.assertIn('(object["session_revoked"] as? Bool) == true', errors)
+
+    def test_normal_bootstrap_has_no_resume_or_replacement_dependency(self):
+        text = source('helpers/ProtectedDownloadService.swift')
+        active = text.split('    private func ensureSession(')[1].split('    private func recordAccessFailure(')[0]
+        self.assertNotIn('/api/v2/device/resume', text)
+        self.assertNotIn('identity_resume_unavailable', text)
+        self.assertNotIn('recoverInstallation(', active)
+        self.assertIn('canonical_enrollment', active)
+        self.assertIn('existingResumeMaterial()', active)
+        self.assertIn('acceptCanonicalEnrollment(', active)
 
     def test_airlift_cannot_claim_a_restore_without_writing_originals(self):
         text = source('helpers/FeaturePatchService.swift')

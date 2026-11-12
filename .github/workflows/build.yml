@@ -100,7 +100,7 @@ jobs:
             Tests/ProtectedRecoveryFlowSelfCheck.swift -o "$RUNNER_TEMP/astra-recovery-flow-selfcheck"
           "$RUNNER_TEMP/astra-recovery-flow-selfcheck"
 
-      - name: Verify same-key identity resume and bounded session retries
+      - name: Verify pinned-TLS enrollment and bounded session retries
         run: |
           python3 Tests/extract_identity_resume.py \
             ThreeOneOSFive/helpers "$RUNNER_TEMP/IdentityResume.swift"
@@ -165,7 +165,7 @@ jobs:
           test -d "$APP_NAME"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$APP_NAME/Info.plist")" = "Astra"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_NAME/Info.plist")" = "2.2"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_NAME/Info.plist")" = "32"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_NAME/Info.plist")" = "33"
           EXECUTABLE=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP_NAME/Info.plist")
           test -x "$APP_NAME/$EXECUTABLE"
           python3 ReleaseTools/verify_native_compatibility.py --app "$APP_NAME" --max-ios 16.0
@@ -209,5 +209,5 @@ jobs:
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Astra-Unsigned-IPA-2.2-32
+          name: Astra-Unsigned-IPA-2.2-33
           path: build/Astra.ipa

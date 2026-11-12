@@ -447,6 +447,27 @@ public final class DeviceIdentityService {
         }
     }
 
+    /// Metadata from the pinned-TLS enrollment endpoint, after matching license
+    /// scope and BOTH key fingerprints. Keeps private keys/generations intact.
+    /// A restored database may assign a new numeric license/device reference;
+    /// the active server entitlement and the same private keys remain decisive.
+    func acceptCanonicalEnrollment(deviceKeyID: String, installationID: String, keyID: Int,
+                                   signingFingerprint: String, agreementFingerprint: String) throws {
+        try locked {
+            guard licenseBinding != nil, UUID(uuidString: deviceKeyID) != nil,
+                  UUID(uuidString: installationID) != nil, keyID > 0 else { throw DeviceIdentityError.invalidInput }
+            let material = try existingResumeMaterial()
+            guard try Self.publicFingerprint(material.signing) == signingFingerprint,
+                  try Self.publicFingerprint(material.agreement) == agreementFingerprint,
+                  recoveryGeneration == nil || recoveryGeneration == installationID.lowercased() else {
+                throw DeviceIdentityError.invalidIdentity
+            }
+            try saveData(Data(String(keyID).utf8), tag: storageTag("server_license_key_id"))
+            try saveData(Data(installationID.lowercased().utf8), tag: installIdKey)
+            try saveData(Data(deviceKeyID.lowercased().utf8), tag: deviceKeyIdKey)
+        }
+    }
+
     public var assuranceLevel: AssuranceLevel {
         (try? getOrCreateKey().assurance) ?? .softwareKeychain
     }

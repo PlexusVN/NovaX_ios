@@ -39,10 +39,10 @@ enum ProtectedDownloadError: LocalizedError {
                 return "Key hợp lệ nhưng định danh cài đặt chưa khớp thiết bị đã đăng ký. Astra chưa thể khôi phục bằng khóa cũ. Hãy liên hệ hỗ trợ với mã: \(code)."
             case "device_key_invalid", "device_signature_invalid", "device_proof_missing", "hwid_mismatch":
                 return "Máy chủ chưa xác minh được định danh thiết bị. Hãy thử tải lại; nếu vẫn lỗi, gửi hỗ trợ mã: \(code)."
-            case "identity_resume_unavailable":
-                return "Máy chủ chưa có bản sửa khôi phục định danh cho Astra 2.2. Hãy cập nhật server rồi thử tải lại. Mã: identity_resume_unavailable."
             case "recipient_upgrade_required", "recipient_enrollment_required", "device_environment_upgrade_required", "protocol_required":
                 return "Bản cài đặt chưa đáp ứng giao thức bảo mật hiện tại. Hãy cài đúng bản ứng dụng mới nhất được cung cấp."
+            case "download_server_update_required":
+                return "Máy chủ chưa hỗ trợ luồng tải ổn định của bản Astra này. Hãy cập nhật server rồi thử lại. Mã: download_server_update_required."
             case "app_integrity_rejected", "integrity_report_invalid", "release_upgrade_required":
                 return "Máy chủ chưa chấp nhận bản ứng dụng này. Hãy dùng đúng IPA được cung cấp và liên hệ hỗ trợ nếu vẫn lỗi."
             case "device_environment_rejected", "device_jailbreak_quarantined":
@@ -55,7 +55,7 @@ enum ProtectedDownloadError: LocalizedError {
             case "release_verification_required", "device_environment_verification_required":
                 return "Phiên xác minh bảo mật đã hết hạn. Hãy thử lại."
             default:
-                // Verified protocol codes are bounded by fromVerifiedPayload.
+                // Verified protocol codes are bounded by fromPinnedPayload.
                 // Locally generated HTTP_<status> fallbacks are not server policy.
                 if code.range(of: #"^[a-z0-9_]{1,80}$"#, options: .regularExpression) != nil {
                     return "Máy chủ chưa thể cấp quyền tải bảo mật. Hãy liên hệ hỗ trợ với mã: \(code)."
@@ -66,9 +66,9 @@ enum ProtectedDownloadError: LocalizedError {
         }
     }
 
-    /// Only call with a nonce-bound, signature-verified response. No policy is
-    /// inferred from unsigned JSON or from a local detector's report.
-    static func fromVerifiedPayload(_ object: [String: Any], statusCode: Int) -> ProtectedDownloadError? {
+    /// Only call after SecureAPIClient authenticates the exact HTTPS origin
+    /// with system trust AND a pinned certificate. Local reports are not policy.
+    static func fromPinnedPayload(_ object: [String: Any], statusCode: Int) -> ProtectedDownloadError? {
         guard object["success"] as? Bool == false,
               let code = object["code"] as? String,
               code.range(of: #"^[a-z0-9_]{1,80}$"#, options: .regularExpression) != nil else { return nil }
@@ -224,6 +224,7 @@ final class ProtectedDownloadService: ObservableObject {
         request.httpMethod = "POST"
         request.timeoutInterval = path.hasSuffix("/content") ? 120 : 20
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("tls-pinned-v1", forHTTPHeaderField: "X-Astra-Response-Mode")
         request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys, .withoutEscapingSlashes])
         let nonce: String
         if signed {
@@ -250,45 +251,25 @@ final class ProtectedDownloadService: ObservableObject {
             try authContext?.validate()
         }
         guard (200..<300).contains(response.statusCode) else {
-            // Never retry through legacy endpoints or accept unsigned error data
-            // as policy. A fresh user retry can safely obtain a new grant.
-            // Artifact failures use a separate signed purpose. Only an exact
-            // request nonce and a verified purpose can influence retry/recovery.
-            let errorPurposes = ["security-enforcement-v2"] + (path.hasPrefix("/api/v2/artifacts/")
-                ? ["artifact-error"] : purpose.map { [$0] } ?? []) + ["POST \(path)"]
-            // Proof/session middleware uses this exact route purpose for errors.
-            // It remains nonce/signature/lifetime-bound and never accepts success.
-            for errorPurpose in errorPurposes {
-                if let verified = try? ServerSignatureVerifier.shared.verifiedPayload(in: data,
-                        expectedNonce: nonce, expectedPurpose: errorPurpose),
-                   let object = try? JSONSerialization.jsonObject(with: verified) as? [String: Any],
-                   let rejection = ProtectedDownloadError.fromVerifiedPayload(object, statusCode: response.statusCode) {
-                    if case .rejected(let code) = rejection,
-                       ["release_verification_required", "device_environment_verification_required", "release_upgrade_required"].contains(code),
-                       detachedSession == nil { releaseLease.invalidate() }
-                    // Only nonce-bound signed policy may clear a live session.
-                    // A proxy/CDN's unsigned 401 is not a revocation message.
-                    if detachedSession == nil,
-                       response.statusCode == 401 || (object["session_revoked"] as? Bool) == true {
-                        clearSession()
-                    }
-                    // Intermediate failures may be repaired with the same keys.
-                    // Publish only the final operation error, after bounded retries.
-                    if case .quarantined = rejection, detachedSession == nil {
-                        // Keep the license and persistent device identities. A
-                        // later retry opens a fresh server-authorized session.
-                        clearSession()
-                    }
-                    throw rejection
+            // This response came only through SecureAPIClient's system-trusted,
+            // certificate-pinned connection. RSA API envelopes are no longer a
+            // prerequisite; request proof/session/grant authorization stays on.
+            if data.count <= 256 * 1024,
+               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let rejection = ProtectedDownloadError.fromPinnedPayload(object, statusCode: response.statusCode) {
+                if case .rejected(let code) = rejection,
+                   ["release_verification_required", "device_environment_verification_required", "release_upgrade_required"].contains(code),
+                   detachedSession == nil { releaseLease.invalidate() }
+                if detachedSession == nil,
+                   response.statusCode == 401 || (object["session_revoked"] as? Bool) == true {
+                    clearSession()
                 }
+                if case .quarantined = rejection, detachedSession == nil { clearSession() }
+                throw rejection
             }
             throw ProtectedDownloadError.rejected("HTTP_\(response.statusCode)")
         }
-        let payload: Data
-        if let purpose {
-            payload = try ServerSignatureVerifier.shared.verifiedPayload(in: data,
-                expectedNonce: nonce, expectedPurpose: purpose)
-        } else { payload = data } // content's two signed documents are checked by the decoder
+        let payload = data
         if detachedSession == nil && purpose != nil && (path.hasPrefix("/api/v2/artifacts/") ||
             path == "/api/v2/novax/session/open" || path == "/api/v2/novax/session/renew") {
             accessNotice = nil
@@ -380,77 +361,63 @@ final class ProtectedDownloadService: ObservableObject {
         let epoch = contextEpoch
         do {
             try await ensureCurrentSession(auth: auth)
-        } catch ProtectedDownloadError.rejected(let code) where ["session_expired", "session_required"].contains(code) {
+        } catch ProtectedDownloadError.rejected(let code)
+            where ["session_expired", "session_required", "device_key_invalid", "device_signature_invalid"].contains(code) {
             try requireRecoveryContext(context, epoch: epoch)
             clearSession()
-            try await ensureCurrentSession(auth: auth)
-        } catch {
-            let permitsReplacement = ProtectedRecoveryChallenge.permitsAttempt(after: error)
-            guard ProtectedRecoveryChallenge.permitsResume(after: error) else { throw error }
-            do {
-                try await resumeExistingInstallation(context: context, epoch: epoch)
-            } catch ProtectedDownloadError.rejected("device_recovery_required") where permitsReplacement {
-                try await recoverInstallation(context: context, epoch: epoch)
-            } catch DeviceIdentityError.identityMissing where permitsReplacement {
-                try await recoverInstallation(context: context, epoch: epoch)
-            }
-            // Exactly one recovery per operation. A second failure propagates;
-            // artifact requests and one-use content are never replayed here.
+            // One normal bootstrap retry with the SAME keys. No resume route,
+            // recovery ticket, key replacement or unauthenticated file fallback.
             try await ensureCurrentSession(auth: auth)
         }
     }
 
-    private func resumeExistingInstallation(context: ProtectedAuthContext, epoch: UInt64) async throws {
-        try requireRecoveryContext(context, epoch: epoch)
-        let selected = try identity ?? DeviceIdentityService.scoped(to: context.binding)
-        guard selected.licenseBinding == context.binding else { throw DeviceIdentityError.invalidIdentity }
-        let material = try selected.existingResumeMaterial()
-        let installationID = try selected.existingInstallationID() ?? UUID().uuidString.lowercased()
+    private func bootstrapEnrollment(_ context: ProtectedAuthContext, epoch: UInt64) async throws -> DeviceIdentityService {
+        let selected = try await prepareIdentity(context)
+        let installID = try selected.existingInstallationID() ?? UUID().uuidString.lowercased()
         let (challengeData, _) = try await post("/api/v2/device/challenge", body: [
-            "key": context.licenseKey, "hwid": context.hwid, "install_id": installationID
+            "key": context.licenseKey, "hwid": context.hwid, "install_id": installID
         ], signed: false, purpose: "device-challenge")
         try requireRecoveryContext(context, epoch: epoch)
         guard let challenge = ProtectedRecoveryChallenge(try dictionary(challengeData),
-            licenseBinding: context.binding, expectedKeyID: try selected.persistedServerKeyID()) else {
+            licenseBinding: context.binding, expectedKeyID: nil) else {
             throw ProtectedDownloadError.invalidResponse
         }
+        // A remembered enrollment cannot silently generate replacement keys.
+        // New users may create keys only after the active license challenge.
+        if try selected.persistedEnrollmentID() != nil { _ = try selected.existingResumeMaterial() }
+        let signing = try selected.getOrCreateKey()
+        let agreement = try selected.getOrCreateAgreementKey()
+        let material = try selected.existingResumeMaterial()
         let signature = try selected.signResumeEnrollment(challengeID: challenge.id,
-            challenge: challenge.value, key: context.licenseKey, hwid: context.hwid,
-            installationID: installationID)
-        let resumedData: Data
-        do {
-            (resumedData, _) = try await post("/api/v2/device/resume", body: [
-                "challenge_id": challenge.id, "challenge": challenge.value,
-                "key": context.licenseKey, "hwid": context.hwid, "install_id": installationID,
-                "public_key_x963": material.signing, "agreement_public_key_x963": material.agreement,
-                "assurance_level": material.assurance.rawValue, "enrollment_revision": 2,
-                "signature": signature
-            ], signed: false, purpose: "device-resume-v2")
-        } catch ProtectedDownloadError.rejected("HTTP_404") {
-            throw ProtectedDownloadError.rejected("identity_resume_unavailable")
-        }
+            challenge: challenge.value, key: context.licenseKey, hwid: context.hwid, installationID: installID)
+        let (enrolledData, _) = try await post("/api/v2/device/enroll", body: [
+            "challenge_id": challenge.id, "challenge": challenge.value,
+            "key": context.licenseKey, "hwid": context.hwid, "install_id": installID,
+            "public_key_x963": signing.publicKeyX963Base64,
+            "agreement_public_key_x963": agreement.publicKeyX963Base64,
+            "assurance_level": signing.assurance.rawValue, "enrollment_revision": 2,
+            "signature": signature, "canonical_enrollment": true
+        ], signed: false, purpose: "device-enroll")
         try requireRecoveryContext(context, epoch: epoch)
-        let resumed = try dictionary(resumedData)
+        let enrolled = try dictionary(enrolledData)
         let fingerprint: (String) throws -> String = { value in
-            guard let bytes = Data(base64Encoded: value), bytes.count == 65 else {
-                throw ProtectedDownloadError.invalidResponse
-            }
+            guard let bytes = Data(base64Encoded: value), bytes.count == 65 else { throw ProtectedDownloadError.invalidResponse }
             return SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
         }
-        guard resumed["license_binding"] as? String == context.binding,
-              resumed["key_id"] as? Int == challenge.keyID,
-              resumed["enrollment_revision"] as? Int == 2,
-              let deviceID = resumed["device_key_id"] as? String,
-              let serverInstallID = resumed["install_id"] as? String,
-              resumed["public_key_fingerprint"] as? String == (try fingerprint(material.signing)),
-              resumed["agreement_public_key_fingerprint"] as? String == (try fingerprint(material.agreement)) else {
-            throw ProtectedDownloadError.invalidResponse
+        guard enrolled["license_binding"] as? String == context.binding,
+              enrolled["key_id"] as? Int == challenge.keyID,
+              enrolled["enrollment_revision"] as? Int == 2,
+              let deviceID = enrolled["device_key_id"] as? String,
+              let canonicalInstallID = enrolled["install_id"] as? String,
+              enrolled["public_key_fingerprint"] as? String == (try fingerprint(material.signing)),
+              enrolled["agreement_public_key_fingerprint"] as? String == (try fingerprint(material.agreement)) else {
+            throw ProtectedDownloadError.rejected("download_server_update_required")
         }
-        try selected.acceptResumedEnrollment(deviceKeyID: deviceID, installationID: serverInstallID,
+        try selected.acceptCanonicalEnrollment(deviceKeyID: deviceID, installationID: canonicalInstallID,
             keyID: challenge.keyID, signingFingerprint: try fingerprint(material.signing),
             agreementFingerprint: try fingerprint(material.agreement))
         identity = selected
-        clearSession()
+        return selected
     }
 
     private func recordAccessFailure(_ error: Error, context: ProtectedAuthContext) {
@@ -537,73 +504,13 @@ final class ProtectedDownloadService: ObservableObject {
             return
         }
         clearSession()
-        let identity = try await prepareIdentity(context)
-        if try identity.persistedEnrollmentID() == nil {
-            // The candidate stays only in memory until a signed challenge
-            // confirms this active license. An expired legacy A cannot leave
-            // fresh conflicting A keys/installation behind during migration.
-            let installID = try identity.existingInstallationID() ?? UUID().uuidString.lowercased()
-            let (challengeData, _) = try await post("/api/v2/device/challenge", body: [
-                "key": context.licenseKey, "hwid": context.hwid, "install_id": installID
-            ], signed: false, purpose: "device-challenge")
-            let challenge = try dictionary(challengeData)
-            guard let id = challenge["challenge_id"] as? String,
-                  let value = challenge["challenge"] as? String,
-                  challenge["license_binding"] as? String == context.binding,
-                  let keyID = challenge["key_id"] as? Int, keyID > 0 else { throw ProtectedDownloadError.invalidResponse }
-            try context.validate()
-            try identity.persistInstallationID(installID)
-            try identity.persistServerKeyID(keyID)
-            let (signingKey, assurance) = try identity.getOrCreateKey()
-            let (agreementKey, _) = try identity.getOrCreateAgreementKey()
-            let signature = try identity.signEnrollment(challengeId: id, challenge: value,
-                key: context.licenseKey, hwid: context.hwid, installId: installID,
-                publicKeyX963: signingKey, assurance: assurance, agreementPublicKeyX963: agreementKey)
-            let (enrollData, _) = try await post("/api/v2/device/enroll", body: [
-                "challenge_id": id, "challenge": value, "key": context.licenseKey, "hwid": context.hwid,
-                "install_id": installID, "public_key_x963": signingKey,
-                "agreement_public_key_x963": agreementKey, "assurance_level": assurance.rawValue,
-                "enrollment_revision": 2, "signature": signature
-            ], signed: false, purpose: "device-enroll")
-            let enrolled = try dictionary(enrollData)
-            guard let deviceID = enrolled["device_key_id"] as? String else { throw ProtectedDownloadError.invalidResponse }
-            try identity.persistEnrollment(deviceKeyId: deviceID)
-        }
-        do {
-            let (loginData, _) = try await post("/api/v2/novax/session/open", body: [
-                "app_release": Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "",
-                "license_binding": context.binding
-            ], signed: true, purpose: "novax-session-open-v2", bearer: false)
-            try acceptSession(loginData)
-        } catch ProtectedDownloadError.rejected("recipient_upgrade_required") {
-            // Only a signed server response for THIS existing identity permits
-            // creation of its first recipient key. Never repair a lost v2 key.
-            let (legacySession, _) = try await post("/api/v2/novax/login", body: [
-                "key": context.licenseKey, "hwid": context.hwid, "license_binding": context.binding
-            ], signed: true, purpose: "novax-login-v2", bearer: false)
-            try acceptSession(legacySession)
-            let (agreement, _) = try identity.prepareLegacyRecipientUpgrade()
-            let (signing, assurance) = try identity.getOrCreateKey()
-            let installID = try identity.installationID()
-            let (challengeData, _) = try await post("/api/v2/device/challenge", body: [
-                "key": context.licenseKey, "hwid": context.hwid, "install_id": installID
-            ], signed: false, purpose: "device-challenge")
-            let challenge = try dictionary(challengeData)
-            guard let id = challenge["challenge_id"] as? String, let value = challenge["challenge"] as? String else {
-                throw ProtectedDownloadError.invalidResponse
-            }
-            let signature = try identity.signEnrollment(challengeId: id, challenge: value,
-                key: context.licenseKey, hwid: context.hwid, installId: installID,
-                publicKeyX963: signing, assurance: assurance, agreementPublicKeyX963: agreement)
-            let (upgrade, _) = try await post("/api/v2/device/enroll", body: [
-                "challenge_id": id, "challenge": value, "key": context.licenseKey, "hwid": context.hwid,
-                "install_id": installID, "public_key_x963": signing, "assurance_level": assurance.rawValue,
-                "agreement_public_key_x963": agreement, "enrollment_revision": 2, "signature": signature
-            ], signed: true, purpose: "device-enroll")
-            let upgraded = try dictionary(upgrade)
-            guard let id = upgraded["device_key_id"] as? String else { throw ProtectedDownloadError.invalidResponse }
-            try identity.persistEnrollment(deviceKeyId: id)
-        }
+        let identity = try await bootstrapEnrollment(context, epoch: contextEpoch)
+        self.identity = identity
+        let (loginData, _) = try await post("/api/v2/novax/session/open", body: [
+            "app_release": Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "",
+            "license_binding": context.binding
+        ], signed: true, purpose: "novax-session-open-v2", bearer: false)
+        try acceptSession(loginData)
     }
 
     private func acceptSession(_ data: Data) throws {
@@ -639,7 +546,7 @@ final class ProtectedDownloadService: ObservableObject {
         } catch { recordAccessFailure(error, context: requestedContext); await gate.release(); throw error }
     }
 
-    /// Catalog sync is read-only. A signed expired-session rejection permits
+    /// Catalog sync is read-only. A pinned-TLS expired-session rejection permits
     /// ONE fresh session/proof/nonce retry. One-use grants/content are never replayed.
     private func syncCatalogWithSessionRetry(auth: AuthManager) async throws -> Data {
         do {

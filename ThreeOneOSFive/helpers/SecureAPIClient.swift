@@ -100,7 +100,7 @@ enum SecureAPIEndpointPolicy {
             "/api/v2/security/integrity",
             "/api/v2/security/integrity-v2",
             "/api/v2/security/policy", "/api/v2/device/challenge",
-            "/api/v2/device/context", "/api/v2/device/resume",
+            "/api/v2/device/context",
             "/api/v2/device/enroll", "/api/v2/novax/login",
             "/api/v2/novax/logout", "/api/v2/novax/session/renew",
             "/api/v2/novax/session/open",

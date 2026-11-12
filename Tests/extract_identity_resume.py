@@ -1,14 +1,16 @@
-"""Compile real resume/session/catalog retry bodies with isolated transport on macOS."""
+"""Compile actual pinned-TLS POST, enrollment/session and catalog retry bodies.
+Transport/Keychain are isolated; iOS TLS/proxy policy is tested separately.
+"""
 from pathlib import Path
 import sys
-
-source = (Path(sys.argv[1]) / 'ProtectedDownloadService.swift').read_text(encoding='utf-8')
+root = Path(sys.argv[1])
+source = (root / 'ProtectedDownloadService.swift').read_text(encoding='utf-8')
 def section(start, end):
     i = source.index(start)
     return source[i:source.index(end, i)]
-
-prefix = '''import Foundation
+prefix = r'''import Foundation
 import CryptoKit
+
 enum FeaturePatchError: Error { case notAuthenticated }
 @MainActor final class AuthManager {
     enum State: Equatable { case verified, idle }
@@ -17,58 +19,80 @@ enum FeaturePatchError: Error { case notAuthenticated }
     var licenseKey = "RESUME-FIXTURE"
     var hwid = "hardware-A"
 }
+enum FixtureNetworkError: Error { case untrustedTLS, invalidURL }
+enum SecureAPIError: Error { case invalidEndpoint }
+@MainActor final class SecureAPIClient {
+    static let shared = SecureAPIClient()
+    static var handler: ((URLRequest) async throws -> (Data,HTTPURLResponse))!
+    static func validateURL(_ url: URL) throws {
+        guard SecureAPIEndpointPolicy.permits(url) else { throw FixtureNetworkError.invalidURL }
+    }
+    func data(for request: URLRequest) async throws -> (Data,HTTPURLResponse) {
+        try Self.validateURL(request.url!)
+        return try await Self.handler(request)
+    }
+}
+@MainActor final class RequestProofService {
+    static let shared = RequestProofService()
+    func generateNonce() throws -> String { UUID().uuidString.replacingOccurrences(of:"-",with:"").lowercased() }
+    func signRequest(request: inout URLRequest, sessionId: String, deviceKeyId: String,
+                     identity: DeviceIdentityService) throws -> String {
+        let nonce = try generateNonce()
+        request.setValue(nonce,forHTTPHeaderField:"X-Astra-Nonce")
+        request.setValue(deviceKeyId,forHTTPHeaderField:"X-Astra-Device-Key")
+        request.setValue(sessionId,forHTTPHeaderField:"X-Astra-Session")
+        return nonce
+    }
+}
 '''
-parts = [prefix,
-    section('enum ProtectedDownloadError:', '@MainActor'),
-    section('@MainActor\nprivate final class ProtectedAuthContext', 'private struct ProtectedSessionSnapshot'),
-    section('// BEGIN RECOVERY CHALLENGE CONTRACT', '// END RECOVERY CHALLENGE CONTRACT'),
-    section('private actor ProtectedRequestGate', '@MainActor\nfinal class ProtectedDownloadService')]
-utils = (Path(sys.argv[1]).parent / 'views/SecurityUtils.swift').read_text(encoding='utf-8')
-parts.append(utils.split('// BEGIN STABLE HWID POLICY')[1].split('// END STABLE HWID POLICY')[0].split('\n', 1)[1])
-parts.append('''
+parts = [prefix, section('enum ProtectedDownloadError:', '@MainActor'),
+         section('@MainActor\nprivate final class ProtectedAuthContext','private struct ProtectedArtifactDescriptor'),
+         section('// BEGIN RECOVERY CHALLENGE CONTRACT','// END RECOVERY CHALLENGE CONTRACT'),
+         section('private actor ProtectedRequestGate','@MainActor\nfinal class ProtectedDownloadService')]
+parts.append((root / 'ProtectedReleaseLease.swift').read_text(encoding='utf-8'))
+api = (root / 'SecureAPIClient.swift').read_text(encoding='utf-8')
+parts.append(api[api.index('enum SecureAPIEndpointPolicy {'):api.index('/// Validate before attaching credentials')])
+utils = (root.parent / 'views/SecurityUtils.swift').read_text(encoding='utf-8')
+parts.append(utils.split('// BEGIN STABLE HWID POLICY')[1].split('// END STABLE HWID POLICY')[0].split('\n',1)[1])
+parts.append(r'''
 @MainActor final class IdentityResumeHarness {
-    typealias Transport = (String, [String: Any]) async throws -> [String: Any]
     private let gate = ProtectedRequestGate()
     private let retainedAuth: AuthManager
-    private let transport: Transport
+    private let origin = AppSecurityConfiguration.apiOrigin
     private var currentAuthContext: ProtectedAuthContext?
     private var contextEpoch: UInt64 = 0
     private var identity: DeviceIdentityService?
     private var licenseDigest: String
+    private var sessionID = "", sessionToken = ""
+    private var sessionExpiry = Date.distantPast
+    private var releaseLease = ProtectedReleaseLease()
     var accessNotice: String?
-    var openFailures: [Error] = []
-    private(set) var openCount = 0
-    private(set) var recoveryCount = 0
-    private(set) var clearCount = 0
-    var currentIdentity: DeviceIdentityService { identity! }
-    init(auth: AuthManager, identity: DeviceIdentityService, transport: @escaping Transport) {
-        self.retainedAuth=auth; self.identity=identity; self.transport=transport
+    init(auth: AuthManager, identity: DeviceIdentityService) {
+        retainedAuth=auth; self.identity=identity
         licenseDigest=DeviceIdentityService.binding(forLicense:auth.licenseKey)
         currentAuthContext=ProtectedAuthContext(auth)
     }
     func invalidate() { contextEpoch &+= 1 }
+    func expireSession() { sessionExpiry = .distantPast }
     func session() async throws { try await ensureSession(auth:retainedAuth) }
-    private func ensureCurrentSession(auth: AuthManager) async throws {
-        openCount += 1
-        if !openFailures.isEmpty { throw openFailures.removeFirst() }
-    }
-    private func recoverInstallation(context: ProtectedAuthContext, epoch: UInt64) async throws {
-        recoveryCount += 1
-        throw ProtectedDownloadError.rejected("device_recovery_required")
-    }
-    private func clearSession() { clearCount += 1 }
     private func ensureReleaseLease() async throws {}
-    private func post(_ route: String, body: [String: Any], signed: Bool,
-                      purpose: String?) async throws -> (Data,String) {
-        let payload=try await transport(route,body)
-        return (try JSONSerialization.data(withJSONObject:payload),String(repeating:"1",count:32))
-    }
+}
 ''')
-parts += [section('    private func dictionary(', '    private func clearSession('),
-          section('    private func beginOperation(', '    private func prepareIdentity('),
-          section('    private func ensureSession(', '    private func resumeExistingInstallation('),
-          section('    private func resumeExistingInstallation(', '    private func recordAccessFailure('),
-          section('    private func recordAccessFailure(', '    private func requireRecoveryContext('),
-          section('    private func requireRecoveryContext(', '    private func recoverInstallation('),
-          section('    func sync(auth:', '    /// Best-effort telemetry'), '\n}\n']
-Path(sys.argv[2]).write_text('\n'.join(parts), encoding='utf-8')
+# Insert the real production methods into the fixture class.
+parts[-1] = parts[-1].rsplit('}',1)[0]
+for start,end in [
+ ('    private func endpoint(', '    private func post('),
+ ('    private func post(', '    private func dictionary('),
+ ('    private func dictionary(', '    private func clearSession('),
+ ('    private func clearSession(', '    /// Foreground/background'),
+ ('    private func beginOperation(', '    private func prepareIdentity('),
+ ('    private func prepareIdentity(', '    private func ensureSession('),
+ ('    private func ensureSession(', '    private func recordAccessFailure('),
+ ('    private func recordAccessFailure(', '    private func requireRecoveryContext('),
+ ('    private func requireRecoveryContext(', '    private func recoverInstallation('),
+ ('    private func ensureCurrentSession(', '    private func acceptSession('),
+ ('    private func acceptSession(', '    func sync(auth:'),
+ ('    func sync(auth:', '    /// Best-effort telemetry')]:
+    parts.append(section(start,end))
+parts.append('\n}\n')
+Path(sys.argv[2]).write_text('\n'.join(parts),encoding='utf-8')
