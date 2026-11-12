@@ -59,7 +59,7 @@ enum FixtureFailure: Error { case operation }
     @MainActor static func main() async throws {
         for (major,minor,patch,build) in [(16,7,12,""),(17,7,9,""),(18,7,1,""),
             (26,0,0,""),(26,6,1,""),(27,0,0,"24A5355q"),(27,0,0,"24A5390f"),
-            (18,7,2,""),(26,7,3,""),(27,2,0,"24B5099f")] {
+            (18,7,2,""),(26,7,3,""),(27,2,1,"24B5099f")] {
             AppInfo.osBuild = build
             ProcessInfo.processInfo.operatingSystemVersion = OperatingSystemVersion(majorVersion:major,minorVersion:minor,patchVersion:patch)
             WorseQueryHelper.invalidateActiveAppGroup()

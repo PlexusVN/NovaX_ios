@@ -30,10 +30,13 @@ enum AppInfo {
             precondition(Policy.storageMode(major:27, minor:2, patch:0, build:build) == .direct)
             precondition(Policy.pairingMode(major:27, minor:2, patch:0, build:build) == .none)
         }
-        for build in ["", "unsupported-build", "24B5099f", "24A1"] {
-            precondition(!Policy.requiresWorseQueryPreparation(major:27,minor:2,patch:0,build:build))
-            precondition(!Policy.supportsWorseQuery(major:27, minor:2, patch:0, build:build))
-            precondition(Policy.storageMode(major:27, minor:2, patch:0, build:build) == .unsupported)
+        for build in ["", "unknown-build", "24B5099f", "24A1"] {
+            precondition(Policy.requiresWorseQueryPreparation(major:27,minor:2,patch:0,build:build))
+            precondition(Policy.supportsWorseQuery(major:27,minor:2,patch:0,build:build))
+            precondition(Policy.accessProvider(major:27,minor:2,patch:0,build:build) == .worseQuery,
+                         "AirLift beta restriction leaked into worse_query routing")
+            precondition(Policy.storageMode(major:27,minor:2,patch:1,build:build) == .unsupported)
+            precondition(Policy.storageMode(major:27,minor:3,patch:0,build:build) == .unsupported)
         }
         var comparisons = 0
         let builds = ["", "24A5355q", "24A5370h", "24A5380h", "24A5390f", "24A435", "24B5084k", "24B5089g", "24B5099f"]
@@ -85,6 +88,6 @@ enum AppInfo {
         precondition(Policy.pairingMode(major:26, minor:8, patch:0, build:"") == .importedFile)
         precondition(Policy.storageMode(major:18, minor:7, patch:1, build:"") == .direct)
         precondition(Policy.pairingMode(major:18, minor:7, patch:2, build:"") == .importedFile)
-        print("[PASS] Strict 3105 / worse_query / imported-pairing AirLift routing, patched 27.2 builds blocked")
+        print("[PASS] Strict 3105 / worse_query / imported-pairing AirLift routing, worse_query 27.2 is independent of the AirLift beta allowlist; 27.2.1+ blocked")
     }
 }

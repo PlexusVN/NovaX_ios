@@ -13,8 +13,8 @@ Chính sách duy nhất nằm trong `ThreeOneOSFive/helpers/KernelExploit.swift`
 | iOS 26.7.3+ thuộc 26.x | AirLift qua bản port AirCard/AirliftFFI | Không | File pairing nhập từ máy tính + tunnel loopback |
 | iOS 27.0.0 beta 1–4, đúng build 24A5355q / 24A5370h / 24A5380h / 24A5390f | 3105 theo allowlist upstream | Không | Không |
 | Các bản 27.0/27.1 còn lại | worse_query | Bắt buộc | Không |
-| iOS 27.2.0 beta 1/2, đúng build 24B5084k / 24B5089g | worse_query | Bắt buộc | Không |
-| 27.2 build khác hoặc thiếu build; 27.3+; OS major không được liệt kê | Không hỗ trợ | Không | Không được tự khởi động |
+| iOS 27.2.0, theo README worse_query; không dùng allowlist beta của AirLift | worse_query | Bắt buộc | Không |
+| 27.2.1+; 27.3+; OS major không được liệt kê | Không hỗ trợ | Không | Không được tự khởi động |
 
 `3105-main` chỉ liệt kê kernel trên 17.0–17.7.x và 18.0–18.7.1. Không dùng điều kiện “OS hỗ trợ 3105” để suy ra “kernel hỗ trợ” cho 26.x hoặc 27 beta. iOS 16 là nhánh tương thích của Astra; không được mô tả là đã được upstream 3105 xác nhận.
 
@@ -25,7 +25,7 @@ Chính sách duy nhất nằm trong `ThreeOneOSFive/helpers/KernelExploit.swift`
 - Tuyến worse_query chỉ lấy root đã xác minh trong màn hình chuẩn bị; giữ nguyên native query class/part/flags, chọn App Group có thể ghi, token theo UUID và vòng đời token trong giao dịch.
 - Thiếu App Group hoặc chuẩn bị thất bại phải báo lỗi; không cho bỏ qua màn hình bằng nút AirLift dự phòng và không rơi xuống ghi tệp thô.
 - Tuyến AirLift cần pairing, transport đã xác thực và canary trước ghi. Native core không thay đổi. Các thao tác đọc/restore chưa được FFI hỗ trợ tiếp tục báo không hỗ trợ.
-- Không tắt/bỏ kiểm tra build của iOS 27.2 beta 3+ để thử một exploit khác.
+- Tài liệu AirLift nói 27.2 beta 3+ đã vá AirTraffic; README worse_query nói hỗ trợ đến 27.2. Đây là hai exploit khác nhau: không lấy giới hạn beta của AirLift để chặn worse_query. Không suy ra hỗ trợ 27.2.1 hoặc 27.3 từ dòng tài liệu 27.2.
 
 ## Đối chiếu nguồn và giới hạn xác nhận
 

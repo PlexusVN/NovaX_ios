@@ -65,7 +65,7 @@ func log(_ text: String) {}
             precondition(Calls.events == ["MHA-C2","LS"], "LS fallback did not stay behind MHA-C2")
         }
         for v in [(26,6,2,""),(26,7,1,""),(26,7,2,""),(27,0,1,""),(27,1,0,""),
-                  (27,2,0,"24B5084k"),(27,2,0,"24B5089g")] {
+                  (27,2,0,"24B5084k"),(27,2,0,"24B5089g"),(27,2,0,"24B5099f"),(27,2,0,"")] {
             AppInfo.versionTuple = (v.0,v.1,v.2); AppInfo.osBuild = v.3
             Calls.reset()
             do { _ = try ContainerStore.resolveAppContainerForPatch(bundleID:id); preconditionFailure("preparation bypassed") }
@@ -77,7 +77,7 @@ func log(_ text: String) {}
             precondition(ContainerStore.grantContainerAccess(prepared) == 88 && Calls.events.last == "worse_query")
         }
         for v in [(18,7,2,""),(18,11,0,""),(26,7,3,""),(26,8,0,""),(17,8,0,""),
-                  (25,0,0,""),(27,2,0,"24B5099f"),(27,2,0,"")] {
+                  (25,0,0,""),(27,2,1,"24B5099f"),(27,3,0,"")] {
             AppInfo.versionTuple = (v.0,v.1,v.2); AppInfo.osBuild = v.3
             Calls.reset()
             precondition(ContainerStore.resolveAppContainerPath(bundleID:id) == nil)
