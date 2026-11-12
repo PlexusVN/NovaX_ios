@@ -149,6 +149,7 @@ final class RestartFlag: @unchecked Sendable {
         precondition(preparation.state == .failed && !preparation.didContinue)
         precondition(DiscoveryFixture.calls == 1 && DiscoveryFixture.ranges.count == 1,
                      "global Caches failure retried on every unrelated container")
+        precondition(DiscoveryFixture.progress.snapshot.candidates == 1 && DiscoveryFixture.progress.snapshot.grants == 0)
         precondition(DiscoveryFixture.progress.shareText.contains("stage=create_Caches_symlink"))
 
         preparation.reset(); DiscoveryFixture.reset(); DiscoveryFixture.reject = true

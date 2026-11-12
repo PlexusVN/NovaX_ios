@@ -181,7 +181,7 @@ enum ContainerStore {
                 let clean = ContainerDiscoveryMerger.canonicalPath(path)
                 guard isApplicationContainerPath(clean), seen.insert(clean).inserted else { return }
                 candidates += 1
-                ContainerScanProgress.shared.checkpoint(sessionID, message: "worse_query: cấp token cho \(clean)")
+                ContainerScanProgress.shared.checkpoint(sessionID, message: "worse_query: cấp token cho \(clean)", candidates: candidates, grants: grants)
                 let handle: Int64
                 do { handle = try WorseQueryHelper.acquireAccess(for: clean) }
                 catch {
@@ -191,7 +191,7 @@ enum ContainerStore {
                 }
                 defer { WorseQueryHelper.releaseAccess(handle: handle) }
                 grants += 1
-                ContainerScanProgress.shared.checkpoint(sessionID, message: "Token hợp lệ; đọc định danh container…")
+                ContainerScanProgress.shared.checkpoint(sessionID, message: "Token hợp lệ; đọc định danh container…", candidates: candidates, grants: grants)
                 var buffer = [CChar](repeating: 0, count: 512)
                 let length = getxattr(clean, "com.apple.containermanager.identifier", &buffer, 511, 0, 0)
                 var identifier: String?

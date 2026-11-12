@@ -99,9 +99,11 @@ final class ContainerScanProgress: ObservableObject {
 
     /// Persist the last native operation BEFORE invoking it. If the OS terminates
     /// this process, the next preparation screen can show where it stopped.
-    func checkpoint(_ id: UUID, message: String) {
+    func checkpoint(_ id: UUID, message: String, candidates: Int? = nil, grants: Int? = nil) {
         let update = {
             guard self.snapshot.id == id, self.snapshot.phase == .scanning else { return }
+            if let candidates { self.snapshot.candidates = candidates }
+            if let grants { self.snapshot.grants = grants }
             self.append(message)
             self.saveHistory(force: true)
         }
