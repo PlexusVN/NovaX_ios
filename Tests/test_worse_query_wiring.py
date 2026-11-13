@@ -71,7 +71,7 @@ class WorseQueryWiringTests(unittest.TestCase):
     def test_feature_patch_restore_supported_with_worse_query(self):
         patch_path = ROOT / 'ThreeOneOSFive' / 'helpers' / 'FeaturePatchService.swift'
         content = patch_path.read_text(encoding='utf-8')
-        self.assertIn('let isAirLift = StorageEngineCoordinator.shared.isAirLiftActive ||', content)
+        self.assertIn('PatchEngineApplicationStore.requireDirectRestore', content)
         self.assertIn('WorseQueryHelper.removeItem', content)
 
     def test_exploit_support_policy_covers_worse_query(self):

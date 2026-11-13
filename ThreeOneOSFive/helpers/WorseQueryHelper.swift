@@ -49,7 +49,7 @@ public enum WorseQueryError: LocalizedError {
         case .extensionConsumptionFailed:
             return "worse_query nhận được token nhưng hệ thống không cho sử dụng quyền truy cập."
         case .containerDiscoveryFailed(let bundleID):
-            return "Chưa tìm được thư mục dữ liệu của ứng dụng \(bundleID) bằng worse_query. Hãy mở ứng dụng đích một lần rồi thử lại (WQ02)."
+            return "Chưa xác minh được thư mục dữ liệu của \(bundleID) trong phạm vi dò hiện tại (WQ02). Xem nhật ký đọc định danh; kết quả này không chứng minh ứng dụng chưa được cài."
         case .discoveryInProgress:
             return "Astra đang dò thư mục dữ liệu cho một thao tác khác. Hãy chờ thao tác đó hoàn tất rồi thử lại."
         case .preparationRequired:
@@ -230,6 +230,8 @@ public final class WorseQueryHelper {
     }
 
     static func enumerationUpperBound(probeInode: UInt64) throws -> UInt64 {
+        // A probe is an estimate for this scan window, not an APFS-wide maximum.
+        // Keep it finite; never expand indefinitely after an identity/read error.
         let (maximum, overflow) = probeInode.addingReportingOverflow(2_048)
         guard probeInode > 0, !overflow else {
             throw NSError(domain: NSPOSIXErrorDomain, code: Int(EOVERFLOW))

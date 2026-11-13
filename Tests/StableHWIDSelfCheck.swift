@@ -89,11 +89,80 @@ final class HWIDMemory: @unchecked Sendable {
             try expect(primary.writes == 0 && mirror.writes == 0, "conflict overwrote identity evidence")
         }
         for corruptPrimary in [false,true] {
-            let primary = HWIDMemory(corruptPrimary ? "corrupted" : nil)
+            let primary = HWIDMemory(corruptPrimary ? "corrupted" : original)
             let mirror = HWIDMemory(corruptPrimary ? original : "corrupted")
+            let primaryBytes = primary.data, mirrorBytes = mirror.data
+            try expect(try StableDeviceHWID.resolve(storage:primary.storage,vendorID:changed,mirror:mirror.storage) == original, "a malformed copy hid the surviving registered UUID")
+            try expect(primary.data == primaryBytes && mirror.data == mirrorBytes && primary.writes == 0 && mirror.writes == 0, "fallback overwrote malformed identity evidence")
+        }
+        do {
+            let primary = HWIDMemory(original), mirror = HWIDMemory(original.lowercased())
+            try expect(try StableDeviceHWID.resolve(storage:primary.storage,vendorID:changed,mirror:mirror.storage) == original, "same UUID letter case created false HW05 conflict")
+            try expect(primary.writes == 0 && mirror.data == Data(original.utf8), "case equivalence changed the registered primary representation")
+        }
+        do {
+            let primary = HWIDMemory(original.lowercased()), mirror = HWIDMemory(original)
+            try expect(try StableDeviceHWID.resolve(storage:primary.storage,vendorID:changed,mirror:mirror.storage) == original.lowercased(), "case repair uppercased a registered lowercase HWID")
+            try expect(primary.writes == 0 && mirror.data == primary.data, "primary casing was not authoritative")
+        }
+        for corruptPrimary in [false,true] {
+            let primary = HWIDMemory(corruptPrimary ? "corrupted" : nil)
+            let mirror = HWIDMemory("corrupted")
             do { _ = try StableDeviceHWID.resolve(storage:primary.storage,vendorID:changed,mirror:mirror.storage); throw CheckError.failed("corrupt saved identity was replaced") }
             catch DeviceIdentityError.invalidIdentity {}
             try expect(primary.writes == 0 && mirror.writes == 0, "corrupt data was overwritten")
+        }
+        do {
+            let primary = HWIDMemory("corrupted")
+            do { _ = try StableDeviceHWID.resolve(storage:primary.storage,vendorID:changed); throw CheckError.failed("single corrupt primary was replaced with IDFV") }
+            catch DeviceIdentityError.invalidIdentity {}
+            try expect(primary.data == Data("corrupted".utf8) && primary.writes == 0, "single corrupt primary evidence was changed")
+        }
+        do {
+            let primary = HWIDMemory(original), mirror = HWIDMemory(original.lowercased())
+            mirror.writeError = CheckError.diskUnavailable
+            try expect(try StableDeviceHWID.resolve(storage:primary.storage,vendorID:changed,mirror:mirror.storage) == original, "optional mirror synchronization failure blocked registered identity")
+            try expect(primary.writes == 0 && mirror.data == Data(original.lowercased().utf8), "failed case synchronization changed durable evidence")
+        }
+        for wrapped in [" \n\t" + original + "\r\n", "\u{feff}" + original, " \u{feff}" + original + " "] {
+            let primary = HWIDMemory(wrapped), mirror = HWIDMemory(original)
+            let before = primary.data
+            try expect(try StableDeviceHWID.resolve(storage:primary.storage,vendorID:changed,mirror:mirror.storage) == original, "UUID edge formatting blocked the saved identity")
+            try expect(primary.data == before && primary.writes == 0, "format cleanup destroyed saved bytes")
+            let only = HWIDMemory(wrapped)
+            try expect(try StableDeviceHWID.resolve(storage:only.storage,vendorID:changed) == original, "recoverable UUID formatting fell back to new IDFV")
+        }
+        do {
+            let primary = HWIDMemory("\u{feff}" + original.lowercased()), mirror = HWIDMemory(original)
+            try expect(try StableDeviceHWID.resolve(storage:primary.storage,vendorID:changed,mirror:mirror.storage) == original.lowercased(), "BOM cleanup changed the registered primary letter case")
+            try expect(primary.writes == 0 && mirror.data == Data(original.lowercased().utf8), "case-equivalent mirror did not retain exact primary representation")
+        }
+        for malformed in ["{" + original + "}", original.replacingOccurrences(of:"-",with:""),
+                          "urn:uuid:" + original, original + "\0", "\u{feff}\u{feff}" + original] {
+            let primary = HWIDMemory(malformed), mirror = HWIDMemory()
+            do { _ = try StableDeviceHWID.resolve(storage:primary.storage,vendorID:changed,mirror:mirror.storage); throw CheckError.failed("unsupported UUID representation accepted") }
+            catch DeviceIdentityError.invalidIdentity {}
+            try expect(primary.writes == 0 && mirror.writes == 0, "unsupported representation allocated a new HWID")
+        }
+        do {
+            let primary = HWIDMemory(original), mirror = HWIDMemory()
+            mirror.readError = CheckError.diskUnavailable
+            try expect(try StableDeviceHWID.resolve(storage:primary.storage,vendorID:changed,mirror:mirror.storage) == original, "unreadable optional mirror blocked a valid Keychain identity")
+            try expect(primary.writes == 0 && mirror.writes == 0, "unreadable mirror was overwritten")
+        }
+        do {
+            let primary = HWIDMemory(), mirror = HWIDMemory()
+            primary.readError = DeviceIdentityError.keychain(-25308); mirror.readError = CheckError.diskUnavailable
+            do { _ = try StableDeviceHWID.resolve(storage:primary.storage,vendorID:changed,mirror:mirror.storage); throw CheckError.failed("read outages invented an IDFV identity") }
+            catch DeviceIdentityError.keychain(-25308) {}
+            try expect(primary.writes == 0 && mirror.writes == 0, "read outages mutated identity")
+        }
+        for malformedPrimary in [true,false] {
+            let primary = HWIDMemory(malformedPrimary ? nil : original), mirror = HWIDMemory(malformedPrimary ? original : nil)
+            if malformedPrimary { primary.data = Data([0xff,0xfe,0xfd]) } else { mirror.data = Data([0xff,0xfe,0xfd]) }
+            let beforePrimary = primary.data, beforeMirror = mirror.data
+            try expect(try StableDeviceHWID.resolve(storage:primary.storage,vendorID:changed,mirror:mirror.storage) == original, "non-UTF8 copy hid intact identity")
+            try expect(primary.data == beforePrimary && mirror.data == beforeMirror, "non-UTF8 evidence was overwritten")
         }
         do {
             let primary = HWIDMemory(), mirror = HWIDMemory()
@@ -131,6 +200,8 @@ final class HWIDMemory: @unchecked Sendable {
         try expect(StableDeviceHWID.isRetryable(DeviceIdentityError.keychain(-25308)), "temporary Keychain failure is not retried")
         try expect(!StableDeviceHWID.isRetryable(DeviceIdentityError.keychain(-34018)), "permanent signing error retried forever")
         try expect(!StableDeviceHWID.isRetryable(DeviceIdentityError.invalidIdentity), "corrupt identity retried forever")
+        try expect(StableDeviceHWID.failureMessage(DeviceIdentityError.invalidIdentity,protectedDataAvailable:true).contains("HW05-DATA"), "missing valid backup diagnostics remain ambiguous")
+        try expect(StableDeviceHWID.failureMessage(DeviceIdentityError.ambiguousIdentity,protectedDataAvailable:true).contains("HW05-CONFLICT"), "true UUID conflict diagnostics were not distinguished")
 
         DeviceUtils.operation = { throw DeviceIdentityError.identityMissing }
         let login = HWIDLoginHarness()

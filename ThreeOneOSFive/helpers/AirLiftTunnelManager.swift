@@ -18,7 +18,7 @@ final class AirLiftTunnelManager: ObservableObject {
     enum TunnelStatus: String {
         case disconnected = "LocalDevVPN chưa sẵn sàng"
         case connecting = "Đang mở LocalDevVPN..."
-        case connected = "LocalDevVPN hoạt động"
+        case connected = "Đã nhận diện route LocalDevVPN"
         case disconnecting = "Đang cập nhật..."
         case checking = "Đang kiểm tra LocalDevVPN..."
         case invalid = "Chưa cài LocalDevVPN"
@@ -30,7 +30,7 @@ final class AirLiftTunnelManager: ObservableObject {
         case unavailable = "Chưa kiểm tra dịch vụ"
         case checking = "Đang kiểm tra RSD/lockdownd qua 10.7.0.1..."
         case routeReady = "Đã nhận diện route LocalDevVPN; AirLift sẽ xác thực RSD"
-        case reachable = "Dịch vụ RSD/lockdownd đã sẵn sàng"
+        case reachable = "Cổng RSD/lockdownd phản hồi; chưa xác thực phiên"
         case unreachable = "Không nhận được phản hồi RSD/lockdownd"
     }
 
@@ -45,13 +45,17 @@ final class AirLiftTunnelManager: ObservableObject {
     /// The transport is operational as soon as iOS actually routes the
     /// AirLift peer through the external LocalDevVPN tunnel.
     var isServiceReachable: Bool { serviceStatus == .reachable }
-    var isOperational: Bool { isTunnelRouteDetected }
+    var isOperational: Bool {
+        ExploitSupportPolicy.currentAccessProvider == .airLift && isTunnelRouteDetected
+    }
 
     private let peerAddress = "10.7.0.1"
     private let fallbackPeerAddress = "172.16.0.1"
     private let lockdownPort: UInt16 = 62078
     private let rsdPort: UInt16 = 49152
     private var cancellables = Set<AnyCancellable>()
+    private var probeGeneration: UInt64 = 0
+    private var pendingProbe: Task<TunnelProbeResult, Never>?
 
     private init() {
         guard ExploitSupportPolicy.currentStorageMode == .airLift else {
@@ -76,6 +80,7 @@ final class AirLiftTunnelManager: ObservableObject {
     }
 
     func openLocalDevVPN() {
+        guard ExploitSupportPolicy.currentAccessProvider == .airLift else { return }
         guard let url = URL(string: "localdevvpn://") else { return }
         guard UIApplication.shared.canOpenURL(url) else {
             status = .invalid
@@ -87,12 +92,16 @@ final class AirLiftTunnelManager: ObservableObject {
     }
 
     func verifyLoopbackService() async {
+        guard ExploitSupportPolicy.currentAccessProvider == .airLift, !Task.isCancelled else { return }
+        pendingProbe?.cancel()
+        probeGeneration &+= 1
+        let generation = probeGeneration
         status = .checking
         serviceStatus = .checking
         lastErrorMessage = nil
 
         let candidates = [peerAddress, fallbackPeerAddress]
-        let result = await Task.detached(priority: .utility) {
+        let probe = Task.detached(priority: .utility) {
             var winningHost = candidates[0]
             var routeFound = false
             var portResponsive = false
@@ -100,6 +109,7 @@ final class AirLiftTunnelManager: ObservableObject {
             var statusMessage = ""
 
             for host in candidates {
+                guard !Task.isCancelled, ExploitSupportPolicy.currentAccessProvider == .airLift else { break }
                 // An unrelated utun or a refused TCP connection does not prove
                 // this peer is routed through the loopback VPN.
                 guard Self.hasTunnelRoute(to: host) else { continue }
@@ -132,7 +142,15 @@ final class AirLiftTunnelManager: ObservableObject {
                 activeHost: winningHost,
                 message: statusMessage
             )
-        }.value
+        }
+        pendingProbe = probe
+        let result = await withTaskCancellationHandler(operation: { await probe.value }, onCancel: { probe.cancel() })
+        guard generation == probeGeneration else { return }
+        pendingProbe = nil
+        guard !Task.isCancelled, ExploitSupportPolicy.currentAccessProvider == .airLift else {
+            cancelPendingChecks()
+            return
+        }
 
         isTunnelRouteDetected = result.routeDetected
         isPortResponsive = result.portResponsive
@@ -155,6 +173,17 @@ final class AirLiftTunnelManager: ObservableObject {
         }
     }
 
+    /// Cancels diagnostics without changing the persisted pairing record.
+    func cancelPendingChecks() {
+        probeGeneration &+= 1
+        pendingProbe?.cancel(); pendingProbe = nil
+        isTunnelRouteDetected = false
+        isPortResponsive = false
+        isEnabled = false
+        status = .disconnected
+        serviceStatus = .unavailable
+    }
+
     private struct LockdownProbeResult: Sendable {
         let ok: Bool
         let message: String
@@ -170,6 +199,7 @@ final class AirLiftTunnelManager: ObservableObject {
 
     /// Fast non-blocking TCP socket probe to verify if the loopback tunnel actively routes packets.
     nonisolated static func probeTcpPort(host: String, port: UInt16, timeoutSec: Double = 1.2) -> (reachable: Bool, connected: Bool) {
+        guard ExploitSupportPolicy.currentAccessProvider == .airLift else { return (false, false) }
         let fd = Darwin.socket(AF_INET, SOCK_STREAM, 0)
         guard fd >= 0 else { return (false, false) }
         defer { Darwin.close(fd) }
@@ -256,6 +286,7 @@ final class AirLiftTunnelManager: ObservableObject {
     /// should be passed; cellular interfaces (pdp_ip) must NEVER be passed as they
     /// drop inbound loopback connections and cause 12s socket timeouts.
     nonisolated static func remoteXPCHostCandidates() -> [String] {
+        guard ExploitSupportPolicy.currentAccessProvider == .airLift else { return [] }
         var interfaces: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&interfaces) == 0, let first = interfaces else { return [] }
         defer { freeifaddrs(interfaces) }

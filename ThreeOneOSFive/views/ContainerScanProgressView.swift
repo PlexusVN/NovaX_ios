@@ -43,9 +43,11 @@ struct ContainerScanProgressView: View {
                     HStack {
                         Text("Phạm vi đã dò: \(Int(state.fraction * 100))%")
                         Spacer()
-                        Text("\(state.candidates) thư mục · \(state.grants) truy cập được")
+                        Text("\(state.candidates) thư mục · \(state.grants) handle")
                     }.font(.caption).foregroundColor(AppTheme.gamingTextSecondary)
                     Text("Tỷ lệ theo phạm vi tìm kiếm; có thể kết thúc sớm khi tìm thấy ứng dụng.")
+                        .font(.caption2).foregroundColor(AppTheme.gamingTextSecondary)
+                    Text("Đọc được: \(state.readable ?? 0) · Định danh hợp lệ: \(state.identified ?? 0) · Đúng mục tiêu: \(state.matched ?? 0)")
                         .font(.caption2).foregroundColor(AppTheme.gamingTextSecondary)
                 }
                 HStack {
@@ -105,10 +107,10 @@ struct ContainerScanProgressView: View {
 
     private var title: String {
         if isPreparation {
-            if preparationReady { return "Đã chuẩn bị xong iOS 27" }
-            if isPreparing { return progress.cancelPending ? "Đang dừng quét" : "Chuẩn bị quyền truy cập iOS 27" }
+            if preparationReady { return "Đã chuẩn bị xong iOS \(AppInfo.versionTuple.major)" }
+            if isPreparing { return progress.cancelPending ? "Đang dừng quét" : "Chuẩn bị quyền truy cập iOS \(AppInfo.versionTuple.major)" }
             if preparationError != nil { return "Chưa chuẩn bị xong" }
-            return "Chuẩn bị quyền truy cập iOS 27"
+            return "Chuẩn bị quyền truy cập iOS \(AppInfo.versionTuple.major)"
         }
         switch state.phase {
         case .idle: return "Nhật ký quét thư mục"

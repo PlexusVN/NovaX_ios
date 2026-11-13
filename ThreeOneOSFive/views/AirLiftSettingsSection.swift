@@ -21,6 +21,14 @@ struct AirLiftDashboardCard: View {
     @State private var isComprehensiveChecking = false
     
     var body: some View {
+        Group {
+            if ExploitSupportPolicy.currentAccessProvider == .airLift {
+                airLiftContent
+            }
+        }
+    }
+
+    private var airLiftContent: some View {
         VStack(alignment: .leading, spacing: 14) {
             dashboardHeader
             transportStatus
@@ -123,7 +131,7 @@ struct AirLiftDashboardCard: View {
         HStack(spacing: 6) {
             Image(systemName: tunnelManager.isOperational ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                 .foregroundColor(tunnelManager.isOperational ? AppTheme.statusSuccess : AppTheme.statusError)
-            Text(tunnelManager.isOperational ? "Đường truyền LocalDevVPN đã sẵn sàng" : tunnelManager.serviceStatus.rawValue)
+            Text(tunnelManager.isOperational ? "Đã phát hiện route LocalDevVPN" : tunnelManager.serviceStatus.rawValue)
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
                 .foregroundColor(tunnelManager.isOperational ? AppTheme.statusSuccess : AppTheme.statusError)
             Spacer()
@@ -459,20 +467,16 @@ struct AirLiftDashboardCard: View {
     }
 
     private var storageEngineToggle: some View {
-        Toggle(isOn: $storageCoordinator.useAirLiftForAll) {
+        HStack(spacing: 12) {
+            Image(systemName: "externaldrive.connected.to.line.below")
             VStack(alignment: .leading, spacing: 2) {
-                Text(storageCoordinator.isAirLiftActive
-                    ? "AirLift bắt buộc theo phiên bản iOS"
-                    : "Ghi trực tiếp · Không cần AirLift")
+                Text("AirLift · Theo phiên bản iOS")
                     .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundColor(AppTheme.ink)
-                Text("RPPairing + RSD/AFC + AirTraffic; bắt buộc canary read-back")
+                Text("Pairing, transport và canary được kiểm tra trước khi ghi")
                     .font(.system(size: 10))
                     .foregroundColor(AppTheme.grey500)
             }
         }
-        .tint(AppTheme.ink)
-        .disabled(true)
     }
 
     private var isAirLiftFullyReady: Bool {
@@ -585,7 +589,7 @@ struct AirLiftDashboardCard: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text(isAirLiftFullyReady ? "AIRLIFT SẴN SÀNG" : "TRẠNG THÁI GHI FILE AIRLIFT")
+                        Text(isAirLiftFullyReady ? "KẾT NỐI AIRLIFT ĐÃ XÁC THỰC" : "TRẠNG THÁI GHI FILE AIRLIFT")
                             .font(.system(size: 12, weight: .black, design: .rounded))
                             .foregroundColor(isAirLiftFullyReady ? Color(hex: 0x065F46) : AppTheme.ink)
 
@@ -700,7 +704,7 @@ struct AirLiftDashboardCard: View {
 
     private var ios27ReadinessSummaryText: String {
         if isAirLiftFullyReady {
-            return "VPN + Ghép đôi + AirTraffic đã xác thực. Canary sẽ được kiểm tra lại trước mỗi lần ghi."
+            return "Kết nối và pairing đã được xác thực. Canary và quyền ghi đích vẫn phải được kiểm tra trước mỗi lần áp dụng."
         }
         if isComprehensiveChecking {
             return "Đang tự động kiểm tra VPN, Ghép đôi và AirLift..."
@@ -739,6 +743,7 @@ struct AirLiftDashboardCard: View {
     }
 
     private func runComprehensiveCheck() async {
+        guard ExploitSupportPolicy.currentAccessProvider == .airLift else { return }
         isComprehensiveChecking = true
         defer { isComprehensiveChecking = false }
         await tunnelManager.verifyLoopbackService()
@@ -780,6 +785,14 @@ struct AirLiftSettingsSection: View {
     @State private var isComprehensiveChecking = false
     
     var body: some View {
+        Group {
+            if ExploitSupportPolicy.currentAccessProvider == .airLift {
+                airLiftContent
+            }
+        }
+    }
+
+    private var airLiftContent: some View {
         Section {
             // 1. External LocalDevVPN
             Button {
@@ -901,22 +914,7 @@ struct AirLiftSettingsSection: View {
                 }
             }
             
-            // 6. Sử dụng AirLift cho toàn bộ
-            Toggle(isOn: $storageCoordinator.useAirLiftForAll) {
-                HStack(spacing: 12) {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.system(size: 18))
-                        .foregroundStyle(AppTheme.ink)
-                        .frame(width: 24)
-                    
-                    Text(storageCoordinator.isAirLiftActive
-                        ? "AirLift bắt buộc theo phiên bản iOS"
-                        : "Ghi trực tiếp · Không cần AirLift")
-                        .foregroundStyle(.primary)
-                }
-            }
-            .tint(AppTheme.ink)
-            .disabled(true)
+            LabeledContent("Cơ chế truy cập", value: "AirLift · Theo phiên bản iOS")
 
             // 7. Trạng thái AirTraffic thực tế
             realAirLiftStatusFormRow
@@ -1021,7 +1019,7 @@ struct AirLiftSettingsSection: View {
                     .font(.system(size: 16, weight: .bold))
                     .foregroundColor(isAirLiftFullyReady ? Color(hex: 0x10B981) : (storageCoordinator.isAirLiftActive ? AppTheme.statusWarning : AppTheme.grey400))
 
-                Text(isAirLiftFullyReady ? "AIRLIFT SẴN SÀNG ĐỂ INJECT" : "TRẠNG THÁI GHI FILE AIRLIFT")
+                Text(isAirLiftFullyReady ? "KẾT NỐI AIRLIFT ĐÃ XÁC THỰC" : "TRẠNG THÁI GHI FILE AIRLIFT")
                     .font(.system(size: 12, weight: .black, design: .rounded))
                     .foregroundColor(isAirLiftFullyReady ? Color(hex: 0x065F46) : AppTheme.ink)
 
@@ -1087,7 +1085,7 @@ struct AirLiftSettingsSection: View {
 
     private var ios27ReadinessSummaryText: String {
         if isAirLiftFullyReady {
-            return "VPN + Ghép đôi + AirTraffic đã xác thực. Canary sẽ được kiểm tra lại trước mỗi lần ghi."
+            return "Kết nối và pairing đã được xác thực. Canary và quyền ghi đích vẫn phải được kiểm tra trước mỗi lần áp dụng."
         }
         if isComprehensiveChecking {
             return "Đang tự động kiểm tra VPN, Ghép đôi và AirLift..."
@@ -1126,6 +1124,7 @@ struct AirLiftSettingsSection: View {
     }
 
     private func runComprehensiveCheck() async {
+        guard ExploitSupportPolicy.currentAccessProvider == .airLift else { return }
         isComprehensiveChecking = true
         defer { isComprehensiveChecking = false }
         await tunnelManager.verifyLoopbackService()
@@ -1230,7 +1229,7 @@ final class AirLiftGatekeeperManager: ObservableObject {
         AirLiftTunnelManager.shared.isOperational &&
         AirLiftPairingManager.shared.status.isPaired &&
         AirLiftPairingManager.shared.status != .revoked &&
-        (AirTrafficProtocolClient.shared.engineHealthState.isHealthy || AirLiftPairingManager.shared.hasUsablePersistedPairingRecord)
+        AirTrafficProtocolClient.shared.engineHealthState.isHealthy
     }
 
     var canBypassGatekeeper: Bool {
@@ -1329,7 +1328,7 @@ struct IOS27PairingSetupView: View {
 
     var isStep1Done: Bool { tunnelManager.isOperational }
     var isStep2Done: Bool { pairingManager.status.isPaired && pairingManager.status != .revoked }
-    var isStep3Done: Bool { airTrafficClient.engineHealthState.isHealthy || pairingManager.status == .verified }
+    var isStep3Done: Bool { airTrafficClient.engineHealthState.isHealthy }
     var isReadyToProceed: Bool {
         isStep1Done && isStep2Done && isStep3Done && !isComprehensiveChecking
     }
@@ -1844,6 +1843,7 @@ struct IOS27PairingSetupView: View {
     }
 
     private func runComprehensiveCheck() async {
+        guard ExploitSupportPolicy.currentAccessProvider == .airLift else { return }
         guard !isComprehensiveChecking, !airTrafficClient.isBusy else { return }
         isComprehensiveChecking = true
         defer { isComprehensiveChecking = false }

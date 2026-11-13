@@ -52,8 +52,9 @@ class IntegrationContracts(unittest.TestCase):
     def test_missing_group_and_no_vpn_do_not_reach_native_timeout(self):
         client = (HELPERS / 'AirTrafficProtocolClient.swift').read_text(encoding='utf-8')
         guard = client.split('private func verifyTransportAndPairing()')[1].split('private func activePairingPath()')[0]
-        self.assertIn('currentAccessProvider == .airLift', guard)
-        self.assertLess(guard.index('currentAccessProvider == .airLift'), guard.index('verifyLoopbackService()'))
+        self.assertIn('try requireSelectedProvider()', guard)
+        provider_guard = client.split('private func requireSelectedProvider()')[1].split('private func verifyTransportAndPairing()')[0]
+        self.assertIn('currentAccessProvider == .airLift', provider_guard)
         tunnel = (HELPERS / 'AirLiftTunnelManager.swift').read_text(encoding='utf-8')
         self.assertNotIn('hasAnyTunnelInterface()', tunnel)
         self.assertIn('guard Self.hasTunnelRoute(to: host) else { continue }', tunnel)
@@ -64,7 +65,7 @@ class IntegrationContracts(unittest.TestCase):
         self.assertNotIn('500_000', helper)
         self.assertIn('enumerationUpperBound(probeInode: UInt64(st.st_ino))', helper)
         store = (HELPERS / 'ContainerStore.swift').read_text(encoding='utf-8')
-        scan = extract_function(store, 'private static func resolveContainerWithWorseQuery(')
+        scan = extract_function(store, 'static func prepareIOS27Access(')
         self.assertIn('while first <= maximum', scan)
         self.assertIn('first = last + 1', scan)
         self.assertIn('WorseQueryHelper.acquireAccess(for: clean)', scan)
@@ -91,8 +92,8 @@ class IntegrationContracts(unittest.TestCase):
         self.assertIn('.zIndex(2.5)', app)
         self.assertIn('.zIndex(100)', app)
         store = (HELPERS / 'ContainerStore.swift').read_text(encoding='utf-8')
-        scan = extract_function(store, 'private static func resolveContainerWithWorseQuery(')
-        self.assertIn('ContainerScanProgress.shared.track(bundleID: bundleID)', scan)
+        scan = extract_function(store, 'static func prepareIOS27Access(')
+        self.assertIn('ContainerScanProgress.shared.track(bundleID: targets.sorted().joined', scan)
         self.assertIn('ContainerScanProgress.shared.checkCancellation(sessionID)', scan)
         self.assertIn('scanned: last, total: maximum, candidates: candidates, grants: grants', scan)
 
@@ -116,7 +117,6 @@ class IntegrationContracts(unittest.TestCase):
     @unittest.skipUnless(sys.platform == 'darwin' and shutil.which('swiftc'), 'requires macOS Swift compiler')
     def test_actual_container_discovery_and_background_preparation(self):
         store = (HELPERS / 'ContainerStore.swift').read_text(encoding='utf-8')
-        transaction = (HELPERS / 'PatchTransaction.swift').read_text(encoding='utf-8')
         helper = (HELPERS / 'WorseQueryHelper.swift').read_text(encoding='utf-8')
         validator = (HELPERS / 'PatchProjectModels.swift').read_text(encoding='utf-8')
         merger = (HELPERS / 'ContainerBrowserLogic.swift').read_text(encoding='utf-8')
@@ -125,18 +125,18 @@ class IntegrationContracts(unittest.TestCase):
         code = helper.split('public final class WorseQueryHelper')[0] + '\nenum ExploitSupportPolicy {' + policy
         code += merger.split('enum ContainerAccessPolicy {')[0].replace('import Foundation', '')
         code += '\nenum PatchPathValidator {\n' + extract_function(validator, 'static func canonicalBundleIdentifier(') + '\n}\n'
-        code += '\nenum ContainerStore {\nstatic let discoveryLock = NSLock()\nstatic let appDataRoot = "/var/mobile/Containers/Data/Application"\n'
+        code += store.split('// BEGIN CONTAINER IDENTITY EVIDENCE', 1)[1].split('// END CONTAINER IDENTITY EVIDENCE', 1)[0]
+        code += '\nenum ContainerStore {\nstatic let discoveryLock = NSLock()\nprivate static var worseQueryResume: [String: (next: UInt64, maximum: UInt64)] = [:]\nstatic let appDataRoot = "/var/mobile/Containers/Data/Application"\n'
         for signature in ['static func prepareIOS27Access(', 'static func resolveAppContainerForPatch(',
-                          'static func isApplicationContainerPath(', 'static func metadataPath(']:
+                          'static func isApplicationContainerPath(', 'static func metadataPath(', 'static func readWorseQueryIdentity(']:
             code += extract_function(store, signature).replace('ContainerScanProgress.shared', 'DiscoveryFixture.progress') + '\n'
         code += 'static func resolveAppContainerPath(bundleID: String, allowMetadataScan: Bool = true, retainAccess: Bool = true) -> String? { DiscoveryFixture.legacyCalls += 1; return nil }\n}\n'
         code = code.replace('static func resolveAppContainerPath(bundleID:', 'static func resolveContainerWithWorseQuery(bundleID: String) throws -> String { preconditionFailure("legacy scan reached on iOS27") }\nstatic func resolveAppContainerPath(bundleID:')
-        code += 'enum DevicePatchService {\n' + extract_function(transaction, 'static func prepareContainers(bundleIDs:') + '\n}\n'
         with tempfile.TemporaryDirectory() as folder:
             source = Path(folder) / 'Discovery.swift'; source.write_text(code, encoding='utf-8')
             binary = Path(folder) / 'discovery-check'
             subprocess.run(['swiftc', str(source), str(HELPERS / 'ContainerScanProgress.swift'),
-                            str(HELPERS / 'IOS27ContainerPreparation.swift'), str(HELPERS / 'DirectPatchExecutor.swift'), str(ROOT / 'Tests/ContainerDiscoverySelfCheck.swift'),
+                            str(HELPERS / 'IOS27ContainerPreparation.swift'), str(ROOT / 'Tests/ContainerDiscoverySelfCheck.swift'),
                             '-o', str(binary)], check=True)
             subprocess.run([str(binary)], check=True)
 

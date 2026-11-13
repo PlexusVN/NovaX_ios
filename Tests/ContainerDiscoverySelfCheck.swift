@@ -13,12 +13,29 @@ enum ProcessInfo {
     static var processInfo = FixtureProcessInfo()
     struct FixtureProcessInfo { var operatingSystemVersion = OperatingSystemVersion(majorVersion: 27, minorVersion: 0, patchVersion: 1) }
 }
+final class FileManager {
+    static let `default` = FileManager()
+    var temporaryDirectory: URL { Foundation.FileManager.default.temporaryDirectory }
+    func contentsOfDirectory(atPath path: String) throws -> [String] {
+        precondition(DiscoveryFixture.active.values.contains(path), "directory read without this UUID grant")
+        if DiscoveryFixture.readDenied { throw NSError(domain: NSPOSIXErrorDomain, code: Int(EACCES)) }
+        return []
+    }
+    func urls(for directory: Foundation.FileManager.SearchPathDirectory, in domain: Foundation.FileManager.SearchPathDomainMask) -> [URL] {
+        Foundation.FileManager.default.urls(for: directory, in: domain)
+    }
+    func removeItem(at url: URL) throws { try Foundation.FileManager.default.removeItem(at: url) }
+    func createDirectory(at url: URL, withIntermediateDirectories value: Bool) throws {
+        try Foundation.FileManager.default.createDirectory(at: url, withIntermediateDirectories: value)
+    }
+}
+
 enum UserDefaults {
     static let suite = "astra-ios27-fixture-" + UUID().uuidString
     static let standard = Foundation.UserDefaults(suiteName: suite)!
 }
 enum DiscoveryFixture {
-    static let gameID = "com.dts.freefireth", maxID = "com.dts.freefiremax"
+    static let gameID = "com.fixture.first", maxID = "com.fixture.second"
     static let game = "/private/var/mobile/Containers/Data/Application/CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC"
     static let max = "/private/var/mobile/Containers/Data/Application/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB"
     static let other = "/private/var/mobile/Containers/Data/Application/AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA"
@@ -29,11 +46,12 @@ enum DiscoveryFixture {
     static var calls = 0, legacyCalls = 0
     static var reject = false, noMatch = false, setupError = false, missingGroup = false, cancel = false
     static var ranOnMain = false
-    static var preflightFailed = false, localLinkFailed = false
+    static var preflightFailed = false, localLinkFailed = false, readDenied = false
+    static var onlyFirst = false, duplicateFirst = false
     static func reset(clearCache: Bool = true) {
         ranges = []; active = [:]; next = 1; calls = 0; legacyCalls = 0
         reject = false; noMatch = false; setupError = false; missingGroup = false; cancel = false; ranOnMain = false
-        preflightFailed = false; localLinkFailed = false
+        preflightFailed = false; localLinkFailed = false; readDenied = false; onlyFirst = false; duplicateFirst = false
         if clearCache { UserDefaults.standard.removePersistentDomain(forName: UserDefaults.suite) }
         IOS27ContainerSession.reset()
     }
@@ -47,6 +65,7 @@ enum WorseQueryHelper {
         return "preflight passed"
     }
     static func invalidateActiveAppGroup() {}
+    static func resolveActiveAppGroup() -> String? { "group.fixture" }
     static let isOSSupported = true
     static var isAppGroupConfigured: Bool { !DiscoveryFixture.missingGroup }
     static let isAvailable = true
@@ -57,7 +76,8 @@ enum WorseQueryHelper {
         DiscoveryFixture.ranges.append((first, last))
         if DiscoveryFixture.cancel { DiscoveryFixture.progress.requestCancellation() }
         var paths: [String] = []
-        for (inode, path) in [(UInt64(20), DiscoveryFixture.other), (2_000_000, DiscoveryFixture.game), (2_050_000, DiscoveryFixture.max)] {
+        for (inode, path) in [(UInt64(20), DiscoveryFixture.other), (DiscoveryFixture.duplicateFirst ? 25 : 2_000_000, DiscoveryFixture.game), (2_050_000, DiscoveryFixture.max)] {
+            if DiscoveryFixture.onlyFirst && path == DiscoveryFixture.max { continue }
             if first <= inode && last >= inode { paths.append(path) }
         }
         return paths
@@ -75,10 +95,11 @@ enum WorseQueryHelper {
 }
 func getxattr(_ path: String, _ name: String, _ value: UnsafeMutableRawPointer?, _ size: Int, _ position: UInt32, _ options: Int32) -> Int {
     precondition(DiscoveryFixture.active.values.contains(path), "read identifier before consuming this UUID's token")
-    let identifier = DiscoveryFixture.noMatch ? "com.fixture.other" : path == DiscoveryFixture.game ? DiscoveryFixture.gameID : path == DiscoveryFixture.max ? DiscoveryFixture.maxID : "com.fixture.other"
+    let identifier = DiscoveryFixture.noMatch ? "com.fixture.other" : (DiscoveryFixture.duplicateFirst && path == DiscoveryFixture.other) ? DiscoveryFixture.gameID : path == DiscoveryFixture.game ? DiscoveryFixture.gameID : path == DiscoveryFixture.max ? DiscoveryFixture.maxID : "com.fixture.other"
     let bytes = Array(identifier.utf8) + [0]
-    precondition(bytes.count <= size)
-    bytes.withUnsafeBytes { value!.copyMemory(from: $0.baseAddress!, byteCount: bytes.count) }
+    if value == nil { return bytes.count - 1 }
+    precondition(bytes.count - 1 <= size)
+    Array(bytes.dropLast()).withUnsafeBytes { value!.copyMemory(from: $0.baseAddress!, byteCount: bytes.count - 1) }
     return bytes.count - 1
 }
 func log(_ line: String) {}
@@ -100,7 +121,8 @@ final class RestartFlag: @unchecked Sendable {
     }
     @MainActor static func checkVersion() async throws {
         defer { UserDefaults.standard.removePersistentDomain(forName: UserDefaults.suite); IOS27ContainerSession.reset() }
-        let preparation = IOS27ContainerPreparation(progress: DiscoveryFixture.progress, operation: { try ContainerStore.prepareIOS27Access(forceScan: $0) })
+        let preparation = IOS27ContainerPreparation(progress: DiscoveryFixture.progress, operation: { try ContainerStore.prepareIOS27Access(bundleIDs: $0, forceScan: $1) })
+        preparation.configureTargets(bundleIDs: [DiscoveryFixture.gameID, DiscoveryFixture.maxID])
         precondition(preparation.state == .idle && !preparation.didContinue)
         preparation.enterApplication()
         precondition(!preparation.didContinue, "gate allowed entry before preparation")
@@ -108,13 +130,17 @@ final class RestartFlag: @unchecked Sendable {
         await drain()
         precondition(preparation.state == .ready && !preparation.didContinue)
         precondition(!DiscoveryFixture.ranOnMain && DiscoveryFixture.legacyCalls == 0)
-        precondition(DiscoveryFixture.ranges.first!.0 == 1 && DiscoveryFixture.ranges.last!.1 >= 2_050_000)
+        precondition(DiscoveryFixture.ranges.first!.0 == 1 && DiscoveryFixture.ranges.last!.1 == 2_000_000)
         for index in 1..<DiscoveryFixture.ranges.count { precondition(DiscoveryFixture.ranges[index].0 == DiscoveryFixture.ranges[index - 1].1 + 1) }
         precondition(DiscoveryFixture.active.isEmpty)
         preparation.enterApplication()
         precondition(preparation.didContinue)
-        let roots = try await DevicePatchService.prepareContainers(bundleIDs: [DiscoveryFixture.gameID])
-        precondition(roots[DiscoveryFixture.gameID]?.path == DiscoveryFixture.game && DiscoveryFixture.legacyCalls == 0)
+        precondition(IOS27ContainerSession.path(for: DiscoveryFixture.maxID) == nil,
+                     "initial gate unnecessarily scanned for every optional app")
+        try await preparation.prepareAdditionalTargets(bundleIDs: [DiscoveryFixture.gameID, DiscoveryFixture.maxID])
+        precondition(IOS27ContainerSession.path(for: DiscoveryFixture.gameID) == DiscoveryFixture.game && DiscoveryFixture.legacyCalls == 0)
+        precondition(IOS27ContainerSession.path(for: DiscoveryFixture.maxID) == DiscoveryFixture.max,
+                     "cached first target short-circuited the installed second target")
 
         preparation.reset(); DiscoveryFixture.reset(clearCache: false)
         await preparation.prepareIfNeeded(force: true); await drain()
@@ -130,6 +156,19 @@ final class RestartFlag: @unchecked Sendable {
         await preparation.prepareIfNeeded(); await drain()
         precondition(preparation.state == .ready && !DiscoveryFixture.ranges.isEmpty && IOS27ContainerSession.path(for: DiscoveryFixture.maxID) != nil,
                      "explicit rescan could not discover a newly installed variant")
+
+        preparation.reset(); DiscoveryFixture.reset(); DiscoveryFixture.onlyFirst = true
+        await preparation.prepareIfNeeded(force: true); await drain()
+        precondition(preparation.state == .ready && IOS27ContainerSession.path(for: DiscoveryFixture.gameID) != nil,
+                     "one absent optional application blocked the installed target")
+        precondition(IOS27ContainerSession.path(for: DiscoveryFixture.maxID) == nil)
+        preparation.enterApplication()
+        do {
+            try await preparation.prepareAdditionalTargets(bundleIDs: [DiscoveryFixture.maxID])
+            preconditionFailure("missing requested application became prepared")
+        } catch WorseQueryError.containerDiscoveryFailed {}
+        precondition(preparation.didContinue && IOS27ContainerSession.path(for: DiscoveryFixture.gameID) != nil,
+                     "failed additional target erased the already verified session")
 
         preparation.reset(); DiscoveryFixture.reset(); DiscoveryFixture.missingGroup = true
         await preparation.prepareIfNeeded(force: true); await drain()
@@ -161,6 +200,20 @@ final class RestartFlag: @unchecked Sendable {
         await preparation.prepareIfNeeded(force: true); await drain()
         precondition(preparation.state == .failed && DiscoveryFixture.ranges.last!.1 == 2_100_000)
 
+        preparation.reset(); DiscoveryFixture.reset(); DiscoveryFixture.readDenied = true
+        await preparation.prepareIfNeeded(force: true); await drain()
+        precondition(preparation.state == .failed && DiscoveryFixture.progress.snapshot.grants == 3)
+        precondition(DiscoveryFixture.progress.snapshot.readable == 0 && DiscoveryFixture.progress.snapshot.identified == 3)
+        precondition(IOS27ContainerSession.path(for: DiscoveryFixture.gameID) == nil)
+
+        preparation.reset(); DiscoveryFixture.reset(); DiscoveryFixture.duplicateFirst = true
+        preparation.configureTargets(bundleIDs: [DiscoveryFixture.gameID])
+        await preparation.prepareIfNeeded(force: true); await drain()
+        precondition(preparation.state == .failed && IOS27ContainerSession.path(for: DiscoveryFixture.gameID) == nil,
+                     "duplicate container identifiers selected an arbitrary UUID")
+        precondition(DiscoveryFixture.progress.shareText.contains("nhiều UUID"))
+        preparation.configureTargets(bundleIDs: [DiscoveryFixture.gameID, DiscoveryFixture.maxID])
+
         preparation.reset(); DiscoveryFixture.reset(); DiscoveryFixture.cancel = true
         await preparation.prepareIfNeeded(force: true); await drain()
         precondition(preparation.state == .failed && !preparation.didContinue && DiscoveryFixture.active.isEmpty)
@@ -174,10 +227,11 @@ final class RestartFlag: @unchecked Sendable {
         try JSONEncoder().encode(previous).write(to: history)
         let interruptedProgress = ContainerScanProgress(historyURL: history)
         let restarted = RestartFlag()
-        let interruptedGate = IOS27ContainerPreparation(progress: interruptedProgress, operation: { _ in
+        let interruptedGate = IOS27ContainerPreparation(progress: interruptedProgress, operation: { _, _ in
             restarted.set()
             return [DiscoveryFixture.gameID: DiscoveryFixture.game]
         })
+        interruptedGate.configureTargets(bundleIDs: [DiscoveryFixture.gameID])
         await interruptedGate.prepareIfNeeded()
         precondition(interruptedGate.state == .failed && !restarted.value && !interruptedGate.didContinue)
         await interruptedGate.prepareIfNeeded(force: true)

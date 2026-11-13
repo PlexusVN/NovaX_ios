@@ -20,8 +20,12 @@ enum AppInfo {
             precondition(Policy.pairingMode(major:16, minor:minor, patch:0, build:"") == .none)
         }
         for minor in [0, 1] {
-            precondition(Policy.storageMode(major:27, minor:minor, patch:0, build:"") == .direct)
-            precondition(Policy.pairingMode(major:27, minor:minor, patch:0, build:"") == .none)
+            precondition(Policy.storageMode(major:27, minor:minor, patch:0, build:"24A437") == .direct)
+            precondition(Policy.pairingMode(major:27, minor:minor, patch:0, build:"24A437") == .none)
+        }
+        for missing in ["", "Unknown", "unknown", "  "] {
+            precondition(Policy.accessProvider(major:27, minor:0, patch:0, build:missing) == .unsupported)
+            precondition(Policy.pairingMode(major:27, minor:0, patch:0, build:missing) == .unavailable)
         }
         precondition(Policy.supportsWorseQuery(major:27, minor:0, patch:1, build:"fixture-27.0.1"))
         precondition(Policy.storageMode(major:27, minor:0, patch:1, build:"fixture-27.0.1") == .direct)

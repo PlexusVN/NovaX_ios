@@ -62,7 +62,22 @@ struct SettingsView: View {
                     LabeledContent(language.text("settings.ios_version"), value: "\(AppInfo.osVersion) (\(AppInfo.osBuild))")
                 }
 
-                AirLiftSettingsSection()
+                if ExploitSupportPolicy.currentAccessProvider == .airLift {
+                    AirLiftSettingsSection()
+                } else {
+                    Section("Cơ chế truy cập") {
+                        switch ExploitSupportPolicy.currentAccessProvider {
+                        case .legacy3105:
+                            Text("3105 · Truy cập trực tiếp theo phiên bản iOS")
+                        case .worseQuery:
+                            Text("worse_query · Quyền App Group và container đã chuẩn bị")
+                        case .unsupported:
+                            Text(appState.unsupportedMessage ?? "Phiên bản iOS/build này chưa được hỗ trợ.")
+                        case .airLift:
+                            EmptyView()
+                        }
+                    }
+                }
 
                 if ExploitSupportPolicy.currentRequiresWorseQueryPreparation {
                     Section {
@@ -97,9 +112,9 @@ struct SettingsView: View {
                     }
                     .padding(.vertical, 2)
                 } header: {
-                    Text(language.text("settings.verified_versions"))
+                    Text("Phân tuyến theo phiên bản iOS")
                 } footer: {
-                    Text(language.text("settings.supported_versions_footer"))
+                    Text("Các khoảng này là chính sách chọn cơ chế theo source tham khảo. Quyền của bản ký và khả năng đọc/ghi trên thiết bị vẫn được kiểm tra khi thực hiện thao tác; không phải mọi build đều đã được thử trên máy thật.")
                 }
             }
             .tint(AppTheme.accent)

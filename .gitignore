@@ -91,5 +91,13 @@ release-registry.json
 !/Tests/DirectPatchExecutorSelfCheck.swift
 !/Tests/extract_identity_resume.py
 !/Tests/ProtectedIdentityResumeSelfCheck.swift
-!/Tests/test_recovery_session.py
-!/Tests/ProtectedSessionRecoverySelfCheck.swift
+!/Tests/test_engine_policy.py
+!/Tests/EnginePolicySelfCheck.swift
+!/Tests/test_airlift_isolation.py
+!/Tests/AirLiftIsolationSelfCheck.swift
+!/Tests/test_engine_transactions.py
+!/Tests/EngineTransactionSelfCheck.swift
+!/Tests/Fixtures/EngineTransactionHarness.swift
+!/Tests/DirectTransactionProvenanceSelfCheck.swift
+!/Tests/test_wq_identity_evidence.py
+!/Tests/ContainerIdentityEvidenceSelfCheck.swift

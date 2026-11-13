@@ -2,6 +2,7 @@ import SwiftUI
 import UIKit
 
 @main
+@MainActor
 struct ThreeOneOSFiveApp: App {
     @StateObject private var appState = AppState()
     @StateObject private var patchDraftCoordinator = PatchDraftCoordinator()
@@ -21,6 +22,9 @@ struct ThreeOneOSFiveApp: App {
         setupLogCapture()
         log("app: Astra launching — iOS \(AppInfo.osVersion) (\(AppInfo.osBuild)) \(AppInfo.machineName)")
         configureAppearance()
+        if requiresWorseQueryPreparation {
+            IOS27ContainerPreparation.shared.configureTargets(bundleIDs: AppSecurityConfiguration.protectedBundleIDs)
+        }
     }
 
     private func configureAppearance() {
@@ -141,6 +145,11 @@ struct ThreeOneOSFiveApp: App {
                 // Switching to Settings invalidates the old network lease before
                 // any future API/apply work. Foreground always verifies again.
                 networkAccess.setActive(phase == .active)
+                if phase != .active && ExploitSupportPolicy.currentAccessProvider == .airLift {
+                    AirLiftTunnelManager.shared.cancelPendingChecks()
+                    AirLiftPairingManager.shared.cancelPendingChecks()
+                    AirTrafficProtocolClient.shared.cancelPendingChecks()
+                }
                 guard phase == .active else { return }
                 updateManager.checkForUpdate()
                 appState.detectSupport()
@@ -319,7 +328,11 @@ class AppState: ObservableObject {
         }
 #endif
 
-        unsupportedMessage = supported ? nil : "iOS \(AppInfo.osVersion) (\(AppInfo.osBuild))"
+        let missingBuild = ExploitSupportPolicy.requiresBuildIdentification(
+            major: v.major, minor: v.minor, patch: v.patch, build: AppInfo.osBuild)
+        unsupportedMessage = supported ? nil : (missingBuild
+            ? "Chưa xác định được build iOS 27.0 để chọn cơ chế truy cập. Hãy mở lại Astra rồi kiểm tra phiên bản hệ điều hành."
+            : "iOS \(AppInfo.osVersion) (\(AppInfo.osBuild))")
         if let unsupportedMessage {
             exploitStatus = .unsupported(unsupportedMessage)
             return

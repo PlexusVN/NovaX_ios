@@ -330,7 +330,9 @@ private struct DashboardView: View {
                         deviceInfoPanel
                         systemInfoPanel
                         statusPanel
-                        AirLiftDashboardCard()
+                        if ExploitSupportPolicy.currentAccessProvider == .airLift {
+                            AirLiftDashboardCard()
+                        }
                         appInfoPanel
                     }
                     .padding(.horizontal, 16)

@@ -2,18 +2,47 @@ import CryptoKit
 import Darwin
 import Foundation
 
+/// Keep filesystem diagnostics through the P06 wrapper without exposing a path
+/// or the localized NSError text, which can include private container names.
+private struct PatchFilesystemFailure: LocalizedError {
+    let operation: String
+    let underlying: NSError
+    var rollbackCompleted: Bool?
+
+    var errorDescription: String? {
+        var current: NSError? = underlying
+        var posix: Int?
+        for _ in 0..<8 {
+            guard let error = current else { break }
+            if error.domain == NSPOSIXErrorDomain { posix = error.code; break }
+            current = error.userInfo[NSUnderlyingErrorKey] as? NSError
+        }
+        let reason: String
+        switch posix {
+        case Int(EACCES), Int(EPERM): reason = "Chưa có quyền thực hiện thao tác file này."
+        case Int(ENOSPC): reason = "Không đủ dung lượng để hoàn tất thao tác file."
+        case Int(EROFS): reason = "Vị trí đích đang chỉ cho phép đọc."
+        case Int(ENOENT): reason = "File hoặc thư mục cần dùng không còn tồn tại."
+        default: reason = "Thao tác file chưa hoàn tất."
+        }
+        let code = "\(underlying.domain):\(underlying.code)" + (posix.map { "; errno=\($0)" } ?? "")
+        let rollback = rollbackCompleted.map { $0 ? " Đã hoàn tác giao dịch." : " Chưa xác nhận hoàn tác đầy đủ; bản sao lưu được giữ lại." } ?? ""
+        return "\(reason) [\(operation); \(code)]\(rollback)"
+    }
+}
+
 struct PatchTransactionReceipt: Equatable, Identifiable, Sendable {
     let id: UUID
     let projectID: UUID
     let journalURL: URL
 }
 
-enum PatchTargetChangeKind: Equatable {
+enum PatchTargetChangeKind: Equatable, Sendable {
     case modified
     case missing
 }
 
-struct PatchTargetChange: Equatable {
+struct PatchTargetChange: Equatable, Sendable {
     let bundleID: String
     let relativePath: String
     let kind: PatchTargetChangeKind
@@ -23,7 +52,7 @@ struct PatchTargetChange: Equatable {
     }
 }
 
-struct PatchRestoreInspection: Equatable {
+struct PatchRestoreInspection: Equatable, Sendable {
     let changedTargets: [PatchTargetChange]
 }
 
@@ -31,6 +60,180 @@ enum PatchApplicationState: Equatable {
     case off, applied, recoveryRequired
     var requiresRestore: Bool { self != .off }
 }
+
+// BEGIN PATCH ENGINE PROVENANCE — Foundation-only state and persistence.
+enum PatchWriteEngine: String, Codable { case legacy3105, worseQuery, airLift }
+enum PatchEnginePhase: String, Codable { case writing, applied, recoveryRequired, restored }
+enum PatchBaseline: String, Codable { case capturedPriorState, unavailable, legacyUnknown }
+enum PatchEngineStateError: LocalizedError {
+    case recoveryRequired, legacyAmbiguous, legacyTargetsUnknown, invalidRecord, airLiftNoBackup, unsupportedAirLiftDirectory, operationNotHeld, restoreProviderUnavailable
+    var errorDescription: String? {
+        switch self {
+        case .recoveryRequired: return "Giao dịch trước chưa được khôi phục. Giữ nguyên bản sao lưu và xử lý trạng thái cũ trước khi ghi tiếp."
+        case .legacyAmbiguous: return "Có cả lịch sử AirLift và bản sao lưu trực tiếp cũ, chưa xác định được bản sao lưu được tạo trước hay sau AirLift. Astra giữ nguyên dữ liệu để tránh khôi phục nhầm file đã sửa."
+        case .legacyTargetsUnknown: return "Lịch sử AirLift cũ thiếu thông tin ứng dụng/đường dẫn; cần xác minh hoặc khôi phục bản gốc chính thức trước khi ghi tiếp. Astra giữ nguyên lịch sử và bản sao lưu."
+        case .invalidRecord: return "Thông tin giao dịch không còn hợp lệ. Bản sao lưu và lịch sử được giữ nguyên để kiểm tra."
+        case .airLiftNoBackup: return "Lần ghi này dùng AirLift và không có bản sao lưu file trước khi ghi. Cần bản gốc chính thức đúng phiên bản; Astra chưa thể xác nhận đã khôi phục."
+        case .unsupportedAirLiftDirectory: return "Gói yêu cầu tạo thư mục rỗng mà AirLift chưa hỗ trợ. Chưa có dữ liệu nào được ghi."
+        case .operationNotHeld: return "Thao tác ghi chưa giữ phiên giao dịch độc quyền."
+        case .restoreProviderUnavailable: return "Bản sao lưu trực tiếp được giữ nguyên, nhưng cơ chế truy cập của phiên bản iOS này chưa hỗ trợ khôi phục giao dịch đó."
+        }
+    }
+}
+
+enum AirLiftPatchCapabilities {
+    static func validate(_ project: PatchProject) throws {
+        guard !project.rules.isEmpty else { throw PatchEngineStateError.unsupportedAirLiftDirectory }
+        // Parent directories of payload files are created by the write path.
+        // An independent/empty directory has no corresponding AirTraffic write.
+        guard project.directories.allSatisfy({ directory in
+            project.rules.contains { $0.bundleID == directory.bundleID && $0.relativePath.hasPrefix(directory.relativePath + "/") }
+        }) else { throw PatchEngineStateError.unsupportedAirLiftDirectory }
+    }
+}
+
+struct PatchEngineApplicationRecord: Codable, Equatable {
+    let schema: Int
+    let projectID: UUID
+    let operationID: UUID
+    let engine: PatchWriteEngine
+    let baseline: PatchBaseline
+    let targetKeys: [String]
+    var journalID: UUID?
+    var phase: PatchEnginePhase
+    var completedBatches: Int
+    let totalBatches: Int
+
+    init(projectID: UUID, operationID: UUID = UUID(), engine: PatchWriteEngine,
+         baseline: PatchBaseline, targetKeys: [String], journalID: UUID? = nil,
+         phase: PatchEnginePhase = .writing, totalBatches: Int = 0) {
+        schema = 1; self.projectID = projectID; self.operationID = operationID
+        self.engine = engine; self.baseline = baseline; self.targetKeys = targetKeys.sorted()
+        self.journalID = journalID; self.phase = phase; completedBatches = 0; self.totalBatches = totalBatches
+    }
+    var applicationState: PatchApplicationState {
+        switch phase {
+        case .writing, .recoveryRequired: return .recoveryRequired
+        case .applied: return .applied
+        case .restored: return .off
+        }
+    }
+    func validate() throws {
+        guard schema == 1, completedBatches >= 0, totalBatches >= completedBatches,
+              !targetKeys.isEmpty, targetKeys == Array(Set(targetKeys)).sorted(),
+              targetKeys.allSatisfy({ !$0.isEmpty && $0.contains("\0") }),
+              (engine == .airLift ? baseline == .unavailable && journalID == nil : baseline != .unavailable && journalID != nil) else {
+            throw PatchEngineStateError.invalidRecord
+        }
+    }
+}
+
+struct PatchEngineApplicationStore {
+    let backupRoot: URL
+    private var directory: URL { backupRoot.appendingPathComponent(".engine-applications", isDirectory: true) }
+    private func url(_ projectID: UUID) -> URL { directory.appendingPathComponent(projectID.uuidString + ".plist") }
+    func read(_ projectID: UUID) throws -> PatchEngineApplicationRecord? {
+        let target = url(projectID)
+        guard FileManager.default.fileExists(atPath: target.path) else { return nil }
+        let data = try Data(contentsOf: target)
+        guard data.count <= 2 * 1024 * 1024,
+              let record = try? PropertyListDecoder().decode(PatchEngineApplicationRecord.self, from: data),
+              record.projectID == projectID else { throw PatchEngineStateError.invalidRecord }
+        try record.validate(); return record
+    }
+    func save(_ record: PatchEngineApplicationRecord) throws {
+        try record.validate()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let encoder = PropertyListEncoder(); encoder.outputFormat = .binary
+        try encoder.encode(record).write(to: url(record.projectID), options: .atomic)
+    }
+    func requireResolvedLegacyHistory(defaults: UserDefaults = .standard) throws {
+        let prefix = "airlift.applied."
+        for (key, value) in defaults.dictionaryRepresentation() where key.hasPrefix(prefix) {
+            guard (value as? NSNumber)?.boolValue == true || value as? Bool == true else { continue }
+            guard let projectID = UUID(uuidString: String(key.dropFirst(prefix.count))),
+                  try read(projectID) != nil else { throw PatchEngineStateError.legacyTargetsUnknown }
+        }
+    }
+    func requireNoUnbackedOverlap(projectID: UUID, targetKeys: [String], includingBackedApplications: Bool = false) throws {
+        guard FileManager.default.fileExists(atPath: directory.path) else { return }
+        for item in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) where item.pathExtension == "plist" {
+            guard let id = UUID(uuidString: item.deletingPathExtension().lastPathComponent),
+                  let record = try read(id) else { throw PatchEngineStateError.invalidRecord }
+            guard record.phase != .restored, includingBackedApplications || record.engine == .airLift else { continue }
+            if record.projectID == projectID || record.targetKeys.contains(where: { old in
+                targetKeys.contains { old == $0 || old.hasPrefix($0 + "/") || $0.hasPrefix(old + "/") }
+            }) { throw PatchEngineStateError.recoveryRequired }
+        }
+    }
+    static func reconcile(record: PatchEngineApplicationRecord?, journal: PatchApplicationState?,
+                          legacyAirLift: Bool) -> PatchApplicationState? {
+        if let record {
+            if record.engine == .airLift { return record.applicationState }
+            guard let journal else { return .recoveryRequired }
+            // A committed journal owns its original bytes and crash recovery;
+            // stale preference booleans cannot override a bound new record.
+            if journal == .off { return .off }
+            return record.phase == .restored ? .recoveryRequired : journal
+        }
+        if legacyAirLift && journal != nil { return .recoveryRequired }
+        if legacyAirLift { return .applied }
+        return journal
+    }
+    static func requireDirectRestore(record: PatchEngineApplicationRecord?, receiptID: UUID?,
+                                     journal: PatchApplicationState?, legacyAirLift: Bool) throws {
+        if let record {
+            guard record.engine != .airLift, record.baseline != .legacyUnknown else { throw PatchEngineStateError.airLiftNoBackup }
+            guard record.journalID == receiptID || journal == .off else { throw PatchEngineStateError.invalidRecord }
+            return
+        }
+        if legacyAirLift {
+            if journal != nil { throw PatchEngineStateError.legacyAmbiguous }
+            throw PatchEngineStateError.airLiftNoBackup
+        }
+    }
+}
+// END PATCH ENGINE PROVENANCE
+
+// BEGIN PATCH FILESYSTEM GATE — one owner across asynchronous native writes.
+actor PatchFilesystemGate {
+    static let shared = PatchFilesystemGate()
+    private var owner: UUID?
+    private var waiters: [(UUID, CheckedContinuation<UUID, Error>)] = []
+    func acquire() async throws -> UUID {
+        try Task.checkCancellation()
+        let id = UUID()
+        return try await withTaskCancellationHandler(operation: {
+            if owner == nil { owner = id; return id }
+            return try await withCheckedThrowingContinuation { waiters.append((id, $0)) }
+        }, onCancel: { Task { await self.cancel(id) } })
+    }
+    private func cancel(_ id: UUID) {
+        guard let index = waiters.firstIndex(where: { $0.0 == id }) else { return }
+        let waiter = waiters.remove(at: index); waiter.1.resume(throwing: CancellationError())
+    }
+    func validate(_ id: UUID) throws {
+        try Task.checkCancellation()
+        guard owner == id else { throw PatchEngineStateError.operationNotHeld }
+    }
+    func release(_ id: UUID) {
+        guard owner == id else { return }
+        if waiters.isEmpty { owner = nil }
+        else { let next = waiters.removeFirst(); owner = next.0; next.1.resume(returning: next.0) }
+    }
+}
+
+@MainActor
+func withExclusivePatchOperation<T>(_ operation: @MainActor (UUID) async throws -> T) async throws -> T {
+    let id = try await PatchFilesystemGate.shared.acquire()
+    do {
+        try await PatchFilesystemGate.shared.validate(id)
+        let result = try await operation(id)
+        await PatchFilesystemGate.shared.release(id)
+        return result
+    } catch { await PatchFilesystemGate.shared.release(id); throw error }
+}
+// END PATCH FILESYSTEM GATE
 
 /// Preferences associate catalog items with transaction journals, which own the
 /// backups. A missing preference flag must never hide an existing transaction.
@@ -149,6 +352,7 @@ enum PatchTransaction {
     static func apply(
         project: PatchProject,
         backupRoot: URL,
+        engine: PatchWriteEngine = .legacy3105,
         containerResolver: (String) throws -> URL,
         beforeWrite: ((Int) throws -> Void)? = nil,
         fileManager: FileManager = .default
@@ -164,6 +368,14 @@ enum PatchTransaction {
         ) == nil else {
             throw PatchPackageError.projectAlreadyApplied
         }
+        let engineStore = PatchEngineApplicationStore(backupRoot: backupRoot)
+        try engineStore.requireResolvedLegacyHistory()
+        let previousEngine = try engineStore.read(project.id)
+        let legacyAirLift = UserDefaults.standard.bool(forKey: "airlift.applied.\(project.id.uuidString)")
+        if previousEngine == nil && legacyAirLift { throw PatchEngineStateError.airLiftNoBackup }
+        let engineTargets = (project.rules.map { $0.bundleID + "\0" + $0.relativePath }
+            + project.directories.map { $0.bundleID + "\0" + $0.relativePath }).sorted()
+        try engineStore.requireNoUnbackedOverlap(projectID: project.id, targetKeys: engineTargets)
 
         var roots: [String: URL] = [:]
         var resolvedRules: [ResolvedRule] = []
@@ -261,7 +473,7 @@ enum PatchTransaction {
         do {
             try fileManager.createDirectory(at: transactionDirectory, withIntermediateDirectories: true)
         } catch {
-            throw PatchPackageError.applyFailed
+            throw failedApply(error, operation: "backup-directory")
         }
 
         var records: [Record] = []
@@ -284,14 +496,14 @@ enum PatchTransaction {
                 var originalDigest: Data?
                 if let backupFilename {
                     let backupURL = transactionDirectory.appendingPathComponent(backupFilename)
-                    try fileManager.copyItem(at: resolved.target, to: backupURL)
-                    originalDigest = try digestFile(backupURL)
+                    try fileOperation("backup-copy") { try fileManager.copyItem(at: resolved.target, to: backupURL) }
+                    originalDigest = try fileOperation("backup-read") { try digestFile(backupURL) }
                 }
                 let replacementDigest = digest(resolved.rule.replacementData)
                 if let appliedFilename {
                     let appliedURL = transactionDirectory.appendingPathComponent(appliedFilename)
-                    try resolved.rule.replacementData.write(to: appliedURL, options: .atomic)
-                    guard try digestFile(appliedURL) == replacementDigest else {
+                    try fileOperation("applied-payload-write") { try resolved.rule.replacementData.write(to: appliedURL, options: .atomic) }
+                    guard try fileOperation("applied-payload-verify", { try digestFile(appliedURL) }) == replacementDigest else {
                         throw PatchPackageError.applyFailed
                     }
                 }
@@ -310,7 +522,7 @@ enum PatchTransaction {
         } catch let error as PatchPackageError {
             throw error
         } catch {
-            throw PatchPackageError.applyFailed
+            throw failedApply(error, operation: "backup")
         }
 
         let journalURL = transactionDirectory.appendingPathComponent(journalFilename)
@@ -326,16 +538,21 @@ enum PatchTransaction {
         do {
             try writeJournal(journal, to: journalURL)
         } catch {
-            throw PatchPackageError.applyFailed
+            throw failedApply(error, operation: "journal-write")
         }
+
+        var engineRecord = PatchEngineApplicationRecord(projectID: project.id, operationID: transactionID,
+            engine: engine, baseline: .capturedPriorState, targetKeys: engineTargets, journalID: transactionID)
+        // Save before the first target mutation. A failure here leaves the
+        // prepared journal intact and no target has been written.
+        try fileOperation("provenance-write") { try engineStore.save(engineRecord) }
 
         do {
             for resolved in resolvedDirectories where !fileManager.fileExists(atPath: resolved.target.path) {
                 try DirectPatchExecutionContext.check()
-                try fileManager.createDirectory(
-                    at: resolved.target,
-                    withIntermediateDirectories: false
-                )
+                try fileOperation("target-directory-create") {
+                    try fileManager.createDirectory(at: resolved.target, withIntermediateDirectories: false)
+                }
             }
             for (index, resolved) in resolvedRules.enumerated() {
                 try DirectPatchExecutionContext.check()
@@ -346,19 +563,22 @@ enum PatchTransaction {
                     preservingExistingAttributes: true,
                     fileManager: fileManager
                 )
-                guard try digestFile(resolved.target) == records[index].replacementDigest else {
+                guard try fileOperation("target-readback", { try digestFile(resolved.target) }) == records[index].replacementDigest else {
                     throw PatchPackageError.applyFailed
                 }
             }
             try DirectPatchExecutionContext.check()
             journal.status = .applied
             try writeJournal(journal, to: journalURL)
+            engineRecord.phase = .applied
+            try fileOperation("provenance-write") { try engineStore.save(engineRecord) }
             return PatchTransactionReceipt(
                 id: transactionID,
                 projectID: project.id,
                 journalURL: journalURL
             )
         } catch {
+            var failure = filesystemFailure(error, operation: "transaction-write")
             do {
                 try restoreRecords(
                     records,
@@ -370,9 +590,19 @@ enum PatchTransaction {
                 )
                 journal.status = .rolledBack
                 try writeJournal(journal, to: journalURL)
+                engineRecord.phase = .restored
+                try engineStore.save(engineRecord)
+                failure?.rollbackCompleted = true
             } catch {
                 // Preserve the prepared journal and backups for explicit recovery.
+                if failure == nil {
+                    failure = filesystemFailure(error, operation: "rollback")
+                }
+                engineRecord.phase = .recoveryRequired
+                try? engineStore.save(engineRecord)
+                failure?.rollbackCompleted = false
             }
+            if let failure { throw failure }
             throw PatchPackageError.applyFailed
         }
     }
@@ -382,6 +612,11 @@ enum PatchTransaction {
         containerResolver: (String) throws -> URL,
         fileManager: FileManager = .default
     ) throws -> PatchRestoreInspection {
+        let backupRoot = receipt.journalURL.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let store = PatchEngineApplicationStore(backupRoot: backupRoot)
+        try PatchEngineApplicationStore.requireDirectRestore(record: try store.read(receipt.projectID), receiptID: receipt.id,
+            journal: try recordedApplicationState(receipt: receipt),
+            legacyAirLift: UserDefaults.standard.bool(forKey: "airlift.applied.\(receipt.projectID.uuidString)"))
         do {
             let journal = try activeJournal(for: receipt)
             guard journal.status == .applied else {
@@ -412,6 +647,12 @@ enum PatchTransaction {
         beforeWrite: ((Int) throws -> Void)? = nil,
         fileManager: FileManager = .default
     ) throws {
+        let backupRoot = receipt.journalURL.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let engineStore = PatchEngineApplicationStore(backupRoot: backupRoot)
+        let engineRecord = try engineStore.read(receipt.projectID)
+        try PatchEngineApplicationStore.requireDirectRestore(record: engineRecord, receiptID: receipt.id,
+            journal: try recordedApplicationState(receipt: receipt),
+            legacyAirLift: UserDefaults.standard.bool(forKey: "airlift.applied.\(receipt.projectID.uuidString)"))
         do {
             var journal = try activeJournal(for: receipt)
             let transactionDirectory = receipt.journalURL.deletingLastPathComponent()
@@ -461,6 +702,12 @@ enum PatchTransaction {
             }
 
             removeEmptyCreatedDirectories(createdDirectoryURLs, fileManager: fileManager)
+            var restored = engineRecord ?? PatchEngineApplicationRecord(projectID: receipt.projectID,
+                operationID: receipt.id, engine: .legacy3105, baseline: .capturedPriorState,
+                targetKeys: journal.records.map { $0.bundleID + "\0" + $0.relativePath }
+                    + (journal.createdDirectories ?? []).map { $0.bundleID + "\0" + $0.relativePath }, journalID: receipt.id)
+            restored.phase = .restored
+            try engineStore.save(restored)
         } catch let error as PatchPackageError {
             if case .restoreTargetsChanged = error { throw error }
             throw PatchPackageError.restoreFailed
@@ -476,6 +723,11 @@ enum PatchTransaction {
         beforeWrite: ((Int) throws -> Void)? = nil,
         fileManager: FileManager = .default
     ) throws {
+        let backupRoot = receipt.journalURL.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let store = PatchEngineApplicationStore(backupRoot: backupRoot)
+        try PatchEngineApplicationStore.requireDirectRestore(record: try store.read(receipt.projectID), receiptID: receipt.id,
+            journal: try recordedApplicationState(receipt: receipt),
+            legacyAirLift: UserDefaults.standard.bool(forKey: "airlift.applied.\(receipt.projectID.uuidString)"))
         do {
             let journal = try activeJournal(for: receipt)
             guard journal.status == .applied else {
@@ -1037,16 +1289,23 @@ enum PatchTransaction {
             if let permissions = current[.posixPermissions] { attributes[.posixPermissions] = permissions }
             if let protection = current[.protectionKey] { attributes[.protectionKey] = protection }
         }
-        guard fileManager.createFile(atPath: staging.path, contents: data, attributes: attributes) else {
-            throw PatchPackageError.applyFailed
+        let created = try createWritableStage(staging)
+        var descriptor = created.descriptor
+        defer {
+            if descriptor >= 0 { close(descriptor) }
+            try? fileManager.removeItem(at: staging)
         }
-        defer { try? fileManager.removeItem(at: staging) }
-        let handle = try FileHandle(forWritingTo: staging)
-        try handle.synchronize()
-        try handle.close()
-        guard rename(staging.path, target.path) == 0 else {
-            throw PatchPackageError.applyFailed
+        if attributes[.posixPermissions] == nil {
+            attributes[.posixPermissions] = NSNumber(value: Int(created.defaultPermissions))
         }
+        try fileOperation("staging-write") { try writeAll(data, to: descriptor) }
+        // The descriptor remains writable even when final metadata makes the
+        // file read-only. Never reopen a 0444 stage just to synchronize it.
+        if !attributes.isEmpty {
+            try fileOperation("staging-attributes") { try fileManager.setAttributes(attributes, ofItemAtPath: staging.path) }
+        }
+        try synchronizeAndClose(&descriptor)
+        try commitStage(staging, to: target)
     }
 
     private static func atomicCopy(
@@ -1057,8 +1316,40 @@ enum PatchTransaction {
     ) throws {
         let staging = target.deletingLastPathComponent()
             .appendingPathComponent(".3105-restore-\(UUID().uuidString)")
-        defer { try? fileManager.removeItem(at: staging) }
-        try fileManager.copyItem(at: source, to: staging)
+        var descriptor = try createWritableStage(staging).descriptor
+        defer {
+            if descriptor >= 0 { close(descriptor) }
+            try? fileManager.removeItem(at: staging)
+        }
+        try fileOperation("restore-stage-copy") {
+            let sourceDescriptor = open(source.path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
+            guard sourceDescriptor >= 0 else { throw posixFailure() }
+            defer { close(sourceDescriptor) }
+#if canImport(Darwin)
+            // Match FileManager.copyItem's metadata intent: retain source
+            // stat/ACL/xattrs and bytes while keeping the writable stage FD.
+            guard fcopyfile(sourceDescriptor, descriptor, nil, copyfile_flags_t(COPYFILE_ALL)) == 0 else {
+                throw posixFailure()
+            }
+#else
+            // Portable fixture path. Linux cannot validate Apple protection,
+            // ACL or xattr behavior; the iOS build always uses fcopyfile above.
+            var buffer = [UInt8](repeating: 0, count: 1_024 * 1_024)
+            while true {
+                let count = read(sourceDescriptor, &buffer, buffer.count)
+                if count < 0 && errno == EINTR { continue }
+                guard count >= 0 else { throw posixFailure() }
+                if count == 0 { break }
+                try writeAll(Data(buffer.prefix(count)), to: descriptor)
+            }
+            let copied = try fileManager.attributesOfItem(atPath: source.path)
+            var metadata: [FileAttributeKey: Any] = [:]
+            for key in [FileAttributeKey.posixPermissions, .creationDate, .modificationDate] {
+                if let value = copied[key] { metadata[key] = value }
+            }
+            try fileManager.setAttributes(metadata, ofItemAtPath: staging.path)
+#endif
+        }
         if preservingExistingAttributes,
            let current = try? fileManager.attributesOfItem(atPath: target.path) {
             var attributes: [FileAttributeKey: Any] = [:]
@@ -1069,21 +1360,100 @@ enum PatchTransaction {
                 attributes[.protectionKey] = protection
             }
             if !attributes.isEmpty {
-                try fileManager.setAttributes(attributes, ofItemAtPath: staging.path)
+                try fileOperation("restore-stage-attributes") { try fileManager.setAttributes(attributes, ofItemAtPath: staging.path) }
             }
         }
-        let handle = try FileHandle(forWritingTo: staging)
-        try handle.synchronize()
-        try handle.close()
-        guard rename(staging.path, target.path) == 0 else {
-            throw PatchPackageError.restoreFailed
+        try synchronizeAndClose(&descriptor)
+        try commitStage(staging, to: target)
+    }
+
+    private static func createWritableStage(_ staging: URL) throws -> (descriptor: Int32, defaultPermissions: mode_t) {
+        try fileOperation("staging-create") {
+            // Capture the kernel's normal creation mode without reading or
+            // changing the process-global umask. The empty stage is made private
+            // before any payload, then finalized to the intended target mode.
+            let descriptor = open(staging.path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, mode_t(0o666))
+            guard descriptor >= 0 else { throw posixFailure() }
+            do {
+                var metadata = stat()
+                try fileOperation("staging-stat") {
+                    guard fstat(descriptor, &metadata) == 0 else { throw posixFailure() }
+                }
+                try fileOperation("staging-private-mode") {
+                    guard fchmod(descriptor, mode_t(0o600)) == 0 else { throw posixFailure() }
+                }
+                return (descriptor, mode_t(metadata.st_mode & 0o7777))
+            } catch {
+                close(descriptor)
+                unlink(staging.path)
+                throw error
+            }
+        }
+    }
+
+    private static func writeAll(_ data: Data, to descriptor: Int32) throws {
+        try data.withUnsafeBytes { buffer in
+            guard let base = buffer.baseAddress else { return }
+            var offset = 0
+            while offset < buffer.count {
+                let count = write(descriptor, base.advanced(by: offset), buffer.count - offset)
+                if count < 0 && errno == EINTR { continue }
+                guard count > 0 else { throw posixFailure(count == 0 ? EIO : errno) }
+                offset += count
+            }
+        }
+    }
+
+    private static func synchronizeAndClose(_ descriptor: inout Int32) throws {
+        try fileOperation("staging-sync") {
+            while fsync(descriptor) != 0 {
+                if errno == EINTR { continue }
+                throw posixFailure()
+            }
+        }
+        let current = descriptor
+        descriptor = -1 // A failed close must never close a reused FD in defer.
+        try fileOperation("staging-close") {
+            guard close(current) == 0 else { throw posixFailure() }
+        }
+    }
+
+    private static func commitStage(_ staging: URL, to target: URL) throws {
+        try fileOperation("target-rename") {
+            guard rename(staging.path, target.path) == 0 else { throw posixFailure() }
+        }
+    }
+
+    private static func posixFailure(_ code: Int32 = errno) -> NSError {
+        NSError(domain: NSPOSIXErrorDomain, code: Int(code), userInfo: nil)
+    }
+
+    private static func filesystemFailure(_ error: Error, operation: String) -> PatchFilesystemFailure? {
+        if let known = error as? PatchFilesystemFailure { return known }
+        let underlying = error as NSError
+        guard underlying.domain == NSPOSIXErrorDomain || (underlying.domain == NSCocoaErrorDomain
+            && (underlying.code == NSFileNoSuchFileError || underlying.code == NSFileLockingError
+                || (256...1023).contains(underlying.code))) else { return nil }
+        return PatchFilesystemFailure(operation: operation, underlying: underlying)
+    }
+
+    private static func failedApply(_ error: Error, operation: String) -> Error {
+        if let failure = filesystemFailure(error, operation: operation) { return failure }
+        return PatchPackageError.applyFailed
+    }
+
+    private static func fileOperation<T>(_ operation: String, _ work: () throws -> T) throws -> T {
+        do { return try work() }
+        catch {
+            if let failure = filesystemFailure(error, operation: operation) { throw failure }
+            throw error
         }
     }
 
     private static func writeJournal(_ journal: Journal, to url: URL) throws {
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .binary
-        try encoder.encode(journal).write(to: url, options: .atomic)
+        try fileOperation("journal-write") { try encoder.encode(journal).write(to: url, options: .atomic) }
     }
 
     private static func readJournal(_ url: URL) throws -> Journal {
@@ -1112,7 +1482,13 @@ enum PatchTransaction {
 // MARK: - Device Patch Service
 
 enum DevicePatchService {
+    static func activeTargetKeys() throws -> Set<String> {
+        PatchTransaction.appliedTargetKeys(backupRoot: try PatchProjectLibrary.backupRootURL(), excludingProjectID: nil)
+    }
     static func prepareContainers(bundleIDs: [String]) async throws -> [String: URL] {
+        if ExploitSupportPolicy.currentAccessProvider == .worseQuery {
+            try await IOS27ContainerPreparation.shared.prepareAdditionalTargets(bundleIDs: bundleIDs)
+        }
         let work = Task.detached(priority: .userInitiated) {
             var roots: [String: URL] = [:]
             for bundleID in bundleIDs {
@@ -1154,6 +1530,7 @@ enum DevicePatchService {
             try PatchTransaction.apply(
                 project: project,
                 backupRoot: try PatchProjectLibrary.backupRootURL(),
+                engine: WorseQueryHelper.isAvailable ? .worseQuery : .legacy3105,
                 containerResolver: { bundleID in
                     guard let root = roots[bundleID] else {
                         throw PatchPackageError.targetAppUnavailable(bundleID)

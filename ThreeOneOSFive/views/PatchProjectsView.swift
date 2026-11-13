@@ -698,11 +698,7 @@ private struct PatchProjectDetailView: View {
                 let project = item.summary.schemaVersion >= 2 && item.canInspectContents
                     ? try PatchProjectLibrary.synchronizeWorkspace(item: item)
                     : baseProject
-                if await StorageEngineCoordinator.shared.isAirLiftActive {
-                    try await StorageEngineCoordinator.shared.applyPatchProject(project)
-                } else {
-                    _ = try DevicePatchService.apply(project: project)
-                }
+                try await StorageEngineCoordinator.shared.applyPatchProject(project)
                 await MainActor.run {
                     store.reload()
                     isWorking = false
@@ -765,9 +761,13 @@ private struct PatchProjectDetailView: View {
         isWorking = true
         Task.detached(priority: .userInitiated) {
             do {
-                let inspection = try DevicePatchService.inspectRestore(receipt: receipt)
+                let inspection = try await runPatchLibraryDirectOperation(receipt: receipt) { _ in
+                    try DevicePatchService.inspectRestore(receipt: receipt)
+                }
                 if inspection.changedTargets.isEmpty {
-                    try DevicePatchService.restore(receipt: receipt)
+                    try await runPatchLibraryDirectOperation(receipt: receipt) { roots in
+                        try DevicePatchService.restore(receipt: receipt, preparedContainers: roots)
+                    }
                     await MainActor.run {
                         isWorking = false
                         actionAlert = PatchStoreAlert(
@@ -808,10 +808,13 @@ private struct PatchProjectDetailView: View {
         isWorking = true
         Task.detached(priority: .userInitiated) {
             do {
-                try DevicePatchService.restore(
-                    receipt: receipt,
-                    allowChangedTargets: allowChangedTargets
-                )
+                try await runPatchLibraryDirectOperation(receipt: receipt) { roots in
+                    try DevicePatchService.restore(
+                        receipt: receipt,
+                        allowChangedTargets: allowChangedTargets,
+                        preparedContainers: roots
+                    )
+                }
                 await MainActor.run {
                     isWorking = false
                     actionAlert = PatchStoreAlert(titleKey: "common.done", messageKey: "patch.restored_message")
@@ -839,10 +842,12 @@ private struct PatchProjectDetailView: View {
         isWorking = true
         Task.detached(priority: .userInitiated) {
             do {
-                try DevicePatchService.resetToAppliedState(
-                    receipt: receipt,
-                    project: project
-                )
+                try await runPatchLibraryDirectOperation(receipt: receipt) { _ in
+                    try DevicePatchService.resetToAppliedState(
+                        receipt: receipt,
+                        project: project
+                    )
+                }
                 await MainActor.run {
                     isWorking = false
                     actionAlert = PatchStoreAlert(
@@ -904,4 +909,25 @@ private struct PatchActivityView: UIViewControllerRepresentable {
         _ uiViewController: UIActivityViewController,
         context: Context
     ) {}
+}
+
+
+/// The project library shares the same gate and worker executor as catalog
+/// operations. Entering a MainActor gate must never run native file I/O there.
+@MainActor
+private func runPatchLibraryDirectOperation<T: Sendable>(receipt: PatchTransactionReceipt,
+    operation: @escaping @Sendable ([String: URL]) throws -> T) async throws -> T {
+    try await withExclusivePatchOperation { _ in
+        guard ExploitSupportPolicy.currentStorageMode == .direct else {
+            throw PatchEngineStateError.restoreProviderUnavailable
+        }
+        let roots = try await DevicePatchService.prepareContainers(receipt: receipt)
+        try await AppIntegrityRuntime.shared.requireAllowed(force: true)
+        let generation = try await NetworkAccessGate.shared.requireAllowed()
+        return try await DirectPatchExecutor.run(validation: {
+            try NetworkAccessGate.shared.validateGeneration(generation)
+        }) {
+            try IntegrityCommitBarrier.withCommit { try operation(roots) }
+        }
+    }
 }

@@ -159,6 +159,7 @@ final class AirTrafficProtocolClient: ObservableObject {
 
     func resetSession() {
         guard ExploitSupportPolicy.currentStorageMode == .airLift else { return }
+        ffiWorkState.invalidate()
         // Keep all access to AirliftFFI's process-global route state on the
         // same serial queue as device operations. This also makes reset safe
         // if the user toggles AirLift while an FFI call is winding down.
@@ -176,6 +177,13 @@ final class AirTrafficProtocolClient: ObservableObject {
         containerCache.removeAll()
     }
 
+    /// Invalidate diagnostic callbacks without completing or interrupting an
+    /// in-flight native write. Its staging data stays owned until C returns.
+    func cancelPendingChecks() {
+        ffiWorkState.invalidate()
+        engineHealthState = .idle
+    }
+
     @discardableResult
     func checkRealAirLiftHealth() async -> (isHealthy: Bool, message: String) {
         guard ExploitSupportPolicy.currentAccessProvider == .airLift else {
@@ -184,6 +192,7 @@ final class AirTrafficProtocolClient: ObservableObject {
         guard !isBusy else {
             return (engineHealthState.isHealthy, "Đang có phiên ghi file, bỏ qua kiểm tra.")
         }
+        let generation = ffiWorkState.generation
         guard StorageEngineCoordinator.shared.isAirTrafficEngineLinked else {
             let msg = "AirliftFFI chưa được liên kết trong bản build."
             engineHealthState = .error(msg)
@@ -202,21 +211,30 @@ final class AirTrafficProtocolClient: ObservableObject {
 
         engineHealthState = .checking
         let (isValid, isRevoked, msg) = await verifyPairingWithDevice()
+        guard !Task.isCancelled, ffiWorkState.isCurrent(generation),
+              ExploitSupportPolicy.currentAccessProvider == .airLift else {
+            return (false, "Phiên kiểm tra AirLift đã thay đổi.")
+        }
         if isValid {
             do {
                 _ = try await resolveAppContainer(bundleID: "com.apple.iBooks")
+                guard !Task.isCancelled, ffiWorkState.isCurrent(generation) else {
+                    return (false, "Phiên kiểm tra AirLift đã thay đổi.")
+                }
                 let successMsg = "Pairing + RemoteXPC/RSD + Apple Books phản hồi tốt; canary sẽ được xác minh khi ghi."
                 AirLiftPairingManager.shared.status = .verified
                 lastHealthCheckDate = Date()
                 engineHealthState = .healthy(successMsg)
                 return (true, successMsg)
             } catch {
+                guard !Task.isCancelled, ffiWorkState.isCurrent(generation) else {
+                    return (false, "Phiên kiểm tra AirLift đã thay đổi.")
+                }
                 log("airlift: Apple Books/AirTraffic container check notice: \(error.localizedDescription)")
-                AirLiftPairingManager.shared.status = .verified
                 lastHealthCheckDate = Date()
-                let successMsg = "Ghép đôi + RemoteXPC/RSD phản hồi tốt (Sẵn sàng)."
-                engineHealthState = .healthy(successMsg)
-                return (true, successMsg)
+                let detail = "Ghép đôi đã xác thực; chưa xác nhận truy cập container qua AirTraffic: \(error.localizedDescription)"
+                engineHealthState = .error(detail)
+                return (false, detail)
             }
         } else {
             let failMsg = isRevoked ? "Thiết bị iPhone đã hủy ghép đôi trong Cài đặt." : msg
@@ -226,6 +244,7 @@ final class AirTrafficProtocolClient: ObservableObject {
     }
 
     func writeFile(data: Data, targetPath: String) async throws {
+        try requireSelectedProvider()
         _ = try await NetworkAccessGate.shared.requireAllowed()
         try Task.checkCancellation()
         guard !isBusy else {
@@ -290,6 +309,7 @@ final class AirTrafficProtocolClient: ObservableObject {
     }
 
     func writeFiles(_ files: [String: Data], targetDirectory: String) async throws {
+        try requireSelectedProvider()
         _ = try await NetworkAccessGate.shared.requireAllowed()
         try Task.checkCancellation()
         guard !isBusy else {
@@ -347,6 +367,7 @@ final class AirTrafficProtocolClient: ObservableObject {
     }
 
     func readFile(at targetPath: String) async throws -> Data {
+        try requireSelectedProvider()
         let target = try normalizedAbsolutePath(targetPath)
         if FileManager.default.isReadableFile(atPath: target) {
             return try Data(contentsOf: URL(fileURLWithPath: target))
@@ -377,9 +398,13 @@ final class AirTrafficProtocolClient: ObservableObject {
     }
 
     func verifyPairingWithDevice() async -> (isValid: Bool, isRevoked: Bool, message: String) {
+        guard ExploitSupportPolicy.currentAccessProvider == .airLift else {
+            return (false, false, "Thiết bị này không dùng AirLift.")
+        }
         guard !isBusy else {
             return (false, false, "Đang có phiên AirLift khác, bỏ qua kiểm tra.")
         }
+        let generation = ffiWorkState.generation
         guard let pairingPath = try? activePairingPath() else {
             return (false, false, "Chưa có file pairing hợp lệ. Vui lòng hoàn thành Bước 2.")
         }
@@ -422,6 +447,11 @@ final class AirTrafficProtocolClient: ObservableObject {
                     return FFIStringResult(code: code, value: value, error: message)
                 }
 
+                guard !Task.isCancelled, ffiWorkState.isCurrent(generation),
+                      ExploitSupportPolicy.currentAccessProvider == .airLift else {
+                    return (false, false, "Phiên kiểm tra AirLift đã thay đổi.")
+                }
+
                 if result.code == 0 || result.error.contains("not found in InstallationProxy response") {
                     return (true, false, "Ghép đôi hoạt động tốt.")
                 }
@@ -439,6 +469,9 @@ final class AirTrafficProtocolClient: ObservableObject {
                 let friendlyMsg = Self.humanFriendlyErrorMessage(result.error)
                 return (false, false, friendlyMsg)
             } catch {
+                guard !Task.isCancelled, ffiWorkState.isCurrent(generation) else {
+                    return (false, false, "Phiên kiểm tra AirLift đã thay đổi.")
+                }
                 if attempt == 1 {
                     try? await Task.sleep(nanoseconds: 800_000_000)
                     continue
@@ -468,6 +501,8 @@ final class AirTrafficProtocolClient: ObservableObject {
     }
 
     func resolveAppContainer(bundleID: String) async throws -> String {
+        try requireSelectedProvider()
+        let generation = ffiWorkState.generation
         guard !isBusy else {
             throw AirLiftError.executionFailed("Một thao tác AirLift khác đang chạy. Vui lòng chờ hoàn tất.")
         }
@@ -494,6 +529,9 @@ final class AirTrafficProtocolClient: ObservableObject {
             let message = Self.consumeString(&error)
             return FFIStringResult(code: code, value: value, error: message)
         }
+        guard ffiWorkState.isCurrent(generation) else {
+            throw AirLiftError.executionFailed("Phiên AirLift đã thay đổi. Hãy kiểm tra lại kết nối.")
+        }
         guard result.code == 0, !result.value.isEmpty else {
             if Self.isPairingRevokedError(result.error) {
                 AirLiftPairingManager.shared.handlePairingRevoked(reason: result.error)
@@ -508,9 +546,7 @@ final class AirTrafficProtocolClient: ObservableObject {
     }
 
     private func verifyTransportAndPairing() async throws {
-        guard ExploitSupportPolicy.currentAccessProvider == .airLift else {
-            throw AirLiftError.executionFailed("Phiên bản iOS này không được chọn dùng AirLift.")
-        }
+        try requireSelectedProvider()
         let tunnel = AirLiftTunnelManager.shared
         await tunnel.verifyLoopbackService()
         // QueryType is a useful UI diagnostic, but it must not be the sole gate:
@@ -522,6 +558,12 @@ final class AirTrafficProtocolClient: ObservableObject {
             )
         }
         _ = try activePairingPath()
+    }
+
+    private func requireSelectedProvider() throws {
+        guard ExploitSupportPolicy.currentAccessProvider == .airLift else {
+            throw AirLiftError.executionFailed("Thiết bị này không dùng AirLift.")
+        }
     }
 
     private func activePairingPath() throws -> String {
@@ -607,6 +649,9 @@ final class AirTrafficProtocolClient: ObservableObject {
         try Task.checkCancellation()
         try NetworkAccessGate.shared.validateGeneration(networkGeneration)
         try await AppIntegrityRuntime.shared.requireAllowed(force:true)
+        try requireSelectedProvider()
+        try Task.checkCancellation()
+        try NetworkAccessGate.shared.validateGeneration(networkGeneration)
         let result: FFIVoidResult = try await runBlocking(name: "Astra.AirLift.Write", timeout: 195) {
             try IntegrityCommitBarrier.withCommit {
             var error: UnsafeMutablePointer<CChar>?
@@ -647,6 +692,9 @@ final class AirTrafficProtocolClient: ObservableObject {
         timeout: TimeInterval = 30,
         _ work: @escaping @Sendable () throws -> T
     ) async throws -> T {
+        try requireSelectedProvider()
+        try Task.checkCancellation()
+        let generation = ffiWorkState.generation
         let activePeer = AirLiftTunnelManager.shared.activePeerAddress
         var candidates: [String] = []
         if !activePeer.isEmpty { candidates.append(activePeer) }
@@ -657,36 +705,46 @@ final class AirTrafficProtocolClient: ObservableObject {
             candidates.append(candidate)
         }
         log("airlift: queued \(name) with target hosts: \(candidates.joined(separator: ", "))")
+        let targetHosts = candidates
 
         guard ffiWorkState.tryBegin() else {
             throw AirLiftError.executionFailed(
                 "Phiên AirLift trước vẫn đang đóng kết nối. Vui lòng chờ rồi thử lại."
             )
         }
-        return try await withCheckedThrowingContinuation { continuation in
-            let gate = FFIContinuationGate(continuation)
-            ffiExecutionQueue.async {
-                let result: Result<T, Error>
-                do {
-                    try Self.configureTargetHosts(candidates)
-                    result = .success(try work())
-                } catch {
-                    result = .failure(error)
+        let invocation = FFINativeInvocation()
+        return try await withTaskCancellationHandler(operation: {
+            try await withCheckedThrowingContinuation { continuation in
+                let gate = FFIContinuationGate(continuation)
+                ffiExecutionQueue.async {
+                    let result: Result<T, Error>
+                    do {
+                        guard ExploitSupportPolicy.currentAccessProvider == .airLift,
+                              self.ffiWorkState.isCurrent(generation) else {
+                            throw AirLiftError.executionFailed("Phiên AirLift đã thay đổi. Hãy kiểm tra lại kết nối.")
+                        }
+                        // Cancellation and native dispatch share one atomic
+                        // boundary. Once dispatch wins, await its real result;
+                        // cancellation cannot release the payload or operation slot.
+                        try invocation.beginNative()
+                        try Self.configureTargetHosts(targetHosts)
+                        result = .success(try work())
+                    } catch {
+                        result = .failure(error)
+                    }
+                    self.ffiWorkState.end()
+                    gate.resume(with: result)
                 }
-                self.ffiWorkState.end()
-                gate.resume(with: result)
+                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout) {
+                    // Native I/O owns the staging files and exclusive operation
+                    // slot until it actually returns. A Swift deadline must never
+                    // unwind the caller, delete its payload, or start another write.
+                    gate.reportDeadline {
+                        log("airlift: \(name) exceeded \(Int(timeout))s; waiting for native completion")
+                    }
+                }
             }
-            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout) {
-                // A deadline only finishes the Swift waiter, not the native
-                // operation. Its serial-queue completion alone releases the
-                // slot; a stale timer must never unlock a newer operation.
-                gate.resume(with: .failure(
-                    AirLiftError.socketConnectionFailed(
-                        "Quá thời gian kết nối dịch vụ thiết bị (\(Int(timeout))s). Hãy chờ phiên trước kết thúc rồi thử lại."
-                    )
-                ))
-            }
-        }
+        }, onCancel: { invocation.cancelIfQueued() })
     }
 
     private nonisolated static func consumeString(_ pointer: inout UnsafeMutablePointer<CChar>?) -> String {
@@ -727,11 +785,33 @@ private final class FFIContinuationGate<T: Sendable>: @unchecked Sendable {
         lock.unlock()
         continuation.resume(with: result)
     }
+
+    func reportDeadline(_ report: () -> Void) {
+        lock.lock()
+        let pending = continuation != nil
+        lock.unlock()
+        if pending { report() }
+    }
 }
 
 private final class FFIWorkState: @unchecked Sendable {
     private let lock = NSLock()
     private var occupied = false
+    private var revision: UInt64 = 0
+
+    var generation: UInt64 {
+        lock.lock(); defer { lock.unlock() }
+        return revision
+    }
+
+    func isCurrent(_ generation: UInt64) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return revision == generation
+    }
+
+    func invalidate() {
+        lock.lock(); revision &+= 1; lock.unlock()
+    }
 
     func tryBegin() -> Bool {
         lock.lock()
@@ -748,11 +828,29 @@ private final class FFIWorkState: @unchecked Sendable {
     }
 }
 
+private final class FFINativeInvocation: @unchecked Sendable {
+    private enum State { case queued, started, cancelled }
+    private let lock = NSLock()
+    private var state: State = .queued
+
+    func beginNative() throws {
+        lock.lock(); defer { lock.unlock() }
+        guard state == .queued else { throw CancellationError() }
+        state = .started
+    }
+
+    func cancelIfQueued() {
+        lock.lock(); defer { lock.unlock() }
+        if state == .queued { state = .cancelled }
+    }
+}
+
 private let novaAirLiftLogCallback: ALLogCallback = { _, message in
     guard let message else { return }
     let line = String(cString: message)
     log("airlift: \(line)")
     Task { @MainActor in
+        guard ExploitSupportPolicy.currentAccessProvider == .airLift else { return }
         AirTrafficProtocolClient.shared.lastLogLine = line
     }
 }

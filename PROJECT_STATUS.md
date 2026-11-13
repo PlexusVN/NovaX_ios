@@ -1,3 +1,7 @@
+## Source update 13/11/2026: cô lập engine và provenance
+
+Đã sửa source để 3105/worse_query/AirLift dùng cùng policy, giới hạn entry point của từng engine, preparation theo Bundle ID và lưu engine/journal của giao dịch. Partial AirLift giữ trạng thái cần xử lý; legacy không rõ baseline giữ backup và không báo khôi phục gốc. Chưa phát hành IPA mới; version vẫn 2.4 (37). Xem [phạm vi và kiểm chứng](docs/ENGINE_ISOLATION_20261113.md).
+
 ## Build 2.4 (37): Khôi phục định danh thiết bị
 
 Astra 2.4 (build 37) đóng gói bản sửa recovery sau cài lại/reset thiết bị: dùng lại khóa hợp lệ, hoàn tất recovery được admin cấp quyền và tiếp tục đúng bộ khóa đã lưu khi mất phản hồi đăng ký. Đồng bộ phiên bản trong Info.plist, hai cấu hình Xcode và artifact CI. Xem [phạm vi, kiểm thử và giới hạn triển khai](docs/IDENTITY_RECOVERY_FIX_20261112.md).

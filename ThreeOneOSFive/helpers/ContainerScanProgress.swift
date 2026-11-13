@@ -14,6 +14,10 @@ struct ContainerScanSnapshot: Codable {
     var total: UInt64 = 0
     var candidates = 0
     var grants = 0
+    // Optional for compatibility with histories written before these counters.
+    var readable: Int? = nil
+    var identified: Int? = nil
+    var matched: Int? = nil
     var logs: [String] = []
     var detail = ""
 
@@ -85,13 +89,17 @@ final class ContainerScanProgress: ObservableObject {
         }
     }
 
-    func report(_ id: UUID, scanned: UInt64, total: UInt64, candidates: Int, grants: Int, message: String) {
+    func report(_ id: UUID, scanned: UInt64, total: UInt64, candidates: Int, grants: Int,
+                readable: Int? = nil, identified: Int? = nil, matched: Int? = nil, message: String) {
         onMain {
             guard self.snapshot.id == id, self.snapshot.phase == .scanning else { return }
             self.snapshot.scanned = scanned
             self.snapshot.total = total
             self.snapshot.candidates = candidates
             self.snapshot.grants = grants
+            if let readable { self.snapshot.readable = readable }
+            if let identified { self.snapshot.identified = identified }
+            if let matched { self.snapshot.matched = matched }
             self.append(message)
             self.saveHistory(force: false)
         }
@@ -99,11 +107,15 @@ final class ContainerScanProgress: ObservableObject {
 
     /// Persist the last native operation BEFORE invoking it. If the OS terminates
     /// this process, the next preparation screen can show where it stopped.
-    func checkpoint(_ id: UUID, message: String, candidates: Int? = nil, grants: Int? = nil) {
+    func checkpoint(_ id: UUID, message: String, candidates: Int? = nil, grants: Int? = nil,
+                    readable: Int? = nil, identified: Int? = nil, matched: Int? = nil) {
         let update = {
             guard self.snapshot.id == id, self.snapshot.phase == .scanning else { return }
             if let candidates { self.snapshot.candidates = candidates }
             if let grants { self.snapshot.grants = grants }
+            if let readable { self.snapshot.readable = readable }
+            if let identified { self.snapshot.identified = identified }
+            if let matched { self.snapshot.matched = matched }
             self.append(message)
             self.saveHistory(force: true)
         }
@@ -145,7 +157,7 @@ final class ContainerScanProgress: ObservableObject {
           "OS: \(Foundation.ProcessInfo.processInfo.operatingSystemVersionString)",
           "Bundle: \(Bundle.main.bundleIdentifier ?? "?")", "Ứng dụng: \(snapshot.bundleID)",
           "Trạng thái: \(snapshot.phase.rawValue)",
-          "Đã dò: \(snapshot.scanned)/\(snapshot.total); thư mục: \(snapshot.candidates); truy cập được: \(snapshot.grants)", ""]
+          "Phạm vi inode ước lượng: \(snapshot.scanned)/\(snapshot.total); thư mục: \(snapshot.candidates); handle nhận được: \(snapshot.grants); đọc được: \(snapshot.readable ?? 0); định danh hợp lệ: \(snapshot.identified ?? 0); đúng ứng dụng: \(snapshot.matched ?? 0)", ""]
          + snapshot.logs).joined(separator: "\n")
     }
 

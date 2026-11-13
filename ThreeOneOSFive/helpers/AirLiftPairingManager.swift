@@ -82,7 +82,7 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
     @Published private(set) var isBackgroundKeepAliveActive = false
 
     var isPaired: Bool {
-        status.isPaired
+        ExploitSupportPolicy.currentAccessProvider == .airLift && status.isPaired
     }
 
     var isPairingHostActive: Bool { pairingThreadActive }
@@ -114,6 +114,10 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
     private var cancellables = Set<AnyCancellable>()
     private var verificationTimer: AnyCancellable?
     private var isVerifyingPairing = false
+    private var verificationGeneration: UInt64 = 0
+    private var pairingGeneration: UInt64 = 0
+    private var statusBeforePairingHost: PairingStatus = .missing
+    private var activePairingContext: AirLiftPairingCallbackContext?
 
     private struct PairingPublication {
         let serviceID: String
@@ -168,6 +172,7 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
     private func setupNetworkMonitoring() {
         pathMonitor.pathUpdateHandler = { [weak self] path in
             Task { @MainActor [weak self] in
+                guard ExploitSupportPolicy.currentAccessProvider == .airLift else { return }
                 self?.isWiFiConnected = path.usesInterfaceType(.wifi)
             }
         }
@@ -179,6 +184,7 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
             .sink { [weak self] _ in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
+                    guard ExploitSupportPolicy.currentAccessProvider == .airLift else { return }
                     guard !AirTrafficProtocolClient.shared.isBusy, !self.isVerifyingPairing else { return }
                     self.checkPairingStatus()
                     if self.pairingThreadActive,
@@ -194,6 +200,7 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
             .receive(on: DispatchQueue.main)
             .sink { [weak self] tunnelStatus in
                 guard let self else { return }
+                guard ExploitSupportPolicy.currentAccessProvider == .airLift else { return }
                 guard !AirTrafficProtocolClient.shared.isBusy, !self.isVerifyingPairing else { return }
                 if tunnelStatus == .connected && self.status == .ready {
                     Task { @MainActor [weak self] in
@@ -213,6 +220,7 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
     }
 
     func checkPairingStatus() {
+        guard ExploitSupportPolicy.currentAccessProvider == .airLift else { return }
         guard FileManager.default.fileExists(atPath: pairingFileURL.path) else {
             if status != .revoked {
                 status = .missing
@@ -240,6 +248,7 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
     }
 
     func verifyPairingStatus(activeProbe: Bool = false) {
+        guard ExploitSupportPolicy.currentAccessProvider == .airLift else { return }
         checkPairingStatus()
         guard activeProbe, status.isPaired, AirLiftTunnelManager.shared.isOperational else {
             return
@@ -250,6 +259,7 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
     }
 
     func verifyPairingWithDevice(silent: Bool = false) async {
+        guard ExploitSupportPolicy.currentAccessProvider == .airLift, !Task.isCancelled else { return }
         guard !isVerifyingPairing else { return }
         checkPairingStatus()
         guard status.isPaired else {
@@ -266,11 +276,18 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
         }
 
         isVerifyingPairing = true
+        verificationGeneration &+= 1
+        let generation = verificationGeneration
         let previousStatus = status
         status = .verifying
 
         let outcome = await AirTrafficProtocolClient.shared.verifyPairingWithDevice()
         isVerifyingPairing = false
+        guard generation == verificationGeneration else { return }
+        guard !Task.isCancelled, ExploitSupportPolicy.currentAccessProvider == .airLift else {
+            status = previousStatus == .verifying ? .ready : previousStatus
+            return
+        }
 
         if outcome.isValid {
             status = .verified
@@ -290,6 +307,8 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
     }
 
     func handlePairingRevoked(reason: String) {
+        guard ExploitSupportPolicy.currentAccessProvider == .airLift else { return }
+        verificationGeneration &+= 1
         stopBonjourBroadcast()
         if FileManager.default.fileExists(atPath: pairingFileURL.path) {
             try? FileManager.default.removeItem(at: pairingFileURL)
@@ -306,6 +325,12 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
     }
 
     func importPairingFile(from sourceURL: URL) -> Bool {
+        guard ExploitSupportPolicy.currentAccessProvider == .airLift else { return false }
+        guard !pairingThreadActive, !AirTrafficProtocolClient.shared.isBusy else {
+            notify(message: PairingError.busy.localizedDescription)
+            return false
+        }
+        verificationGeneration &+= 1
         let hasSecurityScope = sourceURL.startAccessingSecurityScopedResource()
         defer { if hasSecurityScope { sourceURL.stopAccessingSecurityScopedResource() } }
 
@@ -332,7 +357,8 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
     }
 
     func pairDirectlyOnDevice() async {
-        guard ExploitSupportPolicy.currentPairingMode == .onDeviceOrImportedFile else {
+        guard ExploitSupportPolicy.currentAccessProvider == .airLift,
+              ExploitSupportPolicy.currentPairingMode == .onDeviceOrImportedFile else {
             notify(message: PairingError.unsupportedOS.localizedDescription)
             return
         }
@@ -348,7 +374,11 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
         // This probe exists to trigger the Local Network prompt. A timeout is
         // not proof that permission was denied, so it must never prevent the
         // real RPPairing host and NetService publication from starting.
+        let generation = pairingGeneration
         _ = await localNetworkAuthorization.request()
+        guard !Task.isCancelled, ExploitSupportPolicy.currentAccessProvider == .airLift,
+              generation == pairingGeneration,
+              ExploitSupportPolicy.currentPairingMode == .onDeviceOrImportedFile else { return }
 
         do {
             _ = try await startAndWait()
@@ -368,7 +398,15 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
     }
 
     func startBonjourPairingBroadcast() {
+        guard ExploitSupportPolicy.currentAccessProvider == .airLift,
+              ExploitSupportPolicy.currentPairingMode == .onDeviceOrImportedFile else {
+            resolve(.failure(PairingError.unsupportedOS))
+            return
+        }
         guard !pairingThreadActive else { return }
+        pairingGeneration &+= 1
+        let generation = pairingGeneration
+        statusBeforePairingHost = status
         stopAdvertisingOnly()
         pairingPIN = ""
         status = .pairing
@@ -380,10 +418,22 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
 
         let outputPath = preparePairingStagingFile().path
         let altIRK = Self.storedAltIRK
-        let context = UnsafeMutableRawPointer(Unmanaged.passRetained(self).toOpaque())
+        let callbackContext = AirLiftPairingCallbackContext(manager: self, generation: generation)
+        activePairingContext = callbackContext
+        let context = UnsafeMutableRawPointer(Unmanaged.passRetained(callbackContext).toOpaque())
 
         DispatchQueue.global(qos: .userInitiated).async {
             var result = ALPairResult()
+            guard ExploitSupportPolicy.currentAccessProvider == .airLift,
+                  ExploitSupportPolicy.currentPairingMode == .onDeviceOrImportedFile,
+                  !callbackContext.isCancelled else {
+                DispatchQueue.main.async {
+                    Unmanaged<AirLiftPairingCallbackContext>.fromOpaque(context).release()
+                    self.finishPairing(returnCode: -1, outputPath: outputPath, issuedIRK: "", deviceName: "",
+                                       errorMessage: "Thiết bị này không dùng AirLift.", generation: generation)
+                }
+                return
+            }
             let returnCode = "0.0.0.0".withCString { bind in
                 "Astra".withCString { name in
                     "Mac17,7".withCString { model in
@@ -406,19 +456,24 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
             al_pairing_result_free(&result)
 
             DispatchQueue.main.async {
-                Unmanaged<AirLiftPairingManager>.fromOpaque(context).release()
+                Unmanaged<AirLiftPairingCallbackContext>.fromOpaque(context).release()
                 self.finishPairing(
                     returnCode: returnCode,
                     outputPath: outputPath,
                     issuedIRK: issuedIRK,
                     deviceName: deviceName,
-                    errorMessage: errorMessage
+                    errorMessage: errorMessage,
+                    generation: generation
                 )
             }
         }
     }
 
     func stopBonjourBroadcast() {
+        pairingGeneration &+= 1
+        activePairingContext?.cancel()
+        resolve(.failure(CancellationError()))
+        if pairingThreadActive { status = statusBeforePairingHost }
         stopAdvertisingOnly()
         pendingPublication = nil
         publicationRetryCount = 0
@@ -434,12 +489,19 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
         }
     }
 
+    func cancelPendingChecks() {
+        verificationGeneration &+= 1
+        isVerifyingPairing = false
+        if status == .verifying { status = .ready }
+    }
+
     private func finishPairing(
         returnCode: Int32,
         outputPath: String,
         issuedIRK: String,
         deviceName: String,
-        errorMessage: String
+        errorMessage: String,
+        generation: UInt64
     ) {
         stopAdvertisingOnly()
         pendingPublication = nil
@@ -447,12 +509,18 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
         hostReadyWatchdog?.cancel()
         hostReadyWatchdog = nil
         pairingThreadActive = false
+        activePairingContext = nil
         pairingPIN = ""
         audioKeepAlive.stop()
         isBackgroundKeepAliveActive = false
         endPairingBackgroundTask()
         bonjourStatus = .idle
         defer { discardPairingStagingFile() }
+        guard generation == pairingGeneration,
+              ExploitSupportPolicy.currentAccessProvider == .airLift else {
+            resolve(.failure(CancellationError()))
+            return
+        }
 
         guard returnCode == 0 else {
             status = .missing
@@ -538,7 +606,9 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
         continuation.resume(with: result)
     }
 
-    fileprivate func publish(serviceID: String, port: UInt16, txt: [String: Data]) {
+    fileprivate func publish(serviceID: String, port: UInt16, txt: [String: Data], generation: UInt64) {
+        guard ExploitSupportPolicy.currentAccessProvider == .airLift,
+              generation == pairingGeneration, pairingThreadActive else { return }
         hostReadyWatchdog?.cancel()
         hostReadyWatchdog = nil
         pendingPublication = PairingPublication(serviceID: serviceID, port: port, txt: txt)
@@ -547,6 +617,8 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
     }
 
     private func publishPendingService() {
+        guard ExploitSupportPolicy.currentAccessProvider == .airLift,
+              ExploitSupportPolicy.currentPairingMode == .onDeviceOrImportedFile else { return }
         guard pairingThreadActive, let publication = pendingPublication else { return }
         stopAdvertisingOnly()
         let service = NetService(
@@ -570,6 +642,8 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
     }
 
     func retryBonjourAdvertisement(userInitiated: Bool) {
+        guard ExploitSupportPolicy.currentAccessProvider == .airLift,
+              ExploitSupportPolicy.currentPairingMode == .onDeviceOrImportedFile else { return }
         guard pairingThreadActive, pendingPublication != nil else {
             if userInitiated {
                 notify(message: "RPPairing chưa tạo xong thông tin quảng bá. Hãy chờ vài giây rồi thử lại.")
@@ -586,6 +660,7 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
     }
 
     func netServiceDidPublish(_ sender: NetService) {
+        guard ExploitSupportPolicy.currentAccessProvider == .airLift, pairingThreadActive else { return }
         guard sender === netService else { return }
         publicationRetryWorkItem?.cancel()
         publicationRetryWorkItem = nil
@@ -596,6 +671,7 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
     }
 
     func netService(_ sender: NetService, didNotPublish errorDict: [String: NSNumber]) {
+        guard ExploitSupportPolicy.currentAccessProvider == .airLift else { return }
         guard sender === netService else { return }
         isBroadcastingBonjour = false
         let code = errorDict[NetService.errorCode] ?? 0
@@ -607,8 +683,12 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
         if publicationRetryCount < 3 {
             publicationRetryCount += 1
             let delay = min(3.0, 0.75 * Double(publicationRetryCount))
+            let generation = pairingGeneration
             let work = DispatchWorkItem { [weak self] in
-                MainActor.assumeIsolated { self?.publishPendingService() }
+                MainActor.assumeIsolated {
+                    guard let self, generation == self.pairingGeneration else { return }
+                    self.publishPendingService()
+                }
             }
             publicationRetryWorkItem = work
             DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
@@ -621,6 +701,7 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
     }
 
     func netServiceDidStop(_ sender: NetService) {
+        guard ExploitSupportPolicy.currentAccessProvider == .airLift else { return }
         guard sender === netService else { return }
         isBroadcastingBonjour = false
         guard pairingThreadActive, pendingPublication != nil else {
@@ -635,7 +716,9 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
         }
     }
 
-    fileprivate func showPIN(_ pin: String) {
+    fileprivate func showPIN(_ pin: String, generation: UInt64) {
+        guard ExploitSupportPolicy.currentAccessProvider == .airLift,
+              generation == pairingGeneration, pairingThreadActive else { return }
         pairingPIN = pin
         status = .waitingSettings
     }
@@ -651,9 +734,12 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
 
     private func startHostReadyWatchdog() {
         hostReadyWatchdog?.cancel()
+        let generation = pairingGeneration
         let work = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated {
                 guard let self,
+                      ExploitSupportPolicy.currentAccessProvider == .airLift,
+                      generation == self.pairingGeneration,
                       self.pairingThreadActive,
                       self.pendingPublication == nil else { return }
                 self.bonjourStatus = .failed("RPPairing host chưa sẵn sàng")
@@ -680,6 +766,7 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
     }
 
     func openPairingSettings() {
+        guard ExploitSupportPolicy.currentAccessProvider == .airLift else { return }
         let candidates = [
             "App-Prefs:root=Privacy&path=DEVELOPER_SETTINGS",
             "App-Prefs:root=Privacy",
@@ -693,6 +780,8 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
     }
 
     func deletePairingFile() {
+        guard ExploitSupportPolicy.currentAccessProvider == .airLift else { return }
+        verificationGeneration &+= 1
         stopBonjourBroadcast()
         do {
             if FileManager.default.fileExists(atPath: pairingFileURL.path) {
@@ -710,7 +799,8 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
     }
 
     func getPairingData() -> [String: Any]? {
-        loadPairingRecord(at: pairingFileURL)
+        guard ExploitSupportPolicy.currentAccessProvider == .airLift else { return nil }
+        return loadPairingRecord(at: pairingFileURL)
     }
 
     private func loadPairingRecord(at url: URL) -> [String: Any]? {
@@ -732,6 +822,7 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
     /// flag only after asking the pairing owner to persist the same record.
     @discardableResult
     func backupPairingFileToKeychainIfValid() -> Bool {
+        guard ExploitSupportPolicy.currentAccessProvider == .airLift else { return false }
         guard let data = try? Data(contentsOf: pairingFileURL),
               let object = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
               let record = object as? [String: Any],
@@ -748,7 +839,8 @@ final class AirLiftPairingManager: NSObject, ObservableObject, NetServiceDelegat
     /// Structural validation used by the startup gate. A `.ready` state alone
     /// is not enough if the underlying file was removed or corrupted later.
     var hasUsablePersistedPairingRecord: Bool {
-        guard status != .revoked,
+        guard ExploitSupportPolicy.currentAccessProvider == .airLift,
+              status != .revoked,
               let record = loadPairingRecord(at: pairingFileURL) else {
             return false
         }
@@ -885,9 +977,22 @@ private final class LocalNetworkAuthorization {
     }
 }
 
+private final class AirLiftPairingCallbackContext: @unchecked Sendable {
+    let manager: AirLiftPairingManager
+    let generation: UInt64
+    private let lock = NSLock()
+    private var cancelled = false
+    var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return cancelled }
+    func cancel() { lock.lock(); cancelled = true; lock.unlock() }
+    init(manager: AirLiftPairingManager, generation: UInt64) {
+        self.manager = manager
+        self.generation = generation
+    }
+}
+
 private let novaPairReadyCallback: ALPairReadyCb = { context, serviceID, port, keys, values, count in
     guard let context, let serviceID else { return }
-    let manager = Unmanaged<AirLiftPairingManager>.fromOpaque(context).takeUnretainedValue()
+    let callback = Unmanaged<AirLiftPairingCallbackContext>.fromOpaque(context).takeUnretainedValue()
     var txt: [String: Data] = [:]
     if let keys, let values {
         for index in 0..<Int(count) {
@@ -897,15 +1002,15 @@ private let novaPairReadyCallback: ALPairReadyCb = { context, serviceID, port, k
     }
     let identifier = String(cString: serviceID)
     DispatchQueue.main.async {
-        manager.publish(serviceID: identifier, port: port, txt: txt)
+        callback.manager.publish(serviceID: identifier, port: port, txt: txt, generation: callback.generation)
     }
 }
 
 private let novaPairPinCallback: ALPairPinCb = { pin, context in
     guard let context, let pin else { return }
-    let manager = Unmanaged<AirLiftPairingManager>.fromOpaque(context).takeUnretainedValue()
+    let callback = Unmanaged<AirLiftPairingCallbackContext>.fromOpaque(context).takeUnretainedValue()
     let value = String(cString: pin)
-    DispatchQueue.main.async { manager.showPIN(value) }
+    DispatchQueue.main.async { callback.manager.showPIN(value, generation: callback.generation) }
 }
 
 @MainActor

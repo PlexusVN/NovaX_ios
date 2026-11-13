@@ -662,7 +662,7 @@ struct PatchCardView: View {
                         Haptics.success()
                         activeToast = ToastInfo(
                             title: "Tắt chức năng thành công",
-                            message: "Đã khôi phục file gốc từ máy.",
+                            message: "Đã khôi phục dữ liệu đã sao lưu trước lần áp dụng này.",
                             isSuccess: true
                         )
                     }

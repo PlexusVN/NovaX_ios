@@ -358,11 +358,29 @@ enum StableDeviceHWID {
     private static let lock = NSLock()
     private static let tag = "deviceHwid"
 
-    private static func validated(_ data: Data) throws -> String {
-        guard let stored = String(data: data, encoding: .utf8), UUID(uuidString: stored) != nil else {
+    private struct SavedHWID {
+        let value: String
+        let uuid: UUID
+    }
+
+    private static func validated(_ data: Data) throws -> SavedHWID {
+        guard data.count <= 4_096, String(data: data, encoding: .utf8) != nil else {
             throw DeviceIdentityError.invalidIdentity
         }
-        return stored // Preserve case and the exact registered UUID; never substitute IDFV.
+        // The strict decode above rejects malformed UTF-8. Preserve its BOM
+        // here: String(data:encoding:) may consume one before comparison.
+        let stored = String(decoding: data, as: UTF8.self)
+        var value = stored.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.hasPrefix("\u{feff}") {
+            value.removeFirst()
+            value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        // Accept only the existing hyphenated UUID representation. Formatting
+        // repair never accepts a legacy hash, braces, URN, NUL or a new UUID.
+        guard value.utf8.count == 36, let uuid = UUID(uuidString: value) else {
+            throw DeviceIdentityError.invalidIdentity
+        }
+        return SavedHWID(value: value, uuid: uuid)
     }
 
     /// The mirror contains a public HWID only, never keys, license or credentials.
@@ -370,27 +388,44 @@ enum StableDeviceHWID {
     static func resolve(storage: DeviceIdentityStorage, vendorID: String?,
                         mirror: DeviceIdentityStorage? = nil) throws -> String {
         lock.lock(); defer { lock.unlock() }
-        let saved: Data?
-        do { saved = try storage.read(tag) }
-        catch {
-            if let mirror, let data = try mirror.read(tag) { return try validated(data) }
-            throw error
+        var saved: Data?, backup: Data?
+        var primaryReadError: Error?, mirrorReadError: Error?
+        do { saved = try storage.read(tag) } catch { primaryReadError = error }
+        if let mirror {
+            do { backup = try mirror.read(tag) } catch { mirrorReadError = error }
         }
-        if let saved {
-            let value = try validated(saved)
-            if let mirror, let backup = try mirror.read(tag) {
-                guard try validated(backup) == value else { throw DeviceIdentityError.ambiguousIdentity }
+
+        let primaryValue = saved.flatMap { try? validated($0) }
+        let mirrorValue = backup.flatMap { try? validated($0) }
+        if let primaryValue, let mirrorValue, primaryValue.uuid != mirrorValue.uuid {
+            // Two valid, different UUIDs are evidence of a real conflict. Do
+            // not choose by IDFV or overwrite either registered representation.
+            throw DeviceIdentityError.ambiguousIdentity
+        }
+        if let primaryValue {
+            // Preserve the primary UUID's letter case, including a legacy
+            // BOM-decoded value. The v1 server may bind this exact string.
+            if let mirror {
+                // Refill a missing mirror or synchronize case-equivalent valid
+                // UUIDs. A corrupt/unreadable mirror remains untouched evidence.
+                if mirrorReadError == nil, backup == nil || mirrorValue != nil {
+                    let representation = Data(primaryValue.value.utf8)
+                    if backup != representation { try? mirror.write(tag, representation) }
+                }
             }
-            try? mirror?.write(tag, saved)
-            return value
+            return primaryValue.value
         }
-        if let mirror, let backup = try mirror.read(tag) {
-            let value = try validated(backup)
-            // A changed signing profile can make old Keychain items disappear.
-            // Restore the same ID; failure must not replace the durable backup.
-            try? storage.write(tag, backup)
-            return value
+        if let mirrorValue {
+            // A surviving durable UUID is sufficient to continue. Refill only
+            // a confirmed-missing primary; preserve corrupt/inaccessible bytes.
+            if primaryReadError == nil, saved == nil {
+                try? storage.write(tag, Data(mirrorValue.value.utf8))
+            }
+            return mirrorValue.value
         }
+        if let primaryReadError { throw primaryReadError }
+        if let mirrorReadError { throw mirrorReadError }
+        guard saved == nil, backup == nil else { throw DeviceIdentityError.invalidIdentity }
         guard let vendorID, UUID(uuidString: vendorID) != nil else {
             throw DeviceIdentityError.identityMissing
         }
@@ -402,8 +437,8 @@ enum StableDeviceHWID {
             // overwriting the winner with a newly observed IDFV.
             if let winner = try storage.read(tag) {
                 let value = try validated(winner)
-                try? mirror?.write(tag, winner)
-                return value
+                try? mirror?.write(tag, Data(value.value.utf8))
+                return value.value
             }
             guard let mirror else { throw writeError }
             try mirror.write(tag, data) // Publish only after durable local storage succeeds.
@@ -437,8 +472,10 @@ enum StableDeviceHWID {
                 return protectedDataAvailable
                     ? "iOS chưa trả về định danh thiết bị. Astra sẽ tự đọc lại khi ứng dụng hoạt động; hãy thử lại sau giây lát (HW04)."
                     : "Định danh thiết bị chưa sẵn sàng. Hãy mở khóa iPhone rồi thử lại (HW01)."
-            case .invalidIdentity, .ambiguousIdentity:
-                return "Định danh thiết bị đã lưu không hợp lệ. Astra giữ nguyên dữ liệu để tránh đổi thiết bị đã đăng ký; hãy gửi thông tin lỗi để khôi phục (HW05)."
+            case .invalidIdentity:
+                return "Không còn bản lưu HWID có UUID hợp lệ để khôi phục. Astra giữ nguyên dữ liệu và không tạo HWID mới; hãy sao chép thông tin lỗi để được kiểm tra (HW05-DATA)."
+            case .ambiguousIdentity:
+                return "Hai bản lưu HWID chứa hai UUID khác nhau. Astra giữ nguyên cả hai và không tự chọn thiết bị; hãy sao chép thông tin lỗi để được kiểm tra (HW05-CONFLICT)."
             case .invalidInput: break
             }
         }

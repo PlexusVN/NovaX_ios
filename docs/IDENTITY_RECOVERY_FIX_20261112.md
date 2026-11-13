@@ -53,7 +53,7 @@ Server source hiện tại đã có canonical enrollment và same-key resume. Re
 production gọi RPC `novax_reset_license_devices`, không cần thay bằng các lệnh
 DELETE tuần tự. Runtime server và SQL được giữ nguyên trong bản sửa này.
 
-Xem [backend contract/preflight](IDENTITY_RECOVERY_CONTRACT_20261112.md).
+Xem [backend contract/preflight](../../../production-server/AUTH/server/docs/IDENTITY_RECOVERY_CONTRACT_20261112.md).
 Phải kiểm tra definition/constraint thực tế của RPC reset/enroll trên VPS:
 gói source hiện thiếu migration recovery cuối, nên không thể chứng nhận
 transaction replacement thực tế chỉ bằng schema legacy trong package.
@@ -69,8 +69,7 @@ Keychain của cấu hình ký hiện hành; lỗi quyền ký không được c
 ## Kiểm chứng
 
 Kết quả cuối và danh sách SHA-256/diff được lưu trong workspace
-`scratch/identity-recovery-20261112/` cục bộ; các artifact này không nằm trong
-repository GitHub. Snapshot được tạo trước thay đổi, không
+`scratch/identity-recovery-20261112/`. Snapshot được tạo trước thay đổi, không
 dùng Git HEAD cũ của workspace làm đại diện cho source hiện tại.
 
 Kiểm tra client gồm unittest/wiring toàn bộ, Swift orchestration trích từ

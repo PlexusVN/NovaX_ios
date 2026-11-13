@@ -52,11 +52,35 @@ final class StorageEngineCoordinator: ObservableObject {
     }
 
     func isProjectAppliedThroughAirLift(_ projectID: UUID) -> Bool {
-        UserDefaults.standard.bool(forKey: airLiftAppliedKey(projectID))
+        do {
+            if let record = try applicationStore().read(projectID) {
+                return record.engine == .airLift && record.phase != .restored
+            }
+        } catch { return true } // Unknown provenance must not become OFF.
+        return UserDefaults.standard.bool(forKey: airLiftAppliedKey(projectID))
+    }
+
+    func applicationStore() throws -> PatchEngineApplicationStore {
+        PatchEngineApplicationStore(backupRoot: try PatchProjectLibrary.backupRootURL())
+    }
+
+    func projectApplicationState(_ projectID: UUID) -> PatchApplicationState? {
+        do {
+            return PatchEngineApplicationStore.reconcile(record: try applicationStore().read(projectID),
+                journal: DevicePatchService.recordedApplicationState(projectID: projectID),
+                legacyAirLift: UserDefaults.standard.bool(forKey: airLiftAppliedKey(projectID)))
+        } catch { return .recoveryRequired }
     }
 
     /// Writes or replaces a file in the destination path using the optimal engine.
     func writeFile(data: Data, toPath destinationPath: String) async throws {
+        try await withExclusivePatchOperation { operationID in
+            try await self.writeFileInOperation(data: data, toPath: destinationPath, operationID: operationID)
+        }
+    }
+
+    func writeFileInOperation(data: Data, toPath destinationPath: String, operationID: UUID) async throws {
+        try await PatchFilesystemGate.shared.validate(operationID)
         try await AppIntegrityRuntime.shared.requireAllowed(force:true)
         let networkGeneration = try await NetworkAccessGate.shared.requireAllowed()
         try Task.checkCancellation()
@@ -143,9 +167,16 @@ final class StorageEngineCoordinator: ObservableObject {
     /// Rules sharing a destination directory are sent in one batch. Every batch
     /// requires an authenticated tunnel and a successful canary read-back first.
     func applyPatchProject(_ project: PatchProject) async throws {
+        try await withExclusivePatchOperation { operationID in
+            try await self.applyPatchProjectInOperation(project, operationID: operationID)
+        }
+    }
+
+    /// Caller already owns the shared filesystem operation. Never reacquire it.
+    func applyPatchProjectInOperation(_ project: PatchProject, operationID: UUID) async throws {
+        try await PatchFilesystemGate.shared.validate(operationID)
         try await AppIntegrityRuntime.shared.requireAllowed(force:true)
         try PatchPackageCodec.validate(project)
-        guard !project.rules.isEmpty else { throw PatchPackageError.invalidProject }
 
         // 1. Nếu worse_query sẵn sàng trên máy, áp dụng patch trực tiếp không cần AirLift
         guard ExploitSupportPolicy.currentStorageMode != .unsupported else {
@@ -167,6 +198,23 @@ final class StorageEngineCoordinator: ObservableObject {
         guard isAirLiftActive, isAirTrafficEngineLinked else {
             throw AirLiftError.executionFailed("AirLift chưa được bật trong Cài đặt.")
         }
+        try AirLiftPatchCapabilities.validate(project)
+        let store = try applicationStore()
+        try store.requireResolvedLegacyHistory()
+        let previousRecord = try store.read(project.id)
+        guard previousRecord == nil || previousRecord?.phase == .restored,
+              previousRecord != nil || !UserDefaults.standard.bool(forKey: airLiftAppliedKey(project.id)),
+              DevicePatchService.recordedApplicationState(projectID: project.id) != .applied,
+              DevicePatchService.recordedApplicationState(projectID: project.id) != .recoveryRequired else {
+            throw PatchEngineStateError.recoveryRequired
+        }
+        let targets = (project.rules.map { $0.bundleID + "\0" + $0.relativePath }
+            + project.directories.map { $0.bundleID + "\0" + $0.relativePath }).sorted()
+        try store.requireNoUnbackedOverlap(projectID: project.id, targetKeys: targets, includingBackedApplications: true)
+        let occupied = try DevicePatchService.activeTargetKeys()
+        guard !targets.contains(where: { target in occupied.contains(where: {
+            target == $0 || target.hasPrefix($0 + "/") || $0.hasPrefix(target + "/")
+        }) }) else { throw PatchEngineStateError.recoveryRequired }
 
         struct BatchKey: Hashable {
             let bundleID: String
@@ -192,7 +240,10 @@ final class StorageEngineCoordinator: ObservableObject {
                 .resolveAppContainer(bundleID: bundleID)
         }
 
+        var record = PatchEngineApplicationRecord(projectID: project.id, operationID: operationID,
+            engine: .airLift, baseline: .unavailable, targetKeys: targets, totalBatches: batches.count)
         var completedBatches = 0
+        var dispatchStarted = false
         for key in batches.keys.sorted(by: {
             if $0.bundleID != $1.bundleID { return $0.bundleID < $1.bundleID }
             return $0.relativeDirectory < $1.relativeDirectory
@@ -207,12 +258,23 @@ final class StorageEngineCoordinator: ObservableObject {
                 let networkGeneration = try await NetworkAccessGate.shared.requireAllowed()
                 try Task.checkCancellation()
                 try NetworkAccessGate.shared.validateGeneration(networkGeneration)
+                // Persist before native dispatch, including the first batch.
+                // Timeout/cancellation cannot prove no bytes were written.
+                record.phase = .writing
+                try store.save(record)
+                dispatchStarted = true
                 try await AirTrafficProtocolClient.shared.writeFiles(
                     files,
                     targetDirectory: destination
                 )
                 completedBatches += 1
+                record.completedBatches = completedBatches
+                try store.save(record)
             } catch {
+                if dispatchStarted {
+                    record.phase = .recoveryRequired
+                    try? store.save(record) // Earlier durable writing state remains on failure.
+                }
                 if let airLiftError = error as? AirLiftError, airLiftError.requiresRePairing {
                     AirLiftGatekeeperManager.shared.triggerRePair(reason: "Pairing AirLift không còn hợp lệ: \(airLiftError.localizedDescription)")
                 }
@@ -225,6 +287,8 @@ final class StorageEngineCoordinator: ObservableObject {
             }
         }
 
+        record.phase = .applied
+        try store.save(record)
         UserDefaults.standard.set(true, forKey: airLiftAppliedKey(project.id))
         objectWillChange.send()
     }

@@ -67,10 +67,11 @@ class SecurityFlowWiringTests(unittest.TestCase):
 
     def test_airlift_cannot_claim_a_restore_without_writing_originals(self):
         text = source('helpers/FeaturePatchService.swift')
-        branch = text.split('if isAirLift {')[1].split('// iOS 16')[0]
-        self.assertIn('throw PatchRestoreError.airLiftRestoreUnsupported', branch)
-        self.assertNotIn('removeObject', branch)
-        self.assertNotIn('.clear(', branch)
+        branch = text.split('private func restorePatchInOperation(')[1].split('func isPatchApplied(')[0]
+        self.assertIn('PatchEngineApplicationStore.requireDirectRestore', branch)
+        self.assertIn('throw PatchEngineStateError.restoreProviderUnavailable', branch)
+        self.assertLess(branch.index('requireDirectRestore'), branch.index('DevicePatchService.restore'))
+        self.assertLess(branch.index('DevicePatchService.restore'), branch.index('catalogApplications.clear'))
 
     def test_catalog_state_uses_id_variant_not_editable_name(self):
         text = source('helpers/FeaturePatchService.swift')

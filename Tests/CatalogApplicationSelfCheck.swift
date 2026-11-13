@@ -3,8 +3,12 @@ import CryptoKit
 // Catalog I/O fixture stays on the 3105 route; actual OS dispatch is exercised
 // separately against the complete production policy and resolver.
 enum ExploitSupportPolicy {
-    enum AccessProvider { case legacy3105 }
+    enum AccessProvider { case legacy3105, worseQuery }
     static let currentAccessProvider = AccessProvider.legacy3105
+}
+@MainActor final class IOS27ContainerPreparation {
+    static let shared = IOS27ContainerPreparation()
+    func prepareAdditionalTargets(bundleIDs: [String]) async throws { throw CatalogCheckError.failed("device preparation must not be used") }
 }
 
 // Device-only resolution cannot run here. All apply/restore I/O uses temp folders.
