@@ -15,13 +15,17 @@ final class HWIDMemory: @unchecked Sendable {
     var writeError: Error?
     var winnerOnWrite: Data?
     var writes = 0
+    var reads = 0
+    var discardWrites = false
     init(_ value: String? = nil) { data = value.map { Data($0.utf8) } }
     var storage: DeviceIdentityStorage { DeviceIdentityStorage(read: { _ in
+        self.reads += 1
         if let error = self.readError { throw error }; return self.data
     }, write: { _, data in
         self.writes += 1
         if let winner = self.winnerOnWrite { self.data = winner }
-        if let error = self.writeError { throw error }; self.data = data
+        if let error = self.writeError { throw error }
+        if !self.discardWrites { self.data = data }
     }, remove: { _ in preconditionFailure("HWID must never delete an identity") }) }
 }
 @MainActor enum UIApplication {
@@ -203,6 +207,155 @@ final class HWIDMemory: @unchecked Sendable {
         try expect(StableDeviceHWID.failureMessage(DeviceIdentityError.invalidIdentity,protectedDataAvailable:true).contains("HW05-DATA"), "missing valid backup diagnostics remain ambiguous")
         try expect(StableDeviceHWID.failureMessage(DeviceIdentityError.ambiguousIdentity,protectedDataAvailable:true).contains("HW05-CONFLICT"), "true UUID conflict diagnostics were not distinguished")
 
+        let fallbackUUID = UUID(uuidString:"CCCCCCCC-CCCC-4CCC-8CCC-CCCCCCCCCCCC")!
+        let fallbackValue = "ASTRA-HWID-v1-" + fallbackUUID.uuidString
+        do {
+            let primary=HWIDMemory("corrupted"),mirror=HWIDMemory("corrupted-backup")
+            let fallback=HWIDMemory(),fallbackMirror=HWIDMemory()
+            let saved=primary.data,backup=mirror.data
+            var generated=0
+            let resolved=try StableDeviceHWID.resolve(storage:primary.storage,vendorID:changed,mirror:mirror.storage,
+                fallbackStorage:fallback.storage,fallbackMirror:fallbackMirror.storage,
+                generateFallback:{generated += 1;return fallbackUUID})
+            try expect(resolved==fallbackValue && generated==1,"HW05-DATA could not create the explicitly enabled durable application HWID")
+            try expect(primary.data==saved && mirror.data==backup && primary.writes==0 && mirror.writes==0,"fallback overwrote old HWID evidence")
+            try expect(fallback.data==Data(resolved.utf8) && fallbackMirror.data==fallback.data,"fallback missing durable primary/mirror copies")
+            try expect(fallback.reads>=2,"fallback published before persistent read-back")
+            try expect(try StableDeviceHWID.resolve(storage:primary.storage,vendorID:original,mirror:mirror.storage,
+                fallbackStorage:fallback.storage,fallbackMirror:fallbackMirror.storage,
+                generateFallback:{generated += 1;return UUID()})==resolved && generated==1,"changed IDFV replaced an existing fallback")
+            fallback.readError=DeviceIdentityError.keychain(-25308)
+            try expect(try StableDeviceHWID.resolve(storage:primary.storage,vendorID:nil,mirror:mirror.storage,
+                fallbackStorage:fallback.storage,fallbackMirror:fallbackMirror.storage)==resolved,"locked fallback Keychain ignored an intact durable mirror")
+        }
+        do {
+            let primary=HWIDMemory(),mirror=HWIDMemory(),fallback=HWIDMemory(),fallbackMirror=HWIDMemory()
+            var generated=0
+            let resolved=try StableDeviceHWID.resolve(storage:primary.storage,vendorID:nil,mirror:mirror.storage,
+                fallbackStorage:fallback.storage,fallbackMirror:fallbackMirror.storage,
+                generateFallback:{generated += 1;return fallbackUUID})
+            try expect(resolved==fallbackValue && generated==1,"first install without IDFV could not persist application HWID")
+            try expect(primary.data==nil && mirror.data==nil,"dedicated fallback was stored in original identity slots")
+            let reconstructed=HWIDMemory(); reconstructed.data=fallback.data
+            try expect(try StableDeviceHWID.resolve(storage:primary.storage,vendorID:changed,mirror:mirror.storage,
+                fallbackStorage:reconstructed.storage,fallbackMirror:fallbackMirror.storage,
+                generateFallback:{generated += 1;return UUID()})==resolved && generated==1,"fallback changed after process-like reconstruction")
+        }
+        do {
+            let primary=HWIDMemory(original),mirror=HWIDMemory(),fallback=HWIDMemory(),fallbackMirror=HWIDMemory()
+            var generated=0
+            try expect(try StableDeviceHWID.resolve(storage:primary.storage,vendorID:nil,mirror:mirror.storage,
+                fallbackStorage:fallback.storage,fallbackMirror:fallbackMirror.storage,
+                generateFallback:{generated += 1;return fallbackUUID})==original,"valid registered UUID lost priority")
+            try expect(generated==0 && fallback.writes==0 && fallbackMirror.writes==0,"valid identity allocated fallback material")
+        }
+        do {
+            let primary=HWIDMemory(),mirror=HWIDMemory(),fallback=HWIDMemory(),fallbackMirror=HWIDMemory()
+            var generated=0
+            try expect(try StableDeviceHWID.resolve(storage:primary.storage,vendorID:original,mirror:mirror.storage,
+                fallbackStorage:fallback.storage,fallbackMirror:fallbackMirror.storage,
+                generateFallback:{generated += 1;return fallbackUUID})==original,"first valid IDFV lost its existing primary path")
+            try expect(generated==0 && primary.data==Data(original.utf8) && fallback.writes==0 && fallbackMirror.writes==0,"first valid IDFV allocated a fallback")
+        }
+        do {
+            let primary=HWIDMemory(original),fallback=HWIDMemory(),fallbackMirror=HWIDMemory()
+            fallback.readError=DeviceIdentityError.keychain(-25308);fallbackMirror.readError=CheckError.diskUnavailable
+            try expect(try StableDeviceHWID.resolve(storage:primary.storage,vendorID:nil,
+                fallbackStorage:fallback.storage,fallbackMirror:fallbackMirror.storage)==original,"optional fallback outage blocked a known registered HWID")
+            try expect(fallback.writes==0 && fallbackMirror.writes==0,"optional fallback read error caused a write")
+        }
+        for failPrimary in [false,true] {
+            let primary=HWIDMemory("corrupted"),fallback=HWIDMemory(),fallbackMirror=HWIDMemory()
+            if failPrimary { fallback.writeError=CheckError.diskUnavailable }
+            else { fallbackMirror.writeError=CheckError.diskUnavailable }
+            try expect(try StableDeviceHWID.resolve(storage:primary.storage,vendorID:nil,
+                fallbackStorage:fallback.storage,fallbackMirror:fallbackMirror.storage,
+                generateFallback:{fallbackUUID})==fallbackValue,"one confirmed fallback copy was not sufficient")
+            try expect(fallback.data==Data(fallbackValue.utf8) || fallbackMirror.data==Data(fallbackValue.utf8),"unpersisted fallback was returned")
+        }
+        do {
+            let primary=HWIDMemory("corrupted"),fallback=HWIDMemory(),fallbackMirror=HWIDMemory()
+            fallback.writeError=CheckError.diskUnavailable;fallbackMirror.writeError=CheckError.diskUnavailable
+            do { _=try StableDeviceHWID.resolve(storage:primary.storage,vendorID:nil,
+                fallbackStorage:fallback.storage,fallbackMirror:fallbackMirror.storage,
+                generateFallback:{fallbackUUID});throw CheckError.failed("fallback published when both writes failed") }
+            catch CheckError.diskUnavailable {}
+            try expect(primary.writes==0 && fallback.data==nil && fallbackMirror.data==nil,"failed fallback persistence altered old identity")
+        }
+        for readSlot in 0..<4 {
+            let primary=HWIDMemory(),mirror=HWIDMemory(),fallback=HWIDMemory(),fallbackMirror=HWIDMemory()
+            [primary,mirror,fallback,fallbackMirror][readSlot].readError=DeviceIdentityError.keychain(-25308)
+            var generated=0
+            do { _=try StableDeviceHWID.resolve(storage:primary.storage,vendorID:nil,mirror:mirror.storage,
+                fallbackStorage:fallback.storage,fallbackMirror:fallbackMirror.storage,
+                generateFallback:{generated += 1;return fallbackUUID});throw CheckError.failed("read failure authorized a new application HWID") }
+            catch DeviceIdentityError.keychain(-25308) {}
+            try expect(generated==0 && primary.writes==0 && mirror.writes==0 && fallback.writes==0 && fallbackMirror.writes==0,"unknown read state allocated fallback")
+        }
+        do {
+            let primary=HWIDMemory("corrupted"),fallback=HWIDMemory()
+            fallback.winnerOnWrite=Data(fallbackValue.utf8);fallback.writeError=DeviceIdentityError.keychain(-25299)
+            try expect(try StableDeviceHWID.resolve(storage:primary.storage,vendorID:nil,
+                fallbackStorage:fallback.storage,generateFallback:{UUID()})==fallbackValue,"concurrent fallback winner was overwritten")
+            try expect(fallback.writes==1,"concurrent winner triggered another fallback allocation")
+        }
+        do {
+            let primary=HWIDMemory("corrupted"),fallback=HWIDMemory(),fallbackMirror=HWIDMemory()
+            fallback.discardWrites=true;fallbackMirror.discardWrites=true
+            do { _=try StableDeviceHWID.resolve(storage:primary.storage,vendorID:nil,
+                fallbackStorage:fallback.storage,fallbackMirror:fallbackMirror.storage,
+                generateFallback:{fallbackUUID});throw CheckError.failed("unreadable write acknowledgement published fallback") }
+            catch DeviceIdentityError.invalidIdentity {}
+            try expect(fallback.data==nil && fallbackMirror.data==nil,"read-back fixture changed unexpectedly")
+        }
+        do {
+            let primary=HWIDMemory(original),fallback=HWIDMemory(fallbackValue)
+            let before=primary.data,fallbackBefore=fallback.data
+            do { _=try StableDeviceHWID.resolve(storage:primary.storage,vendorID:nil,
+                fallbackStorage:fallback.storage);throw CheckError.failed("regular/fallback conflict switched server identity") }
+            catch DeviceIdentityError.ambiguousIdentity {}
+            try expect(primary.data==before && fallback.data==fallbackBefore && primary.writes==0 && fallback.writes==0,"regular/fallback conflict overwrote evidence")
+        }
+        do {
+            let primary=HWIDMemory("corrupted"),fallback=HWIDMemory(fallbackValue)
+            let fallbackMirror=HWIDMemory("ASTRA-HWID-v1-"+UUID().uuidString)
+            do { _=try StableDeviceHWID.resolve(storage:primary.storage,vendorID:nil,
+                fallbackStorage:fallback.storage,fallbackMirror:fallbackMirror.storage);throw CheckError.failed("conflicting fallback identities were accepted") }
+            catch DeviceIdentityError.ambiguousIdentity {}
+            try expect(fallback.writes==0 && fallbackMirror.writes==0,"fallback conflict erased evidence")
+        }
+        do {
+            let primary=HWIDMemory("corrupted"),fallback=HWIDMemory("corrupted-fallback"),fallbackMirror=HWIDMemory()
+            var generated=0
+            do { _=try StableDeviceHWID.resolve(storage:primary.storage,vendorID:nil,
+                fallbackStorage:fallback.storage,fallbackMirror:fallbackMirror.storage,
+                generateFallback:{generated += 1;return fallbackUUID});throw CheckError.failed("damaged fallback was silently regenerated") }
+            catch DeviceIdentityError.invalidIdentity {}
+            try expect(generated==0 && fallback.writes==0 && fallbackMirror.writes==0,"damaged fallback allocation lost evidence")
+        }
+        try expect(StableDeviceHWID.isUsable(fallbackValue),"generated application HWID was rejected by login fast path")
+        try expect(!StableDeviceHWID.isUsable(String(repeating:"a",count:40)),"unsupported legacy hash was guessed as a registered identity")
+        try expect(!StableDeviceHWID.isUsable("ASTRA-HWID-v1-invalid"),"malformed application HWID accepted")
+        do {
+            let path=FileManager.default.temporaryDirectory.appendingPathComponent("astra-hwid-fallback-"+UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at:path) }
+            let disk=DeviceIdentityStorage(read:{key in
+                precondition(key=="deviceHwidFallbackV1")
+                guard FileManager.default.fileExists(atPath:path.path) else { return nil }
+                return try Data(contentsOf:path)
+            },write:{key,data in
+                precondition(key=="deviceHwidFallbackV1")
+                try data.write(to:path,options:.atomic)
+            },remove:{_ in preconditionFailure("fallback must not be removed")})
+            let primary=HWIDMemory("old-corruption"),fallback=HWIDMemory()
+            let generated=try StableDeviceHWID.resolve(storage:primary.storage,vendorID:nil,
+                fallbackStorage:fallback.storage,fallbackMirror:disk,generateFallback:{fallbackUUID})
+            let restarted=HWIDMemory();restarted.readError=DeviceIdentityError.keychain(-34018)
+            try expect(try StableDeviceHWID.resolve(storage:primary.storage,vendorID:changed,
+                fallbackStorage:restarted.storage,fallbackMirror:disk)==generated,"dedicated fallback mirror lost server-exact HWID after process-like restart")
+            try expect(primary.data==Data("old-corruption".utf8),"on-disk fallback replaced old HWID evidence")
+        }
+
         DeviceUtils.operation = { throw DeviceIdentityError.identityMissing }
         let login = HWIDLoginHarness()
         login.attemptLogin()
@@ -227,6 +380,12 @@ final class HWIDMemory: @unchecked Sendable {
         let unrelated = HWIDLoginHarness(); unrelated.authState = .error("key_invalid")
         unrelated.foregroundOrUnlock()
         try expect(unrelated.authState == .error("key_invalid"), "identity refresh cleared unrelated authentication errors")
+        var fallbackReads=0
+        DeviceUtils.operation={fallbackReads += 1;return fallbackValue}
+        let fallbackLogin=HWIDLoginHarness();fallbackLogin.attemptLogin()
+        DeviceUtils.operation={fallbackReads += 1;throw DeviceIdentityError.invalidIdentity}
+        fallbackLogin.attemptLogin()
+        try expect(fallbackLogin.hwid==fallbackValue && fallbackLogin.networkRequests==2 && fallbackReads==1,"generated application HWID was re-read or rejected as non-UUID")
         print("[PASS] \(checks) actual Swift HWID persistence/recovery, race, corruption, diagnostics and login retry checks")
     }
 }

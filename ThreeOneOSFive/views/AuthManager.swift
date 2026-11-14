@@ -63,7 +63,7 @@ final class AuthManager: ObservableObject {
 
     @discardableResult
     private func refreshDeviceHWID() -> Bool {
-        if UUID(uuidString: hwid) != nil { return true }
+        if StableDeviceHWID.isUsable(hwid) { return true }
         do {
             let value = try DeviceUtils.resolveHWID()
             hwid = value

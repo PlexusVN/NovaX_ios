@@ -23,6 +23,9 @@ class StableHWIDChecks(unittest.TestCase):
         self.assertIn('auth.hwidFailure', view)
         self.assertIn('isExcludedFromBackup = true', utils)
         self.assertIn('.completeFileProtectionUntilFirstUserAuthentication', utils)
+        self.assertIn('hwid-fallback-v1', utils)
+        self.assertIn('fallbackStorage: .keychain, fallbackMirror: hwidFallbackMirror', utils)
+        self.assertIn('if StableDeviceHWID.isUsable(hwid) { return true }', extract_function(auth, 'private func refreshDeviceHWID('))
 
     def test_actual_swift_policy_and_login_retry(self):
         native = shutil.which('swiftc')
