@@ -62,6 +62,7 @@ private final class IgnoredRemovalFileManager: FileManager, @unchecked Sendable 
         try saved.write(to:sidecar)
         try boundJournal.write(to:reapplied.journalURL)
         try PatchTransaction.restore(receipt:reapplied,containerResolver:{_ in container})
+        print("[transaction] apply/restore and legacy ambiguity passed")
 
         // Crash/failure after the prepared journal's atomic write but before
         // the mutable project sidecar: the previous restored sidecar remains.
@@ -102,6 +103,33 @@ private final class IgnoredRemovalFileManager: FileManager, @unchecked Sendable 
         let afterCrash=try PatchTransaction.apply(project:project,backupRoot:backup,containerResolver:{_ in container})
         try check(try Data(contentsOf:target)==replacement,"reapply works after reconstructed recovery")
         try PatchTransaction.restore(receipt:afterCrash,containerResolver:{_ in container})
+
+        // A new AirLift operation on this same project can legitimately follow
+        // a completed direct restore. Its index wins over the terminal direct
+        // journal, without granting permission to reuse that old backup.
+        let restoredDirectIndex=try Data(contentsOf:sidecar)
+        for phase in [PatchEnginePhase.writing, .applied, .recoveryRequired] {
+            let laterAirLift=PatchEngineApplicationRecord(projectID:project.id,engine:.airLift,baseline:.unavailable,
+                targetKeys:bound.targetKeys,phase:phase,totalBatches:1)
+            try rebuilt.save(laterAirLift)
+            let observed=try rebuilt.read(project.id).unwrap()
+            try check(observed==laterAirLift,"new AirLift state survives old terminal direct history")
+            do {
+                try PatchEngineApplicationStore.requireDirectRestore(record:observed,receiptID:afterCrash.id,journal:.off,legacyAirLift:true)
+                throw DirectCheckError.failed("AirLift used an obsolete direct backup")
+            } catch PatchEngineStateError.airLiftNoBackup {}
+            do {
+                _ = try PatchTransaction.apply(project:project,backupRoot:backup,containerResolver:{_ in container})
+                throw DirectCheckError.failed("new AirLift obligation allowed a new direct baseline")
+            } catch PatchEngineStateError.recoveryRequired {}
+            try check(try Data(contentsOf:target)==original,"unbacked AirLift state prevents further direct mutation")
+        }
+        try restoredDirectIndex.write(to:sidecar)
+        print("[transaction] prepared/index crash recovery and AirLift transition passed")
+        // Each following scenario owns a separate backup root. A global legacy
+        // marker for the first root must not be mistaken for unknown history
+        // in those independent fixtures; production correctly rejects that.
+        UserDefaults.standard.removeObject(forKey:legacy)
 
         // Writer and reader share one cap, enforced before container resolution,
         // backups or a new prepared receipt can appear.
@@ -154,6 +182,7 @@ private final class IgnoredRemovalFileManager: FileManager, @unchecked Sendable 
         try check(try PatchTransaction.recordedApplicationState(receipt:removalReceipt) == .applied,"failed removal cannot commit restored journal")
         try PatchTransaction.restore(receipt:removalReceipt,containerResolver:{_ in removalContainer})
         try check(!files.fileExists(atPath:removalTarget.path),"normal restore verifies introduced target is absent")
+        print("[transaction] size/binding checks and final restore readback passed")
         // Failure after first mutation must roll back all bytes and provenance.
         var failure=project;failure.id=UUID();failure.rules.append(PatchRule(bundleID:"com.fixture.app",relativePath:"Documents/introduced",replacementFilename:"introduced",replacementData:Data([4])))
         do {
@@ -173,7 +202,6 @@ private final class IgnoredRemovalFileManager: FileManager, @unchecked Sendable 
         try check(try Data(contentsOf:target)==original,"unbacked AirLift overlap performs no write")
         try check(!files.fileExists(atPath:backup.appendingPathComponent(overwrite.id.uuidString).path),"unbacked overlap creates no misleading backup")
 
-        UserDefaults.standard.removeObject(forKey:legacy)
         // Reuse the same project ID and reconstruct its durable state on every
         // cycle: read-only modes restored from backup must remain replaceable.
         for mode in [0o444, 0o644] {

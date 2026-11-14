@@ -245,6 +245,12 @@ struct PatchEngineApplicationStore {
             try record.validate(); sidecar = record
         }
         guard let journal = try latestBoundJournal(projectID), var bound = journal.engineRecord else { return sidecar }
+        if let sidecar, sidecar.engine == .airLift, journal.isTerminal {
+            // A later AirLift application has no direct backup. A terminal
+            // direct journal must not hide that new unbacked obligation or
+            // make its old baseline appear restorable after AirLift writes.
+            return sidecar
+        }
         if let sidecar {
             if sidecar.journalID == bound.journalID {
                 guard sidecar.operationID == bound.operationID, sidecar.engine == bound.engine,
