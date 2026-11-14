@@ -22,6 +22,9 @@ struct FixturePublisher { func send() {} }
     static var root=URL(fileURLWithPath:"/unused")
     static var store:PatchEngineApplicationStore { PatchEngineApplicationStore(backupRoot:root) }
     static var writes=0,failBatch:Int?,directWrites=0,restores=0
+    static var enableAssociations=0,restoreAttempts=0
+    static var restoreError:Error?
+    static var onPrepareReceipt:(() async throws -> Void)?
     static var receipt:PatchTransactionReceipt?
     static var observed:[PatchEngineApplicationRecord]=[]
     static var events:[String]=[]
@@ -33,7 +36,11 @@ struct FixturePublisher { func send() {} }
         for key in UserDefaults.standard.dictionaryRepresentation().keys where key.hasPrefix("airlift.applied.") {
             UserDefaults.standard.removeObject(forKey:key)
         }
+        for key in UserDefaults.standard.dictionaryRepresentation().keys where key.hasPrefix("patch_applied_fixture_disable_") {
+            UserDefaults.standard.removeObject(forKey:key)
+        }
         self.root=root;writes=0;failBatch=nil;directWrites=0;observed=[];events=[];onWrite=nil;journal=nil;restores=0;receipt=nil
+        enableAssociations=0;restoreAttempts=0;restoreError=nil;onPrepareReceipt=nil
     }
 }
 @MainActor final class AppIntegrityRuntime {
@@ -51,7 +58,8 @@ struct FixturePublisher { func send() {} }
     var authenticationRevision:UInt64=0
 }
 enum FeaturePatchError:Error { case notAuthenticated }
-enum PatchRestoreError:Error { case missingReceipt }
+enum PatchRestoreError:Error { case missingReceipt, recoveryRequired, disabledPendingRestore }
+func log(_ value:String) {}
 struct PatchItem { let identity:String }
 enum WorseQueryHelper {
     static let isAvailable=false
@@ -90,8 +98,13 @@ enum DevicePatchService {
     @MainActor static func apply(project:PatchProject,preparedContainers:[String:URL]?) throws { Fixture.directWrites += 1 }
     @MainActor static func recordedApplicationState(projectID:UUID) -> PatchApplicationState? { Fixture.journal }
     @MainActor static func latestReceipt(projectID:UUID)->PatchTransactionReceipt? { Fixture.receipt }
-    @MainActor static func prepareContainers(receipt:PatchTransactionReceipt) async throws -> [String:URL] { [:] }
+    @MainActor static func prepareContainers(receipt:PatchTransactionReceipt) async throws -> [String:URL] {
+        try await Fixture.onPrepareReceipt?()
+        return [:]
+    }
     @MainActor static func restore(receipt:PatchTransactionReceipt,allowChangedTargets:Bool,preparedContainers:[String:URL]) throws {
+        Fixture.restoreAttempts += 1
+        if let error=Fixture.restoreError { throw error }
         Fixture.restores += 1;Fixture.journal = .off
         if var record=try Fixture.store.read(receipt.projectID) { record.phase = .restored; try Fixture.store.save(record) }
     }

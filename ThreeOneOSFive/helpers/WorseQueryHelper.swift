@@ -187,28 +187,44 @@ public final class WorseQueryHelper {
     /// Kiểm tra xem đường dẫn có thuộc phạm vi cho phép của worse_query hay không
     public static func isScopeSupported(for path: String) -> Bool {
         let clean = ContainerDiscoveryMerger.canonicalPath(path)
-        return supportedRoots.contains { clean == $0 || clean.hasPrefix($0 + "/") }
+        guard clean.hasPrefix("/private/var/") else { return false }
+        let major = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+        if major == 27 && parentGrantRoots.contains(clean) { return true }
+        return containerRoot(for: clean) != nil
     }
 
-    private static let supportedRoots = [
+    private static let commonContainerRoots = [
         "/var/mobile/Containers/Data/Application",
         "/var/mobile/Containers/Data/InternalDaemon",
         "/var/mobile/Containers/Data/PluginKitPlugin",
-        "/var/mobile/Containers/Shared/AppGroup",
-        "/var/containers/Data/System",
-        "/var/containers/Shared/SystemGroup"
+        "/var/mobile/Containers/Shared/AppGroup"
     ].map { ContainerDiscoveryMerger.canonicalPath($0) }
+
+    // Upstream grants the System parent and AppGroup parent on iOS 27 only.
+    private static let parentGrantRoots = [
+        "/var/containers/Data/System",
+        "/var/mobile/Containers/Shared/AppGroup"
+    ].map { ContainerDiscoveryMerger.canonicalPath($0) }
+
+    private static var supportedContainerRoots: [String] {
+        guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 27 else {
+            return commonContainerRoots
+        }
+        return commonContainerRoots + [
+            "/var/containers/Data/System", "/var/containers/Shared/SystemGroup"
+        ].map { ContainerDiscoveryMerger.canonicalPath($0) }
+    }
 
     /// Trích xuất thư mục gốc của container từ đường dẫn bất kỳ (Data/Application, AppGroup, System)
     public static func containerRoot(for path: String) -> String? {
         let clean = ContainerDiscoveryMerger.canonicalPath(path)
-        let prefixes = supportedRoots.map { $0 + "/" }
+        let prefixes = supportedContainerRoots.map { $0 + "/" }
 
         for prefix in prefixes {
             if clean.hasPrefix(prefix) {
                 let remainder = String(clean.dropFirst(prefix.count))
                 let parts = remainder.split(separator: "/")
-                if let first = parts.first, !first.isEmpty {
+                if let first = parts.first, first.utf8.count == 36, UUID(uuidString: String(first)) != nil {
                     return prefix + String(first)
                 }
             }
@@ -289,7 +305,7 @@ public final class WorseQueryHelper {
             throw WorseQueryError.dlopenOrSymbolsFailed
         case -3:
             throw WorseQueryError.queryCreationFailed
-        case -4:
+        case -4, -9:
             throw WorseQueryError.localFilesystemFailure(nativeDiagnostics)
         case -5:
             throw WorseQueryError.queryRejected

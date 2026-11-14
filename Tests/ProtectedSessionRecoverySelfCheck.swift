@@ -6,7 +6,57 @@ private enum SessionCheckError: Error { case failed(String) }
     static func require(_ value:@autoclosure () -> Bool,_ label:String) throws {
         guard value() else { throw SessionCheckError.failed(label) }; checks += 1
     }
+    static func normalized(_ error: Error) -> Error {
+        do {
+            let _: Void = try StoredSecureEnclaveKeyPolicy.perform { throw error }
+            return SessionCheckError.failed("expected key boundary to throw")
+        } catch { return error }
+    }
     @MainActor static func main() async throws {
+        let corrupted = NSError(domain:"CryptoTokenKit",code:-3)
+        for original in [corrupted,
+            NSError(domain:NSOSStatusErrorDomain,code:-50,userInfo:[NSUnderlyingErrorKey:corrupted]),
+            NSError(domain:NSOSStatusErrorDomain,code:-26275,userInfo:[NSUnderlyingErrorKey:corrupted])] {
+            let error = normalized(original)
+            guard case DeviceIdentityError.invalidIdentity = error else {
+                throw SessionCheckError.failed("saved corrupted token did not become invalid identity")
+            }
+            let denied=SessionRecoveryHarness();denied.failures=[error]
+            do { try await denied.run();throw SessionCheckError.failed("corruption rotated without authorization") }
+            catch ProtectedDownloadError.rejected("device_recovery_required") {}
+            try require(denied.probes==1 && denied.replacements==0,"corruption only permits a recovery ticket probe")
+            let approved=SessionRecoveryHarness();approved.authorized=true;approved.failures=[error,nil]
+            try await approved.run()
+            try require(approved.probes==1 && approved.replacements==1,"authorized recovery accepts saved corrupted token")
+            let pending=SessionRecoveryHarness();pending.authorized=true;pending.controller.failure=error
+            try await pending.run()
+            try require(pending.probes==1 && pending.replacements==1 && pending.opens==1,
+                        "unreadable pending candidate uses the same bounded authorized recovery")
+        }
+        for original in [NSError(domain:"CryptoTokenKit",code:-2),
+            NSError(domain:"CryptoTokenKit",code:-4),NSError(domain:"CryptoTokenKit",code:-5),
+            NSError(domain:"unrelated-domain",code:-3),
+            NSError(domain:NSOSStatusErrorDomain,code:-50),
+            NSError(domain:NSOSStatusErrorDomain,code:-25308,userInfo:[NSUnderlyingErrorKey:corrupted]),
+            NSError(domain:NSOSStatusErrorDomain,code:-34018,userInfo:[NSUnderlyingErrorKey:corrupted]),
+            NSError(domain:NSOSStatusErrorDomain,code:-25293,userInfo:[NSUnderlyingErrorKey:corrupted]),
+            NSError(domain:NSCocoaErrorDomain,code:257,userInfo:[NSUnderlyingErrorKey:corrupted])] {
+            let error=normalized(original), result=error as NSError
+            try require(result.domain==original.domain && result.code==original.code,
+                        "temporary, permission and unrelated token failures stay intact")
+            let flow=SessionRecoveryHarness();flow.authorized=true;flow.failures=[error]
+            do { try await flow.run();throw SessionCheckError.failed("temporary token failure recovered") }
+            catch is SessionCheckError { throw SessionCheckError.failed("temporary token failure recovered") }
+            catch {}
+            try require(flow.probes==0 && flow.replacements==0,"temporary token failure cannot replace identity")
+        }
+        do {
+            let flow=SessionRecoveryHarness();flow.authorized=true;flow.failures=[normalized(corrupted)]
+            flow.afterOpen={flow.contextEpoch += 1}
+            do { try await flow.run();throw SessionCheckError.failed("corrupted key recovered after cancellation") }
+            catch is CancellationError {}
+            try require(flow.probes==0 && flow.replacements==0,"context cancellation blocks corrupted-key recovery")
+        }
         do {
             let flow=SessionRecoveryHarness()
             try await flow.run()

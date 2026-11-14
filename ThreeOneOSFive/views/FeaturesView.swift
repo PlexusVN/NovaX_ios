@@ -476,7 +476,8 @@ struct PatchCardView: View {
     @ObservedObject var service: FeaturePatchService
     @ObservedObject var auth: AuthManager
     private var applicationState: PatchApplicationState { service.patchApplicationState(patch) }
-    private var isApplied: Bool { applicationState.requiresRestore }
+    private var isApplied: Bool { service.isPatchToggleOn(patch) }
+    private var isRecoveryPending: Bool { service.isPatchDisabledPendingRestore(patch) }
     @State private var isWorking = false
     @Binding var activeToast: ToastInfo?
     @State private var glowPulse = false
@@ -495,10 +496,16 @@ struct PatchCardView: View {
                     Circle()
                         .fill(isApplied ? AppTheme.statusSuccess : AppTheme.gamingTextSecondary)
                         .frame(width: 6, height: 6)
-                    Text(applicationState == .recoveryRequired ? "Cần khôi phục" : (isApplied ? "Chức năng đang bật" : "Sẵn sàng"))
+                    Text(isRecoveryPending ? "Đã tắt · File chưa khôi phục" : (applicationState == .recoveryRequired ? "Cần khôi phục" : (isApplied ? "Chức năng đang bật" : "Sẵn sàng")))
                         .font(.system(size: 10, weight: .semibold, design: .rounded))
                 }
                 .foregroundColor(isApplied ? AppTheme.statusSuccess : AppTheme.gamingTextSecondary)
+                if isRecoveryPending {
+                    Button("Thử khôi phục file") { togglePatch(restoreOnly: true) }
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundColor(AppTheme.gamingBlueBright)
+                        .disabled(isWorking)
+                }
             }
 
             Spacer()
@@ -643,27 +650,29 @@ struct PatchCardView: View {
 
     // MARK: - Actions
 
-    private func togglePatch() {
+    private func togglePatch(restoreOnly: Bool = false) {
         Haptics.medium()
         isWorking = true
         activeToast = ToastInfo(
-            title: isApplied ? "Chức năng đang tắt" : "Chức năng đang bật",
+            title: (isApplied || restoreOnly) ? "Chức năng đang tắt" : "Chức năng đang bật",
             message: "Vui lòng chờ...",
             isSuccess: true
         )
 
-        let targetIsApplied = isApplied
+        let targetIsApplied = isApplied || restoreOnly
         Task.detached(priority: .userInitiated) {
             if targetIsApplied {
                 do {
-                    try await service.restorePatch(patch, auth: auth)
+                    let outcome = try await service.disablePatch(patch, auth: auth)
                     await MainActor.run {
                         isWorking = false
-                        Haptics.success()
+                        if outcome == .restored { Haptics.success() } else { Haptics.medium() }
                         activeToast = ToastInfo(
-                            title: "Tắt chức năng thành công",
-                            message: "Đã khôi phục dữ liệu đã sao lưu trước lần áp dụng này.",
-                            isSuccess: true
+                            title: outcome == .restored ? "Tắt chức năng thành công" : "Đã tắt · File chưa khôi phục",
+                            message: outcome == .restored
+                                ? "Đã khôi phục dữ liệu đã sao lưu trước lần áp dụng này."
+                                : "Công tắc đã tắt trong Astra. File game chưa được khôi phục nên có thể vẫn còn tác dụng. Bản sao lưu được giữ lại; hãy chọn Thử khôi phục file để thử lại.",
+                            isSuccess: outcome == .restored
                         )
                     }
                 } catch {

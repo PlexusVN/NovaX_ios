@@ -61,6 +61,12 @@ enum PatchApplicationState: Equatable {
     var requiresRestore: Bool { self != .off }
 }
 
+/// An OFF request may leave file recovery pending. Only a verified restore
+/// changes the transaction journal; the fallback changes the catalog toggle.
+enum PatchDisableOutcome: Equatable, Sendable {
+    case restored, disabledWithoutRestore
+}
+
 // BEGIN PATCH ENGINE PROVENANCE — Foundation-only state and persistence.
 enum PatchWriteEngine: String, Codable { case legacy3105, worseQuery, airLift }
 enum PatchEnginePhase: String, Codable { case writing, applied, recoveryRequired, restored }
@@ -130,22 +136,145 @@ struct PatchEngineApplicationRecord: Codable, Equatable {
 
 struct PatchEngineApplicationStore {
     let backupRoot: URL
+    static let maximumRecordBytes = 2 * 1024 * 1024
+    static let maximumJournalBytes = 64 * 1024 * 1024
     private var directory: URL { backupRoot.appendingPathComponent(".engine-applications", isDirectory: true) }
     private func url(_ projectID: UUID) -> URL { directory.appendingPathComponent(projectID.uuidString + ".plist") }
+
+    // A projection of the same atomic journal, not another independently
+    // written receipt. Schema 3 binds the immutable engine descriptor to the
+    // backups before any target mutation. Old journals have no descriptor.
+    private struct JournalProjection: Decodable {
+        struct Target: Decodable {
+            let bundleID: String
+            let relativePath: String
+            let containerFingerprint: Data
+            var key: String { bundleID + "\0" + relativePath }
+        }
+        let schemaVersion: Int
+        let transactionID: UUID
+        let projectID: UUID
+        let createdAt: Date
+        let status: String
+        let records: [Target]
+        let createdDirectories: [Target]?
+        let engineRecord: PatchEngineApplicationRecord?
+        var isTerminal: Bool { status == "restored" || status == "rolledBack" }
+    }
+
+    static func encodedRecord(_ record: PatchEngineApplicationRecord) throws -> Data {
+        try record.validate()
+        let encoder = PropertyListEncoder(); encoder.outputFormat = .binary
+        let data = try encoder.encode(record)
+        guard data.count <= maximumRecordBytes else { throw PatchEngineStateError.invalidRecord }
+        return data
+    }
+
+    private func readProjection(projectID: UUID, transactionID: UUID) throws -> JournalProjection {
+        let path = backupRoot.appendingPathComponent(projectID.uuidString, isDirectory: true)
+            .appendingPathComponent(transactionID.uuidString, isDirectory: true).appendingPathComponent("journal.plist")
+        let data = try Data(contentsOf: path)
+        guard data.count <= Self.maximumJournalBytes,
+              let journal = try? PropertyListDecoder().decode(JournalProjection.self, from: data),
+              (1...3).contains(journal.schemaVersion), journal.projectID == projectID,
+              journal.transactionID == transactionID,
+              ["prepared", "applied", "restored", "rolledBack"].contains(journal.status) else {
+            throw PatchEngineStateError.invalidRecord
+        }
+        for target in journal.records + (journal.createdDirectories ?? []) {
+            guard try PatchPathValidator.canonicalBundleIdentifier(target.bundleID) == target.bundleID,
+                  try PatchPathValidator.canonicalRelativePath(target.relativePath) == target.relativePath,
+                  target.containerFingerprint.count == 32 else { throw PatchEngineStateError.invalidRecord }
+        }
+        if let record = journal.engineRecord {
+            _ = try Self.encodedRecord(record)
+            guard journal.schemaVersion == 3, record.projectID == projectID,
+                  record.operationID == transactionID, record.journalID == transactionID,
+                  record.engine != .airLift, record.baseline == .capturedPriorState,
+                  record.phase == .writing, record.completedBatches == 0, record.totalBatches == 0,
+                  Set(journal.records.map(\.key)).isSubset(of: Set(record.targetKeys)),
+                  (journal.createdDirectories ?? []).allSatisfy({ directory in
+                      // Auto-created parents need not be explicit package
+                      // targets, but must belong to a bound payload/directory.
+                      record.targetKeys.contains { $0 == directory.key || $0.hasPrefix(directory.key + "/") }
+                  }) else {
+                throw PatchEngineStateError.invalidRecord
+            }
+            for key in record.targetKeys {
+                let parts = key.split(separator: "\0", omittingEmptySubsequences: false)
+                guard parts.count == 2,
+                      try PatchPathValidator.canonicalBundleIdentifier(String(parts[0])) == String(parts[0]),
+                      try PatchPathValidator.canonicalRelativePath(String(parts[1])) == String(parts[1]) else {
+                    throw PatchEngineStateError.invalidRecord
+                }
+            }
+        } else if journal.schemaVersion == 3 { throw PatchEngineStateError.invalidRecord }
+        return journal
+    }
+
+    private func latestBoundJournal(_ projectID: UUID) throws -> JournalProjection? {
+        let root = backupRoot.appendingPathComponent(projectID.uuidString, isDirectory: true)
+        guard FileManager.default.fileExists(atPath: root.path) else { return nil }
+        var journals: [JournalProjection] = []
+        for child in try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) {
+            guard let transactionID = UUID(uuidString: child.lastPathComponent),
+                  FileManager.default.fileExists(atPath: child.appendingPathComponent("journal.plist").path) else { continue }
+            journals.append(try readProjection(projectID: projectID, transactionID: transactionID))
+        }
+        // Multiple unfinished transactions are not a normal predecessor/successor
+        // transition. Never hide an older recovery obligation behind a new one.
+        let unfinished = journals.filter { !$0.isTerminal }
+        guard unfinished.count <= 1 else { throw PatchEngineStateError.invalidRecord }
+        if let pending = unfinished.first {
+            guard !journals.contains(where: { $0.isTerminal && $0.createdAt > pending.createdAt }) else {
+                throw PatchEngineStateError.invalidRecord
+            }
+            return pending.engineRecord == nil ? nil : pending
+        }
+        return journals.sorted { $0.createdAt > $1.createdAt }.first.flatMap { $0.engineRecord == nil ? nil : $0 }
+    }
+
     func read(_ projectID: UUID) throws -> PatchEngineApplicationRecord? {
         let target = url(projectID)
-        guard FileManager.default.fileExists(atPath: target.path) else { return nil }
-        let data = try Data(contentsOf: target)
-        guard data.count <= 2 * 1024 * 1024,
-              let record = try? PropertyListDecoder().decode(PatchEngineApplicationRecord.self, from: data),
-              record.projectID == projectID else { throw PatchEngineStateError.invalidRecord }
-        try record.validate(); return record
+        var sidecar: PatchEngineApplicationRecord?
+        if FileManager.default.fileExists(atPath: target.path) {
+            let data = try Data(contentsOf: target)
+            guard data.count <= Self.maximumRecordBytes,
+                  let record = try? PropertyListDecoder().decode(PatchEngineApplicationRecord.self, from: data),
+                  record.projectID == projectID else { throw PatchEngineStateError.invalidRecord }
+            try record.validate(); sidecar = record
+        }
+        guard let journal = try latestBoundJournal(projectID), var bound = journal.engineRecord else { return sidecar }
+        if let sidecar {
+            if sidecar.journalID == bound.journalID {
+                guard sidecar.operationID == bound.operationID, sidecar.engine == bound.engine,
+                      sidecar.baseline == bound.baseline, sidecar.targetKeys == bound.targetKeys else {
+                    throw PatchEngineStateError.invalidRecord
+                }
+            } else {
+                // A stale project index may only be replaced by a newer bound
+                // journal after proving the previous direct journal terminated.
+                guard sidecar.engine != .airLift, sidecar.baseline != .legacyUnknown,
+                      let previousID = sidecar.journalID, sidecar.operationID == previousID else {
+                    throw PatchEngineStateError.invalidRecord
+                }
+                let previous = try readProjection(projectID: projectID, transactionID: previousID)
+                guard previous.isTerminal, previous.createdAt <= journal.createdAt else {
+                    throw PatchEngineStateError.invalidRecord
+                }
+            }
+        }
+        switch journal.status {
+        case "prepared": bound.phase = .recoveryRequired
+        case "applied": bound.phase = .applied
+        default: bound.phase = .restored
+        }
+        return bound
     }
     func save(_ record: PatchEngineApplicationRecord) throws {
-        try record.validate()
+        let data = try Self.encodedRecord(record)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let encoder = PropertyListEncoder(); encoder.outputFormat = .binary
-        try encoder.encode(record).write(to: url(record.projectID), options: .atomic)
+        try data.write(to: url(record.projectID), options: .atomic)
     }
     func requireResolvedLegacyHistory(defaults: UserDefaults = .standard) throws {
         let prefix = "airlift.applied."
@@ -256,6 +385,10 @@ struct CatalogPatchApplicationRegistry {
         for suffix in ["", "_recovery"] where defaults.bool(forKey: prefix + legacy + suffix) {
             defaults.set(true, forKey: prefix + stable + suffix)
         }
+        if let binding = defaults.string(forKey: prefix + legacy + "_disabledBinding"),
+           defaults.string(forKey: prefix + stable + "_disabledBinding") == nil {
+            defaults.set(binding, forKey: prefix + stable + "_disabledBinding")
+        }
         // Preference keys only; the transaction journal/backups are untouched.
         // Leaving old ON flags would resurrect them after a successful restore.
         clear(legacy)
@@ -263,12 +396,23 @@ struct CatalogPatchApplicationRegistry {
     func markApplied(_ identity: String) {
         defaults.set(true, forKey: prefix + identity)
         defaults.removeObject(forKey: prefix + identity + "_recovery")
+        defaults.removeObject(forKey: prefix + identity + "_disabledBinding")
     }
     func markRecoveryRequired(_ identity: String) {
         defaults.set(true, forKey: prefix + identity + "_recovery")
     }
+    func markDisabledWithoutRestore(_ identity: String, binding: String) {
+        defaults.set(binding, forKey: prefix + identity + "_disabledBinding")
+        markRecoveryRequired(identity)
+    }
+    func hasPendingDisable(_ identity: String) -> Bool {
+        defaults.string(forKey: prefix + identity + "_disabledBinding") != nil
+    }
+    func isDisabledWithoutRestore(_ identity: String, binding: String) -> Bool {
+        defaults.string(forKey: prefix + identity + "_disabledBinding") == binding
+    }
     func clear(_ identity: String) {
-        for suffix in ["", "_projectID", "_recovery"] { defaults.removeObject(forKey: prefix + identity + suffix) }
+        for suffix in ["", "_projectID", "_recovery", "_disabledBinding"] { defaults.removeObject(forKey: prefix + identity + suffix) }
     }
     func state(for identity: String, recordedState: (UUID) -> PatchApplicationState?) -> PatchApplicationState {
         if let id = projectID(for: identity), let state = recordedState(id) {
@@ -314,6 +458,7 @@ enum PatchTransaction {
         var status: Status
         let records: [Record]
         let createdDirectories: [DirectoryRecord]?
+        let engineRecord: PatchEngineApplicationRecord?
     }
 
     private struct ResolvedRule {
@@ -346,7 +491,7 @@ enum PatchTransaction {
     }
 
     private static let minimumSchemaVersion = 1
-    private static let schemaVersion = 2
+    private static let schemaVersion = 3
     private static let journalFilename = "journal.plist"
 
     static func apply(
@@ -355,6 +500,7 @@ enum PatchTransaction {
         engine: PatchWriteEngine = .legacy3105,
         containerResolver: (String) throws -> URL,
         beforeWrite: ((Int) throws -> Void)? = nil,
+        beforeProvenanceWrite: (() throws -> Void)? = nil,
         fileManager: FileManager = .default
     ) throws -> PatchTransactionReceipt {
         try DirectPatchExecutionContext.check()
@@ -376,6 +522,11 @@ enum PatchTransaction {
         let engineTargets = (project.rules.map { $0.bundleID + "\0" + $0.relativePath }
             + project.directories.map { $0.bundleID + "\0" + $0.relativePath }).sorted()
         try engineStore.requireNoUnbackedOverlap(projectID: project.id, targetKeys: engineTargets)
+        let transactionID = UUID()
+        var engineRecord = PatchEngineApplicationRecord(projectID: project.id, operationID: transactionID,
+            engine: engine, baseline: .capturedPriorState, targetKeys: engineTargets, journalID: transactionID)
+        // Reject an index the reader cannot consume before backup/journal I/O.
+        _ = try PatchEngineApplicationStore.encodedRecord(engineRecord)
 
         var roots: [String: URL] = [:]
         var resolvedRules: [ResolvedRule] = []
@@ -466,7 +617,6 @@ enum PatchTransaction {
             }
         }
 
-        let transactionID = UUID()
         let transactionDirectory = backupRoot
             .appendingPathComponent(project.id.uuidString, isDirectory: true)
             .appendingPathComponent(transactionID.uuidString, isDirectory: true)
@@ -533,7 +683,8 @@ enum PatchTransaction {
             createdAt: Date(),
             status: .prepared,
             records: records,
-            createdDirectories: createdDirectories
+            createdDirectories: createdDirectories,
+            engineRecord: engineRecord
         )
         do {
             try writeJournal(journal, to: journalURL)
@@ -541,11 +692,12 @@ enum PatchTransaction {
             throw failedApply(error, operation: "journal-write")
         }
 
-        var engineRecord = PatchEngineApplicationRecord(projectID: project.id, operationID: transactionID,
-            engine: engine, baseline: .capturedPriorState, targetKeys: engineTargets, journalID: transactionID)
-        // Save before the first target mutation. A failure here leaves the
-        // prepared journal intact and no target has been written.
-        try fileOperation("provenance-write") { try engineStore.save(engineRecord) }
+        // The journal already owns the exact provenance. An interrupted project
+        // index write can be recovered without trusting an unrelated old index.
+        try fileOperation("provenance-write") {
+            try beforeProvenanceWrite?()
+            try engineStore.save(engineRecord)
+        }
 
         do {
             for resolved in resolvedDirectories where !fileManager.fileExists(atPath: resolved.target.path) {
@@ -696,6 +848,7 @@ enum PatchTransaction {
                         try fileManager.removeItem(at: item.target)
                     }
                 }
+                try verifyRestoredRecords(resolved)
                 try DirectPatchExecutionContext.check()
                 journal.status = .restored
                 try writeJournal(journal, to: receipt.journalURL)
@@ -1116,6 +1269,24 @@ enum PatchTransaction {
         }
     }
 
+    private static func verifyRestoredRecords(_ resolved: [ResolvedRecord]) throws {
+        for item in resolved {
+            var info = stat()
+            let result = item.target.path.withCString { lstat($0, &info) }
+            if item.record.originalExisted {
+                guard result == 0, (info.st_mode & mode_t(S_IFMT)) == mode_t(S_IFREG),
+                      let expected = item.record.originalDigest,
+                      try fileOperation("restore-target-readback", { try digestFile(item.target) }) == expected else {
+                    throw PatchPackageError.restoreFailed
+                }
+            } else {
+                // fileExists(false) also covers permission/stat failures. Only
+                // ENOENT proves a newly introduced target was actually removed.
+                guard result < 0, errno == ENOENT else { throw PatchPackageError.restoreFailed }
+            }
+        }
+    }
+
     private static func restoreRecords(
         _ records: [Record],
         transactionDirectory: URL,
@@ -1145,6 +1316,7 @@ enum PatchTransaction {
             createdDirectoryURLs.append(target)
         }
 
+        var restored: [ResolvedRecord] = []
         for record in records.reversed() {
             guard let root = roots[record.bundleID],
                   containerFingerprint(root) == record.containerFingerprint else {
@@ -1190,7 +1362,9 @@ enum PatchTransaction {
                     try fileManager.removeItem(at: target)
                 }
             }
+            restored.append(ResolvedRecord(record: record, target: target))
         }
+        try verifyRestoredRecords(restored)
 
         for directory in createdDirectoryURLs.reversed() {
             guard fileManager.fileExists(atPath: directory.path),
@@ -1453,11 +1627,15 @@ enum PatchTransaction {
     private static func writeJournal(_ journal: Journal, to url: URL) throws {
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .binary
-        try fileOperation("journal-write") { try encoder.encode(journal).write(to: url, options: .atomic) }
+        let data = try encoder.encode(journal)
+        guard data.count <= PatchEngineApplicationStore.maximumJournalBytes else { throw PatchEngineStateError.invalidRecord }
+        try fileOperation("journal-write") { try data.write(to: url, options: .atomic) }
     }
 
     private static func readJournal(_ url: URL) throws -> Journal {
-        try PropertyListDecoder().decode(Journal.self, from: Data(contentsOf: url))
+        let data = try Data(contentsOf: url)
+        guard data.count <= PatchEngineApplicationStore.maximumJournalBytes else { throw PatchEngineStateError.invalidRecord }
+        return try PropertyListDecoder().decode(Journal.self, from: data)
     }
 
     private static func digest(_ data: Data) -> Data {

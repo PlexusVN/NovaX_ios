@@ -127,6 +127,217 @@ import Foundation
         try await catalog.restorePatch(item,auth:auth)
         try check(Fixture.restores==1 && catalog.patchApplicationState(item) == .off,"actual bound direct restore succeeds despite historical AL boolean")
         try check(UserDefaults.standard.bool(forKey:legacyKey),"migration retains historical AirLift evidence")
+
+        // Actual disable API: desired OFF is independent of the retained
+        // filesystem recovery obligation, association and backup evidence.
+        func disableFixture(_ label:String) throws -> (FeaturePatchService,AuthManager,PatchItem,UUID,[URL:Data]) {
+            setup();ExploitSupportPolicy.currentStorageMode = .direct
+            let service=FeaturePatchService(),auth=AuthManager()
+            let item=PatchItem(identity:"fixture_disable_"+label+"_"+UUID().uuidString)
+            let projectID=UUID(),receiptID=UUID()
+            try FileManager.default.createDirectory(at:Fixture.root,withIntermediateDirectories:true)
+            let journalURL=Fixture.root.appendingPathComponent("fixture-journal.plist")
+            let backupURL=Fixture.root.appendingPathComponent("fixture-original.backup")
+            let targetURL=Fixture.root.appendingPathComponent("fixture-target.data")
+            let packageURL=Fixture.root.appendingPathComponent(item.identity+".3105")
+            try Data("fixture journal requiring recovery".utf8).write(to:journalURL)
+            try Data("fixture retained original bytes".utf8).write(to:backupURL)
+            try Data("fixture possibly patched target".utf8).write(to:targetURL)
+            try Data("fixture retained catalog package".utf8).write(to:packageURL)
+            Fixture.receipt=PatchTransactionReceipt(id:receiptID,projectID:projectID,journalURL:journalURL)
+            Fixture.journal = .recoveryRequired
+            let record=PatchEngineApplicationRecord(projectID:projectID,engine:.worseQuery,
+                baseline:.capturedPriorState,targetKeys:targets,journalID:receiptID,phase:.recoveryRequired)
+            try Fixture.store.save(record)
+            service.catalogApplications.associate(projectID,with:item.identity)
+            service.catalogApplications.markApplied(item.identity)
+            service.catalogApplications.markRecoveryRequired(item.identity)
+            let recordURL=Fixture.root.appendingPathComponent(".engine-applications/\(projectID.uuidString).plist")
+            let snapshots=try Dictionary(uniqueKeysWithValues:[journalURL,backupURL,recordURL,targetURL,packageURL].map { ($0,try Data(contentsOf:$0)) })
+            return (service,auth,item,projectID,snapshots)
+        }
+        func unchanged(_ snapshots:[URL:Data]) throws -> Bool {
+            try snapshots.allSatisfy { try Data(contentsOf:$0.key)==$0.value }
+        }
+        for reason in ["invalid-record","missing-receipt","airlift-no-backup","provider-unavailable","restore-io"] {
+            let (service,auth,item,projectID,initial)=try disableFixture(reason)
+            var snapshots=initial
+            if reason=="invalid-record" {
+                let recordURL=Fixture.root.appendingPathComponent(".engine-applications/\(projectID.uuidString).plist")
+                try Data("unreadable provenance fixture".utf8).write(to:recordURL)
+                snapshots[recordURL]=try Data(contentsOf:recordURL)
+            } else if reason=="missing-receipt" {
+                // An old ON/recovery preference can survive without a project
+                // association; force OFF must retain that unresolved evidence.
+                service.catalogApplications.clear(item.identity)
+                service.catalogApplications.markRecoveryRequired(item.identity)
+            } else if reason=="airlift-no-backup" {
+                let record=PatchEngineApplicationRecord(projectID:projectID,engine:.airLift,baseline:.unavailable,
+                    targetKeys:targets,phase:.recoveryRequired,totalBatches:1)
+                try Fixture.store.save(record)
+                let recordURL=Fixture.root.appendingPathComponent(".engine-applications/\(projectID.uuidString).plist")
+                snapshots[recordURL]=try Data(contentsOf:recordURL)
+                UserDefaults.standard.set(true,forKey:"airlift.applied.\(projectID.uuidString)")
+            } else if reason=="provider-unavailable" {
+                ExploitSupportPolicy.currentStorageMode = .airLift
+            } else {
+                Fixture.restoreError=NSError(domain:NSPOSIXErrorDomain,code:13)
+            }
+            let canonical=service.patchApplicationState(item)
+            let association=service.catalogApplications.projectID(for:item.identity)
+            let legacy=UserDefaults.standard.bool(forKey:"airlift.applied.\(projectID.uuidString)")
+            let outcome=try await service.disablePatch(item,auth:auth)
+            try check(outcome == .disabledWithoutRestore,"OFF remains available when restore fails: \(reason)")
+            try check(service.patchApplicationState(item)==canonical && canonical.requiresRestore,"force OFF retains canonical recovery state: \(reason)")
+            try check(service.catalogApplications.projectID(for:item.identity)==association,"force OFF retains project association: \(reason)")
+            try check(try unchanged(snapshots),"force OFF changes no target, journal, backup, package or provenance bytes: \(reason)")
+            try check(UserDefaults.standard.bool(forKey:"airlift.applied.\(projectID.uuidString)")==legacy,"force OFF retains legacy AirLift evidence: \(reason)")
+            try check(!service.isPatchToggleOn(item) && service.isPatchDisabledPendingRestore(item),"desired OFF still exposes recovery obligation: \(reason)")
+            let rebuilt=FeaturePatchService()
+            try check(!rebuilt.isPatchToggleOn(item) && rebuilt.isPatchDisabledPendingRestore(item),"OFF persists through service reconstruction: \(reason)")
+            do { try rebuilt.attemptEnable(item,newProjectID:UUID());throw FixtureError.failed("pending OFF allowed a new association") }
+            catch PatchRestoreError.disabledPendingRestore {}
+            try check(Fixture.enableAssociations==0 && rebuilt.catalogApplications.projectID(for:item.identity)==association,"enable guard runs before replacing the old association: \(reason)")
+            try check(Fixture.restores==0,"failed restore did not report restored: \(reason)")
+        }
+
+        do {
+            let (service,auth,item,projectID,_)=try disableFixture("retry")
+            Fixture.restoreError=NSError(domain:NSPOSIXErrorDomain,code:13)
+            _ = try await service.disablePatch(item,auth:auth)
+            let renamed=PatchItem(identity:"fixture_disable_renamed_"+UUID().uuidString)
+            service.catalogApplications.migrateIdentity(from:item.identity,to:renamed.identity)
+            let rebuilt=FeaturePatchService()
+            try check(!rebuilt.isPatchToggleOn(renamed) && rebuilt.isPatchDisabledPendingRestore(renamed),"stable identity migration retains detached OFF and its binding")
+            try check(!rebuilt.catalogApplications.hasPendingDisable(item.identity),"legacy detached marker does not survive identity migration")
+            Fixture.restoreError=nil
+            try await rebuilt.restorePatch(renamed,auth:auth)
+            try check(Fixture.restores==1 && rebuilt.patchApplicationState(renamed) == .off,"strict restore retry resolves the canonical obligation")
+            try check(!rebuilt.catalogApplications.hasPendingDisable(renamed.identity) && rebuilt.catalogApplications.projectID(for:renamed.identity)==nil,"successful retry clears only the completed catalog metadata")
+            let record=try Fixture.store.read(projectID)
+            try check(record?.phase == .restored,"successful retry records actual restoration")
+            let newProject=UUID()
+            try rebuilt.attemptEnable(renamed,newProjectID:newProject)
+            try check(Fixture.enableAssociations==1 && rebuilt.catalogApplications.projectID(for:renamed.identity)==newProject,"enable is allowed once canonical recovery is OFF")
+        }
+
+        do {
+            let (service,auth,item,projectID,_)=try disableFixture("successful-disable")
+            let outcome=try await service.disablePatch(item,auth:auth)
+            try check(outcome == .restored && Fixture.restores==1,"successful OFF reports actual restoration separately")
+            try check(service.patchApplicationState(item) == .off && !service.isPatchToggleOn(item),"successful restore publishes normal OFF")
+            try check(!service.catalogApplications.hasPendingDisable(item.identity),"successful OFF does not leave detached-recovery metadata")
+            try check(try Fixture.store.read(projectID)?.phase == .restored,"successful OFF retains the completed transaction record")
+        }
+
+        do {
+            let (service,auth,item,_,_)=try disableFixture("completed-elsewhere")
+            Fixture.restoreError=FixtureError.nativeFailure
+            _ = try await service.disablePatch(item,auth:auth)
+            Fixture.journal = .off
+            let replacement=UUID()
+            try service.attemptEnable(item,newProjectID:replacement)
+            try check(Fixture.enableAssociations==1,"canonical restored state permits enable despite stale detached metadata")
+        }
+
+        for changed in ["receipt","operation"] {
+            let (service,auth,item,projectID,_)=try disableFixture("binding-"+changed)
+            if changed=="operation" {
+                Fixture.receipt=nil
+                let record=PatchEngineApplicationRecord(projectID:projectID,engine:.airLift,baseline:.unavailable,
+                    targetKeys:targets,phase:.recoveryRequired,totalBatches:1)
+                try Fixture.store.save(record)
+            }
+            Fixture.restoreError=FixtureError.nativeFailure
+            _ = try await service.disablePatch(item,auth:auth)
+            if changed=="receipt",let old=Fixture.receipt {
+                Fixture.receipt=PatchTransactionReceipt(id:UUID(),projectID:projectID,journalURL:old.journalURL)
+            } else if let old=try Fixture.store.read(projectID) {
+                var replacement=PatchEngineApplicationRecord(projectID:old.projectID,operationID:UUID(),engine:old.engine,
+                    baseline:old.baseline,targetKeys:old.targetKeys,journalID:old.journalID,phase:old.phase,totalBatches:old.totalBatches)
+                replacement.completedBatches=old.completedBatches
+                try Fixture.store.save(replacement)
+            }
+            try check(!service.isPatchDisabledPendingRestore(item) && service.isPatchToggleOn(item),"old detached marker cannot hide a different \(changed)")
+            do { try service.attemptEnable(item,newProjectID:UUID());throw FixtureError.failed("stale binding bypassed unresolved obligation") }
+            catch PatchRestoreError.disabledPendingRestore {}
+            try check(Fixture.enableAssociations==0,"stale marker still blocks unsafe overwrite until canonical OFF")
+        }
+
+        do {
+            let (service,auth,item,projectID,_)=try disableFixture("sidecar-repair")
+            let path=Fixture.root.appendingPathComponent(".engine-applications/\(projectID.uuidString).plist")
+            let saved=try Data(contentsOf:path)
+            try Data("invalid sidecar".utf8).write(to:path)
+            _ = try await service.disablePatch(item,auth:auth)
+            try saved.write(to:path)
+            try check(service.isPatchDisabledPendingRestore(item) && !service.isPatchToggleOn(item),"repairing a direct sidecar cannot undo OFF for the same journal")
+            if let old=try Fixture.store.read(projectID) {
+                let replacement=PatchEngineApplicationRecord(projectID:old.projectID,operationID:UUID(),engine:old.engine,
+                    baseline:old.baseline,targetKeys:old.targetKeys,journalID:old.journalID,phase:old.phase,totalBatches:old.totalBatches)
+                try Fixture.store.save(replacement)
+            }
+            try check(service.isPatchDisabledPendingRestore(item) && !service.isPatchToggleOn(item),"direct metadata operation ID changes retain OFF while the journal is unchanged")
+        }
+
+        for failure in ["unauthenticated","revision","restore-auth","cancelled-error","url-cancelled","cancelled-task"] {
+            for wasOff in [false,true] {
+                let (service,auth,item,projectID,snapshots)=try disableFixture(failure)
+                if wasOff {
+                    Fixture.restoreError=FixtureError.nativeFailure
+                    _ = try await service.disablePatch(item,auth:auth)
+                    Fixture.restoreError=nil
+                }
+                let beforeToggle=service.isPatchToggleOn(item)
+                let beforePending=service.catalogApplications.hasPendingDisable(item.identity)
+                if failure=="unauthenticated" { auth.authState = .idle }
+                else if failure=="revision" {
+                    Fixture.onPrepareReceipt = { auth.authenticationRevision &+= 1 }
+                } else if failure=="restore-auth" { Fixture.restoreError=FeaturePatchError.notAuthenticated }
+                else if failure=="cancelled-error" { Fixture.restoreError=CancellationError() }
+                else if failure=="url-cancelled" { Fixture.restoreError=URLError(.cancelled) }
+                let operation=Task { @MainActor in
+                    if failure=="cancelled-task" { withUnsafeCurrentTask { $0?.cancel() } }
+                    return try await service.disablePatch(item,auth:auth)
+                }
+                do { _ = try await operation.value;throw FixtureError.failed("auth/cancel was acknowledged as disabled") }
+                catch FeaturePatchError.notAuthenticated {} catch is CancellationError {}
+                catch let error as URLError where error.code == .cancelled {}
+                try check(service.isPatchToggleOn(item)==beforeToggle && service.catalogApplications.hasPendingDisable(item.identity)==beforePending,"auth/cancellation preserves the previous desired state: \(failure)/\(wasOff)")
+                try check(try unchanged(snapshots),"auth/cancellation preserves all filesystem evidence")
+                try check(service.catalogApplications.projectID(for:item.identity)==projectID,"auth/cancellation preserves the original project association")
+            }
+        }
+
+        do {
+            let (service,auth,item,_,_)=try disableFixture("gate")
+            Fixture.restoreError=FixtureError.nativeFailure
+            let owner=try await PatchFilesystemGate.shared.acquire()
+            var completed=false
+            let disable=Task { @MainActor in
+                let outcome=try await service.disablePatch(item,auth:auth)
+                completed=true
+                return outcome
+            }
+            try await Task.sleep(nanoseconds:10_000_000)
+            try check(!completed && !service.catalogApplications.hasPendingDisable(item.identity),"OFF waits for the active filesystem owner before changing catalog desire")
+            await PatchFilesystemGate.shared.release(owner)
+            let result=try await disable.value
+            try check(result == .disabledWithoutRestore && completed,"OFF proceeds after exclusive ownership is released")
+        }
+
+        do {
+            let (service,auth,item,_,snapshots)=try disableFixture("queued-cancel")
+            let owner=try await PatchFilesystemGate.shared.acquire()
+            let disable=Task { @MainActor in try await service.disablePatch(item,auth:auth) }
+            try await Task.sleep(nanoseconds:10_000_000)
+            disable.cancel()
+            do { _ = try await disable.value;throw FixtureError.failed("cancelled queued OFF changed desire") }
+            catch is CancellationError {}
+            await PatchFilesystemGate.shared.release(owner)
+            try check(service.isPatchToggleOn(item) && !service.catalogApplications.hasPendingDisable(item.identity),"queued cancellation leaves the user's original ON request intact")
+            try check(try unchanged(snapshots),"cancelled queued OFF never changes filesystem recovery evidence")
+        }
         print("Actual coordinator/provenance/gate: \(checks) checks passed")
     }
 }

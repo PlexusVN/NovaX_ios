@@ -6,6 +6,9 @@ import Glibc
 #endif
 
 private enum DirectCheckError:Error { case failed(String), injected }
+private final class IgnoredRemovalFileManager: FileManager, @unchecked Sendable {
+    override func removeItem(at URL: URL) throws { /* simulate a falsely successful removal */ }
+}
 @main struct DirectTransactionProvenanceSelfCheck {
     static var checks=0
     static func check(_ value:@autoclosure () throws -> Bool,_ label:String) throws {
@@ -37,10 +40,14 @@ private enum DirectCheckError:Error { case failed(String), injected }
         // record disambiguates the historical marker without deleting it.
         let reapplied=try PatchTransaction.apply(project:project,backupRoot:backup,containerResolver:{_ in container})
         try check(reapplied.id != receipt.id,"reapply creates a new journal")
-        // Removing only the new sidecar reproduces pre-migration legacy state:
-        // direct journal plus AirLift history cannot establish original bytes.
+        // A genuine pre-schema-3 journal plus missing sidecar and AirLift
+        // history still cannot establish which provider supplied its baseline.
         let sidecar=backup.appendingPathComponent(".engine-applications/\(project.id.uuidString).plist")
         let saved=try Data(contentsOf:sidecar)
+        let boundJournal=try Data(contentsOf:reapplied.journalURL)
+        var legacyJournal=try PropertyListSerialization.propertyList(from:boundJournal,format:nil) as! [String:Any]
+        legacyJournal["schemaVersion"]=2;legacyJournal.removeValue(forKey:"engineRecord")
+        try PropertyListSerialization.data(fromPropertyList:legacyJournal,format:.binary,options:0).write(to:reapplied.journalURL)
         try files.removeItem(at:sidecar)
         let journalBefore=try Data(contentsOf:reapplied.journalURL)
         for operation in [0,1,2] {
@@ -53,7 +60,100 @@ private enum DirectCheckError:Error { case failed(String), injected }
             try check(try Data(contentsOf:target)==replacement && Data(contentsOf:reapplied.journalURL)==journalBefore,"legacy ambiguity preserves targets and journal")
         }
         try saved.write(to:sidecar)
+        try boundJournal.write(to:reapplied.journalURL)
         try PatchTransaction.restore(receipt:reapplied,containerResolver:{_ in container})
+
+        // Crash/failure after the prepared journal's atomic write but before
+        // the mutable project sidecar: the previous restored sidecar remains.
+        // Reconstruct from disk, never from an in-memory receipt or cached flag.
+        let previousSidecar=try Data(contentsOf:sidecar)
+        do {
+            _ = try PatchTransaction.apply(project:project,backupRoot:backup,engine:.worseQuery,
+                containerResolver:{_ in container},beforeProvenanceWrite:{throw DirectCheckError.injected})
+            throw DirectCheckError.failed("provenance failure ignored")
+        } catch DirectCheckError.injected {}
+        let pending=try PatchTransaction.latestReceipt(projectID:project.id,backupRoot:backup).unwrap()
+        try check(try Data(contentsOf:target)==original,"prepared/index crash performs no target mutation")
+        try check(try Data(contentsOf:sidecar)==previousSidecar,"prepared/index crash retains previous index bytes")
+        let rebuilt=PatchEngineApplicationStore(backupRoot:backup)
+        let bound=try rebuilt.read(project.id).unwrap()
+        try check(bound.journalID==pending.id && bound.engine == .worseQuery && bound.phase == .recoveryRequired,"reconstructed prepared journal owns its exact engine binding")
+        try files.removeItem(at:sidecar)
+        try check(try rebuilt.read(project.id)?.journalID==pending.id,"bound schema-3 journal survives an absent mutable project index")
+        try previousSidecar.write(to:sidecar)
+        let pendingData=try Data(contentsOf:pending.journalURL)
+        var damaged=try PropertyListSerialization.propertyList(from:pendingData,format:nil) as! [String:Any]
+        var damagedEngine=damaged["engineRecord"] as! [String:Any]
+        damagedEngine["journalID"]=UUID().uuidString
+        damaged["engineRecord"]=damagedEngine
+        try PropertyListSerialization.data(fromPropertyList:damaged,format:.binary,options:0).write(to:pending.journalURL)
+        do { _ = try rebuilt.read(project.id);throw DirectCheckError.failed("wrong embedded binding trusted") }
+        catch PatchEngineStateError.invalidRecord {}
+        try check(try Data(contentsOf:target)==original,"invalid embedded receipt never writes the target")
+        try pendingData.write(to:pending.journalURL)
+        let conflicting=PatchEngineApplicationRecord(projectID:project.id,engine:.airLift,baseline:.unavailable,
+            targetKeys:bound.targetKeys,phase:.recoveryRequired,totalBatches:1)
+        try rebuilt.save(conflicting)
+        do { _ = try rebuilt.read(project.id);throw DirectCheckError.failed("AirLift evidence hidden by bound journal") }
+        catch PatchEngineStateError.invalidRecord {}
+        try previousSidecar.write(to:sidecar)
+        try PatchTransaction.restore(receipt:pending,containerResolver:{_ in container})
+        try check(try Data(contentsOf:target)==original && rebuilt.read(project.id)?.phase == .restored,"prepared/index crash can restore and commit matching provenance")
+        let afterCrash=try PatchTransaction.apply(project:project,backupRoot:backup,containerResolver:{_ in container})
+        try check(try Data(contentsOf:target)==replacement,"reapply works after reconstructed recovery")
+        try PatchTransaction.restore(receipt:afterCrash,containerResolver:{_ in container})
+
+        // Writer and reader share one cap, enforced before container resolution,
+        // backups or a new prepared receipt can appear.
+        let largeHistory=root.appendingPathComponent("oversized-backups")
+        let largeRules=(0..<12_000).map { index in
+            PatchRule(bundleID:"com.fixture.large",relativePath:"Documents/"+String(repeating:"x",count:240)+String(index),
+                replacementFilename:"file",replacementData:Data([1]))
+        }
+        let largeProject=PatchProject(name:"oversized index",rules:largeRules)
+        var resolvedOversized=false
+        do {
+            _ = try PatchTransaction.apply(project:largeProject,backupRoot:largeHistory,containerResolver:{_ in resolvedOversized=true;return container})
+            throw DirectCheckError.failed("unreadable oversized index accepted")
+        } catch PatchEngineStateError.invalidRecord {}
+        try check(!resolvedOversized && !files.fileExists(atPath:largeHistory.path),"oversized index fails before resolution or durable backup state")
+
+        let directoryHistory=root.appendingPathComponent("directory-binding"),directoryGame=directoryHistory.appendingPathComponent("container")
+        try files.createDirectory(at:directoryGame.appendingPathComponent("Documents"),withIntermediateDirectories:true)
+        let directoryProject=PatchProject(name:"directory binding",directories:[PatchDirectory(bundleID:"com.fixture.directory",relativePath:"Documents/empty")],rules:[])
+        let directoryBackups=directoryHistory.appendingPathComponent("backups")
+        do {
+            _ = try PatchTransaction.apply(project:directoryProject,backupRoot:directoryBackups,containerResolver:{_ in directoryGame},beforeProvenanceWrite:{throw DirectCheckError.injected})
+            throw DirectCheckError.failed("directory provenance failure ignored")
+        } catch DirectCheckError.injected {}
+        let directoryReceipt=try PatchTransaction.latestReceipt(projectID:directoryProject.id,backupRoot:directoryBackups).unwrap()
+        let directoryJournal=try Data(contentsOf:directoryReceipt.journalURL)
+        var wrongDirectory=try PropertyListSerialization.propertyList(from:directoryJournal,format:nil) as! [String:Any]
+        var wrongDirectoryRecord=wrongDirectory["engineRecord"] as! [String:Any]
+        wrongDirectoryRecord["targetKeys"]=["com.fixture.directory\0Documents/unrelated"]
+        wrongDirectory["engineRecord"]=wrongDirectoryRecord
+        try PropertyListSerialization.data(fromPropertyList:wrongDirectory,format:.binary,options:0).write(to:directoryReceipt.journalURL)
+        do { _ = try PatchEngineApplicationStore(backupRoot:directoryBackups).read(directoryProject.id);throw DirectCheckError.failed("unbound created directory trusted") }
+        catch PatchEngineStateError.invalidRecord {}
+        try check(!files.fileExists(atPath:directoryGame.appendingPathComponent("Documents/empty").path),"wrong directory binding performs no filesystem mutation")
+        try directoryJournal.write(to:directoryReceipt.journalURL)
+        try PatchTransaction.restore(receipt:directoryReceipt,containerResolver:{_ in directoryGame})
+
+        // Restore may not commit success when a platform/FileManager removal
+        // claims success but an introduced file still exists.
+        let removalRoot=root.appendingPathComponent("verified-removal"),removalContainer=removalRoot.appendingPathComponent("container")
+        try files.createDirectory(at:removalContainer.appendingPathComponent("Documents"),withIntermediateDirectories:true)
+        let removalTarget=removalContainer.appendingPathComponent("Documents/introduced")
+        let removalProject=PatchProject(name:"removal",rules:[PatchRule(bundleID:"com.fixture.removal",relativePath:"Documents/introduced",replacementFilename:"introduced",replacementData:replacement)])
+        let removalReceipt=try PatchTransaction.apply(project:removalProject,backupRoot:removalRoot.appendingPathComponent("backups"),containerResolver:{_ in removalContainer})
+        do {
+            try PatchTransaction.restore(receipt:removalReceipt,containerResolver:{_ in removalContainer},fileManager:IgnoredRemovalFileManager())
+            throw DirectCheckError.failed("unverified removal committed")
+        } catch PatchPackageError.restoreFailed {}
+        try check(try Data(contentsOf:removalTarget)==replacement,"failed restore readback keeps pre-restore bytes")
+        try check(try PatchTransaction.recordedApplicationState(receipt:removalReceipt) == .applied,"failed removal cannot commit restored journal")
+        try PatchTransaction.restore(receipt:removalReceipt,containerResolver:{_ in removalContainer})
+        try check(!files.fileExists(atPath:removalTarget.path),"normal restore verifies introduced target is absent")
         // Failure after first mutation must roll back all bytes and provenance.
         var failure=project;failure.id=UUID();failure.rules.append(PatchRule(bundleID:"com.fixture.app",relativePath:"Documents/introduced",replacementFilename:"introduced",replacementData:Data([4])))
         do {

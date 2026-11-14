@@ -108,7 +108,7 @@ class IntegrationContracts(unittest.TestCase):
     @unittest.skipUnless(sys.platform == 'darwin' and shutil.which('clang'), 'requires macOS Objective-C compiler')
     def test_native_production_query_and_inode_enumerator(self):
         with tempfile.TemporaryDirectory() as folder:
-            for name in ['PathLeakSelfCheck', 'WorseQueryNativeSelfCheck', 'BadQueryEnumerationSelfCheck']:
+            for name in ['PathLeakSelfCheck', 'WorseQueryNativeSelfCheck', 'BadQueryEnumerationSelfCheck', 'MCMPathLookupSelfCheck']:
                 binary = Path(folder) / name
                 subprocess.run(['clang', '-fno-objc-arc' if name == 'BadQueryEnumerationSelfCheck' else '-fobjc-arc', '-framework', 'Foundation',
                                 str(ROOT / 'Tests' / (name + '.m')), '-o', str(binary)], check=True)
@@ -156,8 +156,12 @@ class IntegrationContracts(unittest.TestCase):
         resolver = extract_function(store, 'static func resolveAppContainerForPatch(')
         self.assertLess(resolver.index('IOS27ContainerSession.path'), resolver.index('resolveAppContainerPath('))
         scan = extract_function(store, 'static func prepareIOS27Access(')
-        self.assertNotIn('MCMActivate', scan)
-        self.assertNotIn('containerPathForBundleID(', scan)
+        self.assertNotIn('MCMActivateContainerPath(', scan)
+        self.assertIn('MCMContainerPathForWorseQuery(2, bundleID, false', scan)
+        self.assertIn('containerPathForBundleID(bundleID)', scan)
+        self.assertLess(scan.index('MCMContainerPathForWorseQuery('), scan.index('enumeratePaths('))
+        self.assertIn('evidence.identifier == nil || evidence.identifier == boundBundleID', scan)
+        self.assertIn('source: "mcm_bundle_id"', scan)
         self.assertIn('chunkSize: UInt64 = 50_000', scan)
         self.assertIn('checkpoint(sessionID', scan)
         self.assertIn('currentAccessProvider == .legacy3105', store.split('private static var shouldUseBadQuery: Bool')[1].split('private static let')[0])

@@ -5,7 +5,11 @@ private enum ResumeCheckError: Error { case failed(String), writeFailure }
 private final class ResumeMemory {
     var values: [String: Data] = [:]
     var failTag: String?
-    lazy var storage = DeviceIdentityStorage(read: { [self] in values[$0] },
+    var readFailureTag: String?
+    var readFailure: Error?
+    lazy var storage = DeviceIdentityStorage(read: { [self] tag in
+            if tag == readFailureTag, let readFailure { throw readFailure }; return values[tag]
+        },
         write: { [self] tag, value in
             if tag == failTag { throw ResumeCheckError.writeFailure }; values[tag] = value
         }, remove: { [self] in values.removeValue(forKey: $0) })
@@ -18,6 +22,8 @@ private final class ResumeMemory {
     var challengeFailure: ProtectedDownloadError?
     var openFailures: [ProtectedDownloadError] = [], syncFailures: [ProtectedDownloadError] = []
     var onEnrollment: (() -> Void)?
+    var onLegacyContext: (() -> Void)?
+    var legacyContextBinding: String?
     var rejectTLS = false
     var calls: [String] = []
     var statusOverride: Int?
@@ -42,7 +48,11 @@ private final class ResumeMemory {
         let payload: [String:Any]
         var status = 200
         do {
-            if route == "/api/v2/device/challenge" {
+            if route == "/api/v2/device/context" {
+                onLegacyContext?()
+                payload = ["success":true,"license_binding":legacyContextBinding ?? binding,
+                    "key_id":7,"device_key_id":request.value(forHTTPHeaderField:"X-Astra-Device-Key")!]
+            } else if route == "/api/v2/device/challenge" {
                 if let challengeFailure { throw challengeFailure }
                 guard body["key"] as? String == "RESUME-FIXTURE", body["hwid"] as? String == "hardware-A" else {
                     throw ResumeCheckError.failed("challenge lost scope")
@@ -132,6 +142,144 @@ private final class ResumeMemory {
         return (memory,identity,auth,transport,flow)
     }
     @MainActor static func main() async throws {
+        do {
+            let (memory,identity,auth,transport,flow)=try fixture()
+            _ = try await flow.sync(auth:auth)
+            let before=memory.values
+            flow.artifactOperation={
+                let _: Void = try identity.withStoredSecureEnclaveKey {
+                    throw NSError(domain:"CryptoTokenKit",code:-3)
+                }
+            }
+            do { _ = try await flow.download(PatchItem(),auth:auth);throw ResumeCheckError.failed("corrupted decrypt key accepted") }
+            catch DeviceIdentityError.invalidIdentity {}
+            try require(flow.consumedFixtureGrants.count==1,"failed local decrypt never replays one-use content automatically")
+            try require(memory.values==before,"failed key use preserves the complete enrolled archive")
+            try require(flow.accessNotice != nil,"local key failure records a recovery notice")
+            flow.artifactOperation=nil
+            do { _ = try await flow.download(PatchItem(),auth:auth);throw ResumeCheckError.failed("bad cached private key bypassed recovery") }
+            catch ProtectedDownloadError.rejected("device_recovery_required") {}
+            try require(flow.consumedFixtureGrants.count==1 && memory.values==before,
+                        "next explicit download requires recovery permission before a new grant or archive write")
+            transport.recoveryAuthorized=true
+            _ = try await flow.download(PatchItem(),auth:auth)
+            try require(flow.consumedFixtureGrants.count==2 && flow.consumedFixtureGrants[0] != flow.consumedFixtureGrants[1],
+                        "authorized explicit retry obtains a fresh grant after replacement")
+            try require(before.allSatisfy{memory.values[$0.key]==$0.value},"authorized recovery retains original key bytes")
+        }
+        // Cold-start preparation uses actual production migration/session bodies
+        // with only the Keychain factories and HTTP transport isolated.
+        for scopedEnrolled in [false,true] {
+            let memory=ResumeMemory(),auth=AuthManager()
+            let binding=DeviceIdentityService.binding(forLicense:auth.licenseKey)
+            let legacy=DeviceIdentityService(namespace:nil,storage:memory.storage,useSecureEnclave:false)
+            _ = try legacy.installationID(); _ = try legacy.getOrCreateKey(); _ = try legacy.getOrCreateAgreementKey()
+            try legacy.persistEnrollment(deviceKeyId:UUID().uuidString.lowercased())
+            memory.values["novax_software_p256_key"]=Data([0])
+            let archived=memory.values
+            var scopedKeys: (String,String)?
+            if scopedEnrolled {
+                let selected=try DeviceIdentityService.scoped(to:binding,storage:memory.storage,useSecureEnclave:false)
+                _ = try selected.installationID()
+                scopedKeys=(try selected.getOrCreateKey().publicKeyX963Base64,try selected.getOrCreateAgreementKey().publicKeyX963Base64)
+                try selected.persistServerKeyID(7)
+                try selected.persistEnrollment(deviceKeyId:UUID().uuidString.lowercased())
+            }
+            let transport=ResumeTransport(binding:binding);SecureAPIClient.handler=transport.send
+            let coldLegacy=DeviceIdentityService(namespace:nil,storage:memory.storage,useSecureEnclave:false)
+            let flow=IdentityResumeHarness(auth:auth,identity:nil,coldStorage:memory.storage,legacyIdentity:coldLegacy)
+            _ = try await flow.sync(auth:auth)
+            try require(transport.openCount==1,"cold scoped namespace opens despite damaged global archive")
+            try require(!transport.calls.contains("/api/v2/device/context"),"damaged global signer cannot send a migration proof")
+            try require(archived.allSatisfy{memory.values[$0.key]==$0.value},"cold-start keeps the global archive byte for byte")
+            if let scopedKeys {
+                let selected=try DeviceIdentityService.scoped(to:binding,storage:memory.storage,useSecureEnclave:false)
+                try require(try selected.getOrCreateKey().publicKeyX963Base64==scopedKeys.0 &&
+                    selected.getOrCreateAgreementKey().publicKeyX963Base64==scopedKeys.1,"enrolled scoped identity is never replaced by legacy handling")
+            }
+        }
+        do {
+            let memory=ResumeMemory(),auth=AuthManager(),binding=DeviceIdentityService.binding(forLicense:"RESUME-FIXTURE")
+            memory.values["novax_device_key_id"]=Data("damaged-legacy-reference".utf8)
+            let selected=try DeviceIdentityService.scoped(to:binding,storage:memory.storage,useSecureEnclave:false)
+            _ = try selected.installationID()
+            let signer=try selected.getOrCreateKey().publicKeyX963Base64
+            let recipient=try selected.getOrCreateAgreementKey().publicKeyX963Base64
+            let before=memory.values,transport=ResumeTransport(binding:binding);SecureAPIClient.handler=transport.send
+            let flow=IdentityResumeHarness(auth:auth,identity:nil,coldStorage:memory.storage,
+                legacyIdentity:DeviceIdentityService(namespace:nil,storage:memory.storage,useSecureEnclave:false))
+            _ = try await flow.sync(auth:auth)
+            let resumed=try DeviceIdentityService.scoped(to:binding,storage:memory.storage,useSecureEnclave:false)
+            try require(try resumed.getOrCreateKey().publicKeyX963Base64==signer &&
+                resumed.getOrCreateAgreementKey().publicKeyX963Base64==recipient,
+                "damaged legacy reference cannot replace scoped keys waiting for canonical resume")
+            let savedKeys=before.filter { $0.key == "novax_device_key_id" ||
+                $0.key.hasSuffix("novax_software_p256_key") || $0.key.hasSuffix("novax_agreement_software_p256_v2") ||
+                $0.key.hasSuffix("novax_signing_backend_v2") || $0.key.hasSuffix("novax_agreement_backend_v2") }
+            try require(savedKeys.allSatisfy{memory.values[$0.key]==$0.value},"metadata-less scoped resume preserves key bytes and the broken legacy archive")
+        }
+        do {
+            let memory=ResumeMemory(),auth=AuthManager(),binding=DeviceIdentityService.binding(forLicense:"RESUME-FIXTURE")
+            let legacy=DeviceIdentityService(namespace:nil,storage:memory.storage,useSecureEnclave:false)
+            _ = try legacy.installationID()
+            let signer=try legacy.getOrCreateKey().publicKeyX963Base64
+            _ = try legacy.getOrCreateAgreementKey()
+            try legacy.persistEnrollment(deviceKeyId:UUID().uuidString.lowercased())
+            let before=memory.values,transport=ResumeTransport(binding:binding)
+            let unrelated=String(repeating:"a",count:64);transport.legacyContextBinding=unrelated
+            SecureAPIClient.handler=transport.send
+            let flow=IdentityResumeHarness(auth:auth,identity:nil,coldStorage:memory.storage,legacyIdentity:legacy)
+            _ = try await flow.sync(auth:auth)
+            let migrated=try DeviceIdentityService.scoped(to:unrelated,storage:memory.storage,useSecureEnclave:false)
+            let selected=try DeviceIdentityService.scoped(to:binding,storage:memory.storage,useSecureEnclave:false)
+            try require(try migrated.getOrCreateKey().publicKeyX963Base64==signer,
+                        "healthy legacy migration still follows the verified original license binding")
+            try require(try selected.getOrCreateKey().publicKeyX963Base64 != signer,
+                        "new selected license never inherits an unrelated global signing key")
+            try require(before.allSatisfy{memory.values[$0.key]==$0.value},"healthy migration retains legacy archive")
+        }
+        do {
+            let memory=ResumeMemory(),auth=AuthManager(),binding=DeviceIdentityService.binding(forLicense:"RESUME-FIXTURE")
+            let legacy=DeviceIdentityService(namespace:nil,storage:memory.storage,useSecureEnclave:false)
+            _ = try legacy.installationID(); _ = try legacy.getOrCreateKey(); _ = try legacy.getOrCreateAgreementKey()
+            try legacy.persistEnrollment(deviceKeyId:UUID().uuidString.lowercased())
+            memory.values["novax_software_p256_key"]=Data([0])
+            let selected=try DeviceIdentityService.scoped(to:binding,storage:memory.storage,useSecureEnclave:false)
+            _ = try selected.installationID(); _ = try selected.getOrCreateKey(); _ = try selected.getOrCreateAgreementKey()
+            memory.values["astra.identity.v3.\(binding).novax_software_p256_key"]=Data([0])
+            let before=memory.values,transport=ResumeTransport(binding:binding);SecureAPIClient.handler=transport.send
+            let flow=IdentityResumeHarness(auth:auth,identity:nil,coldStorage:memory.storage,
+                legacyIdentity:DeviceIdentityService(namespace:nil,storage:memory.storage,useSecureEnclave:false))
+            do { _ = try await flow.sync(auth:auth);throw ResumeCheckError.failed("cold damaged scope replaced without recovery ticket") }
+            catch ProtectedDownloadError.rejected("device_recovery_required") {}
+            try require(memory.values==before,"damaged selected scope and legacy archive survive denied recovery")
+            try require(transport.enrollments.isEmpty,"damaged selected scope cannot become a new enrollment")
+        }
+        for transient in [DeviceIdentityError.keychain(-25308),DeviceIdentityError.keychain(-34018)] {
+            let memory=ResumeMemory(),auth=AuthManager(),binding=DeviceIdentityService.binding(forLicense:"RESUME-FIXTURE")
+            let legacy=DeviceIdentityService(namespace:nil,storage:memory.storage,useSecureEnclave:false)
+            _ = try legacy.installationID(); _ = try legacy.getOrCreateKey(); _ = try legacy.getOrCreateAgreementKey()
+            try legacy.persistEnrollment(deviceKeyId:UUID().uuidString.lowercased())
+            memory.readFailureTag="novax_signing_backend_v2";memory.readFailure=transient
+            let before=memory.values,transport=ResumeTransport(binding:binding);SecureAPIClient.handler=transport.send
+            let flow=IdentityResumeHarness(auth:auth,identity:nil,coldStorage:memory.storage,
+                legacyIdentity:DeviceIdentityService(namespace:nil,storage:memory.storage,useSecureEnclave:false))
+            do { _ = try await flow.sync(auth:auth);throw ResumeCheckError.failed("temporary legacy storage error ignored") }
+            catch DeviceIdentityError.keychain {}
+            try require(memory.values==before && transport.calls.isEmpty,"locked or missing-entitlement legacy storage cannot trigger enrollment")
+        }
+        do {
+            let memory=ResumeMemory(),auth=AuthManager(),binding=DeviceIdentityService.binding(forLicense:"RESUME-FIXTURE")
+            let legacy=DeviceIdentityService(namespace:nil,storage:memory.storage,useSecureEnclave:false)
+            _ = try legacy.installationID(); _ = try legacy.getOrCreateKey(); _ = try legacy.getOrCreateAgreementKey()
+            try legacy.persistEnrollment(deviceKeyId:UUID().uuidString.lowercased())
+            let before=memory.values,transport=ResumeTransport(binding:binding);SecureAPIClient.handler=transport.send
+            let flow=IdentityResumeHarness(auth:auth,identity:nil,coldStorage:memory.storage,legacyIdentity:legacy)
+            transport.onLegacyContext={flow.invalidate()}
+            do { _ = try await flow.sync(auth:auth);throw ResumeCheckError.failed("cancelled cold migration continued") }
+            catch is CancellationError {}
+            try require(memory.values==before && transport.calls==["/api/v2/device/context"],"cold migration cancellation prevents writes and scoped enrollment")
+        }
         do {
             let memory=ResumeMemory(), original=UUID().uuidString
             memory.values["deviceHwid"]=Data(original.utf8)

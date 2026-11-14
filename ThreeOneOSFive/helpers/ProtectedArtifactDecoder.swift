@@ -7,8 +7,19 @@ enum ProtectedArtifactError: LocalizedError {
     case invalidSignature
     case contextMismatch
     case authenticationFailed
+    case clockNotSynchronized
+    case grantExpired
 
-    var errorDescription: String? { "Không thể xác minh hoặc giải mã dữ liệu được cấp cho thiết bị này." }
+    var errorDescription: String? {
+        switch self {
+        case .clockNotSynchronized:
+            return "Ngày và giờ trên thiết bị chưa khớp máy chủ. Hãy bật Ngày & giờ tự động trong Cài đặt rồi thử lại."
+        case .grantExpired:
+            return "Quyền tải đã hết hạn trước khi hoàn tất xác minh. Hãy kiểm tra kết nối và ngày giờ tự động, rồi thử tải lại."
+        default:
+            return "Không thể xác minh hoặc giải mã dữ liệu được cấp cho thiết bị này."
+        }
+    }
 }
 
 struct ProtectedArtifactManifest: Codable {
@@ -110,11 +121,14 @@ final class ProtectedArtifactDecoder {
               grant.sessionId == sessionID, grant.requestNonce == requestNonce,
               Self.matches(requestNonce, #"^[0-9a-f]{32}$"#),
               UUID(uuidString: sessionID) != nil, UUID(uuidString: recipientID) != nil,
-              grant.issuedAt <= nowSeconds, nowSeconds < grant.expiresAt,
               ciphertext.count == manifest.ciphertextSize,
               Self.sha256(ciphertext) == manifest.ciphertextSHA256 else {
             throw ProtectedArtifactError.contextMismatch
         }
+        // Report a trusted grant's time failure separately. Keep the absolute
+        // expiry and every signature/recipient/session/nonce check unchanged.
+        guard grant.issuedAt <= nowSeconds else { throw ProtectedArtifactError.clockNotSynchronized }
+        guard nowSeconds < grant.expiresAt else { throw ProtectedArtifactError.grantExpired }
 
         let envelope = grant.keyEnvelope
         let peer = try Self.base64(envelope.ephemeralPublicKey, count: 65)

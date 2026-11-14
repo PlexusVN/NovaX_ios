@@ -115,8 +115,8 @@ enum ContainerStore {
             return nil
         }
 
-        // Prepared worse_query routes use only roots verified by the explicit preparation
-        // gate. Never enter LS/MCM class-2/bad_query before the scan UI exists.
+        // All worse_query lookup/grant/read work belongs to the worker preparation
+        // gate. Rendering a view must not perform a native path lookup.
         if ExploitSupportPolicy.currentRequiresWorseQueryPreparation {
             return IOS27ContainerSession.path(for: bundleID)
         }
@@ -228,14 +228,16 @@ enum ContainerStore {
             var found: [String: String] = [:]
             var conflictingTargets = Set<String>()
             var seen = Set<String>()
+            var inspectedEvidence = Set<String>()
             var candidates = 0, grants = 0, readable = 0, identified = 0
             var lastGrantError: Error?
 
-            func inspect(_ path: String) throws {
+            func inspect(_ path: String, boundBundleID: String? = nil, source: String = "scan") throws {
                 try ContainerScanProgress.shared.checkCancellation(sessionID)
                 let clean = ContainerDiscoveryMerger.canonicalPath(path)
-                guard isApplicationContainerPath(clean), seen.insert(clean).inserted else { return }
-                candidates += 1
+                guard isApplicationContainerPath(clean),
+                      inspectedEvidence.insert(clean + "\0" + (boundBundleID ?? "")).inserted else { return }
+                if seen.insert(clean).inserted { candidates += 1 }
                 ContainerScanProgress.shared.checkpoint(sessionID, message: "worse_query: yêu cầu handle cho \(clean)", candidates: candidates, grants: grants)
                 let handle: Int64
                 do { handle = try WorseQueryHelper.acquireAccess(for: clean) }
@@ -253,9 +255,40 @@ enum ContainerStore {
                 ContainerScanProgress.shared.checkpoint(sessionID,
                     message: "IDENTITY path=\(clean) \(detail)", candidates: candidates, grants: grants,
                     readable: readable, identified: identified, matched: found.count)
-                guard evidence.readable, let identifier = evidence.identifier else { return }
+                guard evidence.readable else { return }
+                let identifier: String
+                if let boundBundleID {
+                    // A path returned by an exact Bundle-ID system lookup has
+                    // different evidence from an anonymous inode candidate.
+                    // Missing xattr/metadata must not discard that binding, but
+                    // a conflicting valid identity always rejects the path.
+                    guard targets.contains(boundBundleID),
+                          !evidence.diagnostics.contains("identity=conflict"),
+                          evidence.identifier == nil || evidence.identifier == boundBundleID else {
+                        ContainerScanProgress.shared.checkpoint(sessionID,
+                            message: "IDENTITY lookup conflict source=\(source); đã từ chối kết quả.")
+                        return
+                    }
+                    identifier = boundBundleID
+                    if evidence.identifier == nil { identified += 1 }
+                    ContainerScanProgress.shared.checkpoint(sessionID,
+                        message: "IDENTITY source=\(source) binding=\(identifier) grant=ok directory_read=ok")
+                } else {
+                    guard let observed = evidence.identifier else { return }
+                    identifier = observed
+                }
                 guard targets.contains(identifier) else { return }
                 guard !conflictingTargets.contains(identifier) else { return }
+                if let other = found.first(where: { $0.key != identifier && $0.value == clean })?.key {
+                    found.removeValue(forKey: other)
+                    conflictingTargets.formUnion([other, identifier])
+                    for target in [other, identifier] {
+                        UserDefaults.standard.removeObject(forKey: "astra.resolved_container.\(target)")
+                    }
+                    ContainerScanProgress.shared.checkpoint(sessionID,
+                        message: "IDENTITY conflict: một UUID được gán cho nhiều Bundle ID; không chọn thư mục để ghi.")
+                    return
+                }
                 if let previous = found[identifier], previous != clean {
                     found.removeValue(forKey: identifier)
                     conflictingTargets.insert(identifier)
@@ -287,6 +320,40 @@ enum ContainerStore {
                 message: "Cache: \(found.count)/\(targets.count) ứng dụng đã được đọc và xác minh.")
             if found.count == targets.count || (!forceScan && !found.isEmpty) { return found }
 
+            // IPA 3105 2.2 resolves known identifiers before its anonymous scan.
+            // This path never calls MCMActivateContainerPath or bad_query.
+            for bundleID in targets.sorted() where found[bundleID] == nil {
+                try ContainerScanProgress.shared.checkCancellation(sessionID)
+                ContainerScanProgress.shared.checkpoint(sessionID,
+                    message: "Tra đường dẫn theo Bundle ID \(bundleID) bằng MCM (chưa cấp quyền).")
+                var lookupError: NSString?
+                if let path = MCMContainerPathForWorseQuery(2, bundleID, false, &lookupError) {
+                    try ContainerScanProgress.shared.checkCancellation(sessionID)
+                    do { try inspect(path, boundBundleID: bundleID, source: "mcm_bundle_id") }
+                    catch is CancellationError { throw CancellationError() }
+                    catch {
+                        if (error as? WorseQueryError)?.blocksContainerPreparation == true { throw error }
+                        ContainerScanProgress.shared.checkpoint(sessionID, message: "MCM: chưa cấp được quyền worse_query.")
+                    }
+                }
+                if found[bundleID] == nil {
+                    try ContainerScanProgress.shared.checkCancellation(sessionID)
+                    if let path = containerPathForBundleID(bundleID) {
+                        try ContainerScanProgress.shared.checkCancellation(sessionID)
+                        do { try inspect(path, boundBundleID: bundleID, source: "launch_services_bundle_id") }
+                        catch is CancellationError { throw CancellationError() }
+                        catch {
+                            if (error as? WorseQueryError)?.blocksContainerPreparation == true { throw error }
+                            ContainerScanProgress.shared.checkpoint(sessionID, message: "LaunchServices: chưa cấp được quyền worse_query.")
+                        }
+                    }
+                }
+            }
+            ContainerScanProgress.shared.report(sessionID, scanned: 0, total: 0, candidates: candidates, grants: grants,
+                readable: readable, identified: identified, matched: found.count,
+                message: "Tra theo Bundle ID: \(found.count)/\(targets.count) ứng dụng đã được cấp quyền và đọc.")
+            if found.count == targets.count || (!forceScan && !found.isEmpty) { return found }
+
             let group = WorseQueryHelper.resolveActiveAppGroup() ?? ""
             let resumeKey = AppInfo.osBuild + "|" + group + "|" + targets.sorted().joined(separator: ",")
             if forceScan { worseQueryResume.removeValue(forKey: resumeKey) }
@@ -297,7 +364,7 @@ enum ContainerStore {
             var exhaustedWindow = false
             ContainerScanProgress.shared.report(sessionID, scanned: first - 1, total: maximum, candidates: candidates, grants: grants,
                 readable: readable, identified: identified, matched: found.count,
-                message: "Dò phạm vi ước lượng \(first)…\(maximum) inode bằng pathleak. Đây không phải giới hạn toàn filesystem; không dùng MCM/LaunchServices.")
+                message: "Dò dự phòng phạm vi ước lượng \(first)…\(maximum) inode bằng pathleak. Đây không phải giới hạn toàn filesystem.")
             while first <= maximum {
                 try ContainerScanProgress.shared.checkCancellation(sessionID)
                 // Resume a cancelled chunk from its beginning; no unseen child

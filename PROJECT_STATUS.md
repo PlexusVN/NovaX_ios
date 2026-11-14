@@ -1,3 +1,11 @@
+## Astra 2.4 (38): đối chiếu IPA và sửa luồng truy cập
+
+Build 38 khôi phục thứ tự tra Bundle ID → MCM path/LaunchServices → worse_query
+grant → kiểm tra đọc trước khi quét inode; xử lý hỏng khóa Secure Enclave qua
+recovery có quyền, thông báo lệch giờ riêng và sửa tính nhất quán journal/sidecar.
+Đã bỏ probe ghi thử khi khởi động. Phạm vi và giới hạn kiểm chứng tại
+[REFERENCE_FLOW_FIX_20261115.md](docs/REFERENCE_FLOW_FIX_20261115.md).
+
 ## Source update 13/11/2026: cô lập engine và provenance
 
 Đã sửa source để 3105/worse_query/AirLift dùng cùng policy, giới hạn entry point của từng engine, preparation theo Bundle ID và lưu engine/journal của giao dịch. Partial AirLift giữ trạng thái cần xử lý; legacy không rõ baseline giữ backup và không báo khôi phục gốc. Chưa phát hành IPA mới; version vẫn 2.4 (37). Xem [phạm vi và kiểm chứng](docs/ENGINE_ISOLATION_20261113.md).

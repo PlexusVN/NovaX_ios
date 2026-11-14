@@ -155,6 +155,14 @@ enum FixtureFailure: Error { case operation }
             _ = try WorseQueryHelper.acquireAccess(for: root)
             preconditionFailure("token consumption failure was ignored")
         } catch WorseQueryError.extensionConsumptionFailed {}
+        NativeFixture.result = -9
+        do {
+            _ = try WorseQueryHelper.acquireAccess(for: root)
+            preconditionFailure("Caches cleanup/recovery failure was accepted")
+        } catch WorseQueryError.localFilesystemFailure(let detail) {
+            precondition(detail.contains("NSPOSIXErrorDomain code=13"))
+            precondition(WorseQueryError.localFilesystemFailure(detail).blocksContainerPreparation)
+        }
         precondition(NativeFixture.released == [42, 42])
         FileManager.default.groupAvailable = false
         WorseQueryHelper.invalidateActiveAppGroup()
@@ -167,9 +175,33 @@ enum FixtureFailure: Error { case operation }
         WorseQueryHelper.invalidateActiveAppGroup()
         NativeFixture.result = 43
         ProcessInfo.processInfo.operatingSystemVersion = OperatingSystemVersion(majorVersion: 26, minorVersion: 6, patchVersion: 2)
-        let handle = try WorseQueryHelper.acquireAccess(for: "/var/mobile/Containers/Shared/AppGroup/test")
+        let groupRoot = "/var/mobile/Containers/Shared/AppGroup/00000000-0000-0000-0000-000000000002"
+        let handle = try WorseQueryHelper.acquireAccess(for: groupRoot)
         precondition(NativeFixture.calls.last!.2)
         WorseQueryHelper.releaseAccess(handle: handle)
+        for (major, minor, patch) in [(26,6,2),(26,7,2),(27,0,1),(27,1,0),(27,2,0)] {
+            ProcessInfo.processInfo.operatingSystemVersion = OperatingSystemVersion(majorVersion: major, minorVersion: minor, patchVersion: patch)
+            let identifier = "00000000-0000-0000-0000-000000000003"
+            for family in ["/var/mobile/Containers/Data/Application", "/var/mobile/Containers/Data/InternalDaemon", "/var/mobile/Containers/Data/PluginKitPlugin"] {
+                precondition(!WorseQueryHelper.isScopeSupported(for: family), "container parent accepted")
+                precondition(!WorseQueryHelper.isScopeSupported(for: family + "/invalid-container/Documents"), "non-UUID container accepted")
+                precondition(WorseQueryHelper.isScopeSupported(for: family + "/" + identifier + "/Documents"))
+            }
+            precondition(WorseQueryHelper.isScopeSupported(for: groupRoot))
+            precondition(WorseQueryHelper.isScopeSupported(for: "/var/mobile/Containers/Shared/AppGroup") == (major == 27))
+            precondition(WorseQueryHelper.isScopeSupported(for: "/var/containers/Data/System") == (major == 27))
+            precondition(WorseQueryHelper.isScopeSupported(for: "/var/containers/Data/System/" + identifier) == (major == 27))
+            precondition(WorseQueryHelper.isScopeSupported(for: "/var/containers/Shared/SystemGroup/" + identifier) == (major == 27))
+            precondition(!WorseQueryHelper.isScopeSupported(for: "/var/containers/Shared/SystemGroup"))
+            if major == 26 {
+                let calls = NativeFixture.calls.count
+                for path in ["/var/containers/Data/System/" + identifier, "/var/containers/Shared/SystemGroup/" + identifier, "/var/mobile/Containers/Shared/AppGroup"] {
+                    do { _ = try WorseQueryHelper.acquireAccess(for: path); preconditionFailure("iOS 27-only scope reached native on iOS 26") }
+                    catch WorseQueryError.invalidPath {}
+                }
+                precondition(NativeFixture.calls.count == calls)
+            }
+        }
         print("[PASS] production worse_query helper: rewritten signed group, scope boundaries, root grant, flags, success/error release, daemon errors, missing group")
     }
 }

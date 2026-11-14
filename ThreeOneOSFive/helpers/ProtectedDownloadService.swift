@@ -338,8 +338,8 @@ final class ProtectedDownloadService: ObservableObject {
         let selected = try DeviceIdentityService.scoped(to: context.binding)
         if try selected.persistedEnrollmentID() == nil {
             let legacy = DeviceIdentityService.shared
-            if let legacyID = try legacy.persistedEnrollmentID() {
-                do {
+            do {
+                if let legacyID = try legacy.persistedEnrollmentID() {
                     let (data, _) = try await post("/api/v2/device/context", body: [:], signed: true,
                         purpose: "device-context-v2", bearer: false, identityOverride: legacy)
                     let payload = try dictionary(data)
@@ -354,13 +354,19 @@ final class ProtectedDownloadService: ObservableObject {
                         // An unrelated legacy A archive cannot prevent a valid B
                         // identity from being used. Keep both archives intact.
                     }
-                } catch ProtectedDownloadError.rejected(let code)
-                    where ["key_expired", "key_invalid", "key_banned", "key_revoked", "device_revoked", "device_key_invalid", "device_key_revoked", "license_policy_banned"].contains(code) {
-                    // Preserve an unusable archive. A different license gets its
-                    // own fresh identity and can never inherit this old device.
                 }
+            } catch DeviceIdentityError.identityMissing, DeviceIdentityError.invalidIdentity {
+                // A damaged global archive cannot authenticate this license.
+                // Keep it intact and let the selected scope prove its own keys
+                // or obtain a server-authorized recovery. This never creates or
+                // replaces an enrolled scoped identity here.
+            } catch ProtectedDownloadError.rejected(let code)
+                where ["key_expired", "key_invalid", "key_banned", "key_revoked", "device_revoked", "device_key_invalid", "device_key_revoked", "license_policy_banned"].contains(code) {
+                // Preserve an unusable archive. A different license gets its
+                // own fresh identity and can never inherit this old device.
             }
         }
+        try Task.checkCancellation()
         try context.validate()
         self.identity = selected
         return selected
@@ -467,6 +473,19 @@ final class ProtectedDownloadService: ObservableObject {
     private func recordAccessFailure(_ error: Error, context: ProtectedAuthContext) {
         guard !(error is CancellationError), currentAuthContext === context,
               (try? context.validate()) != nil else { return }
+        accessNotice = error.localizedDescription
+    }
+
+    private func recordLocalDownloadIdentityFailure(_ error: Error, context: ProtectedAuthContext) {
+        switch error {
+        case DeviceIdentityError.identityMissing, DeviceIdentityError.invalidIdentity: break
+        default: return
+        }
+        guard currentAuthContext === context, (try? context.validate()) != nil else { return }
+        // Grant/content may already be consumed. Do not replay either request.
+        // The next explicit operation must bootstrap and, if needed, obtain a
+        // fresh administrator-authorized recovery before receiving another grant.
+        clearSession()
         accessNotice = error.localizedDescription
     }
 
@@ -673,7 +692,10 @@ final class ProtectedDownloadService: ObservableObject {
             let result = try await downloadArtifact(descriptor, auth: auth)
             await gate.release()
             return result.data
-        } catch { await gate.release(); throw error }
+        } catch {
+            recordLocalDownloadIdentityFailure(error, context: requestedContext)
+            await gate.release(); throw error
+        }
     }
 
     /// Resolving availability is authenticated metadata, never a HEAD request to
@@ -707,7 +729,10 @@ final class ProtectedDownloadService: ObservableObject {
             let result = try await downloadArtifact(descriptor, auth: auth)
             await gate.release()
             return result
-        } catch { await gate.release(); throw error }
+        } catch {
+            recordLocalDownloadIdentityFailure(error, context: requestedContext)
+            await gate.release(); throw error
+        }
     }
 
     private func ensureReleaseLease() async throws {

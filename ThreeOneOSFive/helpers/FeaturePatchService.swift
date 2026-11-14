@@ -585,6 +585,7 @@ final class FeaturePatchService: ObservableObject {
             throw FeaturePatchError.notAuthenticated
         }
 
+        try requirePatchEnableAllowed(patch)
         let authRevision = auth.authenticationRevision
         defer { applicationRevision &+= 1 }
         var stage = PatchOperationStage.download
@@ -673,6 +674,66 @@ final class FeaturePatchService: ObservableObject {
     func restorePatch(_ patch: PatchItem, auth: AuthManager) async throws {
         try await withExclusivePatchOperation { operationID in
             try await self.restorePatchInOperation(patch, auth: auth, operationID: operationID)
+        }
+    }
+
+    /// Keep the restore API strict. An explicit OFF request can instead retain
+    /// recovery evidence and persist only the user's catalog toggle choice.
+    func disablePatch(_ patch: PatchItem, auth: AuthManager) async throws -> PatchDisableOutcome {
+        try await withExclusivePatchOperation { operationID in
+            guard auth.authState == .verified else { throw FeaturePatchError.notAuthenticated }
+            let authRevision = auth.authenticationRevision
+            do {
+                try await self.restorePatchInOperation(patch, auth: auth, operationID: operationID)
+                return .restored
+            } catch {
+                try Task.checkCancellation()
+                if error is CancellationError || (error as? URLError)?.code == .cancelled { throw error }
+                guard auth.authState == .verified, auth.authenticationRevision == authRevision else {
+                    throw FeaturePatchError.notAuthenticated
+                }
+                if case FeaturePatchError.notAuthenticated = error { throw error }
+                let failure = error as NSError
+                log("feature disable pending recovery: type=\(String(reflecting: type(of: error))) domain=\(failure.domain) code=\(failure.code)")
+                let slug = self.patchStorageSlug(patch)
+                self.catalogApplications.markDisabledWithoutRestore(slug, binding: self.patchDisableBinding(for: slug))
+                self.applicationRevision &+= 1
+                return .disabledWithoutRestore
+            }
+        }
+    }
+
+    private func patchDisableBinding(for slug: String) -> String {
+        guard let projectID = catalogApplications.projectID(for: slug) else { return "unresolved" }
+        // A known journal is the stable direct-transaction identity. Repairing
+        // its auxiliary sidecar must not undo the user's explicit OFF choice.
+        if let receipt = DevicePatchService.latestReceipt(projectID: projectID) {
+            return projectID.uuidString + ":journal:" + receipt.id.uuidString
+        }
+        let record = try? StorageEngineCoordinator.shared.applicationStore().read(projectID)
+        if let journalID = record?.journalID {
+            return projectID.uuidString + ":journal:" + journalID.uuidString
+        }
+        let operationID = record?.operationID.uuidString ?? "unknown-operation"
+        return projectID.uuidString + ":operation:" + operationID
+    }
+
+    func isPatchDisabledPendingRestore(_ patch: PatchItem) -> Bool {
+        let slug = patchStorageSlug(patch)
+        return catalogApplications.isDisabledWithoutRestore(slug, binding: patchDisableBinding(for: slug))
+            && patchApplicationState(patch).requiresRestore
+    }
+
+    func isPatchToggleOn(_ patch: PatchItem) -> Bool {
+        patchApplicationState(patch).requiresRestore && !isPatchDisabledPendingRestore(patch)
+    }
+
+    private func requirePatchEnableAllowed(_ patch: PatchItem) throws {
+        // Check before downloading/associating a new release. The old journal
+        // remains the owner of its backup until file recovery actually succeeds.
+        if catalogApplications.hasPendingDisable(patchStorageSlug(patch)),
+           patchApplicationState(patch).requiresRestore {
+            throw PatchRestoreError.disabledPendingRestore
         }
     }
 
@@ -1467,6 +1528,7 @@ enum PatchRestoreError: LocalizedError {
     case airLiftRestoreUnsupported
     case missingReceipt
     case recoveryRequired
+    case disabledPendingRestore
     var errorDescription: String? {
         switch self {
         case .airLiftRestoreUnsupported:
@@ -1475,6 +1537,8 @@ enum PatchRestoreError: LocalizedError {
             return "Không tìm thấy bản sao lưu để khôi phục. Trạng thái đang bật được giữ nguyên; hãy kiểm tra dữ liệu hoặc liên hệ hỗ trợ."
         case .recoveryRequired:
             return "Có giao dịch cũ hoặc dữ liệu đã thay đổi. Chức năng được đánh dấu cần khôi phục; hãy tắt để khôi phục bản gốc trước khi bật lại."
+        case .disabledPendingRestore:
+            return "Công tắc đã tắt nhưng file game chưa được khôi phục. Hãy chọn Thử khôi phục file trước khi bật lại."
         }
     }
 }

@@ -1,4 +1,10 @@
-"""Execute actual engine provenance, gate and coordinator dispatch on isolated I/O."""
+"""Execute actual engine provenance, strict restore and desired-OFF policy.
+
+Production methods/registry are extracted intact. Native restoration is a
+controlled boundary; temporary files prove failed OFF attempts retain existing
+target, package, journal, backup and provenance bytes. Direct transaction I/O is
+covered separately by DirectTransactionProvenanceSelfCheck.
+"""
 from pathlib import Path
 import os
 import shutil
@@ -57,10 +63,21 @@ var catalogApplications:CatalogPatchApplicationRegistry { CatalogPatchApplicatio
 var patchProjectsDir:URL { Fixture.root }
 var applicationRevision=0
 func patchStorageSlug(_ patch:PatchItem)->String { patch.identity }
+func attemptEnable(_ patch:PatchItem,newProjectID:UUID) throws {
+    try requirePatchEnableAllowed(patch)
+    catalogApplications.associate(newProjectID,with:patchStorageSlug(patch))
+    Fixture.enableAssociations += 1
+}
 '''
-        for signature in ['func restorePatch(', 'private func restorePatchInOperation(', 'func patchApplicationState(']:
+        for signature in ['func restorePatch(', 'func disablePatch(', 'private func patchDisableBinding(',
+                          'func isPatchDisabledPendingRestore(', 'func isPatchToggleOn(',
+                          'private func requirePatchEnableAllowed(',
+                          'private func restorePatchInOperation(', 'func patchApplicationState(']:
             source += extract_function(feature, signature) + '\n'
         source += '}\n'
+        apply = extract_function(feature, 'private func applyPatchInOperation(')
+        self.assertLess(apply.index('try requirePatchEnableAllowed(patch)'), apply.index('downloadPatch('))
+        self.assertLess(apply.index('try requirePatchEnableAllowed(patch)'), apply.index('catalogApplications.associate('))
         with tempfile.TemporaryDirectory() as directory:
             actual = Path(directory) / 'ActualCoordinator.swift'
             actual.write_text(source, encoding='utf-8')

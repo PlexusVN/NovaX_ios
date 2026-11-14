@@ -19,6 +19,33 @@ enum DeviceIdentityError: LocalizedError {
     }
 }
 
+/// Normalize only a damaged saved Secure Enclave key, at the key-use boundary.
+/// A storage, authentication, entitlement or temporary token failure must keep
+/// its original error and cannot authorize an identity replacement.
+enum StoredSecureEnclaveKeyPolicy {
+    static func perform<T>(_ operation: () throws -> T) throws -> T {
+        do { return try operation() }
+        catch {
+            if isCorruptedKey(error) { throw DeviceIdentityError.invalidIdentity }
+            throw error
+        }
+    }
+
+    static func isCorruptedKey(_ error: Error) -> Bool {
+        var current = error as NSError
+        // Security can wrap the token's parsing error in errSecParam/errSecDecode.
+        // Do not walk through unknown, locked, authentication or canceled errors.
+        for _ in 0..<6 {
+            if current.domain == "CryptoTokenKit" { return current.code == -3 }
+            guard current.domain == NSOSStatusErrorDomain,
+                  current.code == -50 || current.code == -26275,
+                  let underlying = current.userInfo[NSUnderlyingErrorKey] as? NSError else { return false }
+            current = underlying
+        }
+        return false
+    }
+}
+
 struct DeviceIdentityStorage {
     let read: (String) throws -> Data?
     let write: (String, Data) throws -> Void
@@ -81,6 +108,7 @@ public final class DeviceIdentityService {
     private var agreementBackendTag: String { storageTag("novax_agreement_backend_v2") }
     private var signingKey: SigningKey?
     private var agreementKey: AgreementKey?
+    private var storedSecureEnclaveKeyCorrupted = false
 
     let licenseBinding: String?
     private let recoveryGeneration: String?
@@ -253,6 +281,16 @@ public final class DeviceIdentityService {
         do { return try P256.KeyAgreement.PrivateKey(rawRepresentation: data) }
         catch { throw DeviceIdentityError.invalidIdentity }
     }
+    private static func storedSecureEnclaveSigningKey(_ data: Data) throws -> SecureEnclave.P256.Signing.PrivateKey {
+        try StoredSecureEnclaveKeyPolicy.perform {
+            try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: data)
+        }
+    }
+    private static func storedSecureEnclaveAgreementKey(_ data: Data) throws -> SecureEnclave.P256.KeyAgreement.PrivateKey {
+        try StoredSecureEnclaveKeyPolicy.perform {
+            try SecureEnclave.P256.KeyAgreement.PrivateKey(dataRepresentation: data)
+        }
+    }
     /// This path never creates keys or backend markers. A published recovery
     /// candidate with lost/corrupt material must not silently rotate its keys.
     private func existingRecoveryPublicKeys() throws -> (signing: String, agreement: String) {
@@ -265,7 +303,7 @@ public final class DeviceIdentityService {
         switch signingBackend {
         case AssuranceLevel.secureEnclave.rawValue:
             guard let signingSE, signingSoftware == nil else { throw DeviceIdentityError.invalidIdentity }
-            signing = try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: signingSE)
+            signing = try Self.storedSecureEnclaveSigningKey(signingSE)
                 .publicKey.x963Representation.base64EncodedString()
         case AssuranceLevel.softwareKeychain.rawValue:
             guard let signingSoftware, signingSE == nil else { throw DeviceIdentityError.invalidIdentity }
@@ -277,7 +315,7 @@ public final class DeviceIdentityService {
         switch agreementBackend {
         case AssuranceLevel.secureEnclave.rawValue:
             guard let agreementSE, agreementSoftware == nil else { throw DeviceIdentityError.invalidIdentity }
-            agreement = try SecureEnclave.P256.KeyAgreement.PrivateKey(dataRepresentation: agreementSE)
+            agreement = try Self.storedSecureEnclaveAgreementKey(agreementSE)
                 .publicKey.x963Representation.base64EncodedString()
         case AssuranceLevel.softwareKeychain.rawValue:
             guard let agreementSoftware, agreementSE == nil else { throw DeviceIdentityError.invalidIdentity }
@@ -613,7 +651,8 @@ public final class DeviceIdentityService {
             }
             let peer = try P256.KeyAgreement.PublicKey(x963Representation: peerPublicKeyX963)
             switch try loadAgreementKey() {
-            case .enclave(let key): return try key.sharedSecretFromKeyAgreement(with: peer)
+            case .enclave(let key):
+                return try withStoredSecureEnclaveKey { try key.sharedSecretFromKeyAgreement(with: peer) }
             case .software(let key): return try key.sharedSecretFromKeyAgreement(with: peer)
             }
         }
@@ -663,13 +702,30 @@ public final class DeviceIdentityService {
     private func signData(_ data: Data) throws -> String {
         try locked {
             switch try loadSigningKey() {
-            case .enclave(let key): return try key.signature(for: data).rawRepresentation.base64EncodedString()
+            case .enclave(let key):
+                return try withStoredSecureEnclaveKey { try key.signature(for: data).rawRepresentation.base64EncodedString() }
             case .software(let key): return try key.signature(for: data).rawRepresentation.base64EncodedString()
             }
         }
     }
 
+    /// An imported key's public point can remain readable after its private
+    /// token fails. Keep the definitive failure in this instance so the next
+    /// explicit operation cannot open another session with that unusable key.
+    /// The archive is untouched; replacement still requires server recovery.
+    func withStoredSecureEnclaveKey<T>(_ operation: () throws -> T) throws -> T {
+        try locked {
+            guard !storedSecureEnclaveKeyCorrupted else { throw DeviceIdentityError.invalidIdentity }
+            do { return try StoredSecureEnclaveKeyPolicy.perform(operation) }
+            catch DeviceIdentityError.invalidIdentity {
+                storedSecureEnclaveKeyCorrupted = true
+                throw DeviceIdentityError.invalidIdentity
+            }
+        }
+    }
+
     private func loadSigningKey() throws -> SigningKey {
+        guard !storedSecureEnclaveKeyCorrupted else { throw DeviceIdentityError.invalidIdentity }
         if let cached = signingKey { return cached }
         let backend = try readText(signingBackendTag)
         let seData = try readData(tag: seKeyTag)
@@ -679,7 +735,7 @@ public final class DeviceIdentityService {
             switch backend {
             case AssuranceLevel.secureEnclave.rawValue:
                 guard let seData else { throw DeviceIdentityError.identityMissing }
-                result = .enclave(try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: seData))
+                result = .enclave(try Self.storedSecureEnclaveSigningKey(seData))
             case AssuranceLevel.softwareKeychain.rawValue:
                 guard let softData else { throw DeviceIdentityError.identityMissing }
                 result = .software(try Self.storedSoftwareSigningKey(softData))
@@ -688,7 +744,7 @@ public final class DeviceIdentityService {
         } else if seData != nil && softData != nil {
             throw DeviceIdentityError.ambiguousIdentity
         } else if let seData {
-            result = .enclave(try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: seData))
+            result = .enclave(try Self.storedSecureEnclaveSigningKey(seData))
             try saveData(Data(AssuranceLevel.secureEnclave.rawValue.utf8), tag: signingBackendTag)
         } else if let softData {
             result = .software(try Self.storedSoftwareSigningKey(softData))
@@ -715,6 +771,7 @@ public final class DeviceIdentityService {
     }
 
     private func loadAgreementKey(allowCreatingForLegacyUpgrade: Bool = false) throws -> AgreementKey {
+        guard !storedSecureEnclaveKeyCorrupted else { throw DeviceIdentityError.invalidIdentity }
         if let cached = agreementKey { return cached }
         let backend = try readText(agreementBackendTag)
         let seData = try readData(tag: agreementSETag)
@@ -724,7 +781,7 @@ public final class DeviceIdentityService {
             switch backend {
             case AssuranceLevel.secureEnclave.rawValue:
                 guard let seData else { throw DeviceIdentityError.identityMissing }
-                result = .enclave(try SecureEnclave.P256.KeyAgreement.PrivateKey(dataRepresentation: seData))
+                result = .enclave(try Self.storedSecureEnclaveAgreementKey(seData))
             case AssuranceLevel.softwareKeychain.rawValue:
                 guard let softData else { throw DeviceIdentityError.identityMissing }
                 result = .software(try Self.storedSoftwareAgreementKey(softData))
@@ -733,7 +790,7 @@ public final class DeviceIdentityService {
         } else if seData != nil && softData != nil {
             throw DeviceIdentityError.ambiguousIdentity
         } else if let seData {
-            result = .enclave(try SecureEnclave.P256.KeyAgreement.PrivateKey(dataRepresentation: seData))
+            result = .enclave(try Self.storedSecureEnclaveAgreementKey(seData))
             try saveData(Data(AssuranceLevel.secureEnclave.rawValue.utf8), tag: agreementBackendTag)
         } else if let softData {
             result = .software(try Self.storedSoftwareAgreementKey(softData))

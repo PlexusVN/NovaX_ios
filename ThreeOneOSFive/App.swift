@@ -253,18 +253,9 @@ class AppState: ObservableObject {
                         }
                         return
                     }
-                    let testFile = (docPath as NSString).appendingPathComponent(".novax_test")
-                    do {
-                        try "test".write(toFile: testFile, atomically: true, encoding: .utf8)
-                        try? FileManager.default.removeItem(atPath: testFile)
-                        DispatchQueue.main.async {
-                            self.hasDirectDirectoryAccess = true
-                            self.isCheckingDirectAccess = false
-                        }
-                        return
-                    } catch {
-                        // fallthrough to next bundle ID
-                    }
+                    // Startup only observes access. Writability is established
+                    // by the authenticated transaction, never by overwriting or
+                    // deleting a fixed filename in another application's data.
                 }
             }
             DispatchQueue.main.async {
