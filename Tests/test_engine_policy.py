@@ -44,7 +44,9 @@ class EnginePolicyChecks(unittest.TestCase):
         self.assertIn('runPatchLibraryDirectOperation', library)
         self.assertIn('DirectPatchExecutor.run', library)
         app = (ROOT/'ThreeOneOSFive/App.swift').read_text(encoding='utf-8')
-        self.assertIn('configureTargets(bundleIDs: AppSecurityConfiguration.protectedBundleIDs)', app)
+        self.assertIn('configureTargetLoader', app)
+        self.assertIn('preparationTargets(auth:', app)
+        self.assertNotIn('configureTargets(bundleIDs: AppSecurityConfiguration.protectedBundleIDs)', app)
 
 
 if __name__ == '__main__':

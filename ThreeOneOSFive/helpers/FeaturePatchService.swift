@@ -391,6 +391,9 @@ final class FeaturePatchService: ObservableObject {
     private let catalogApplications = CatalogPatchApplicationRegistry(defaults: .standard)
     @Published private(set) var applicationRevision: UInt64 = 0
     private var catalogSyncRevision: UInt64 = 0
+    private var catalogAuthenticationRevision: UInt64?
+    private var catalogSyncTask: (id: UUID, authenticationRevision: UInt64, task: Task<Void, Never>)?
+    private var categoryImageTask: Task<Void, Never>?
     private var nativeSessionToken = ""
     private var nativeSessionExpiresAt: Date?
     private var nativeSessionKey = ""
@@ -508,6 +511,64 @@ final class FeaturePatchService: ObservableObject {
             return
         }
 
+        let authenticationRevision = auth.authenticationRevision
+        if let current = catalogSyncTask, current.authenticationRevision == authenticationRevision {
+            await current.task.value
+            return
+        }
+        catalogSyncTask?.task.cancel()
+        let id = UUID()
+        let task = Task { @MainActor in
+            guard !Task.isCancelled, auth.authState == .verified,
+                  auth.authenticationRevision == authenticationRevision else { return }
+            await self.performCatalogSync(auth: auth)
+        }
+        catalogSyncTask = (id, authenticationRevision, task)
+        await task.value
+        if catalogSyncTask?.id == id { catalogSyncTask = nil }
+    }
+
+    /// Clear only in-memory catalog context. Transaction associations and the
+    /// backups needed to restore a previously applied patch remain untouched.
+    func invalidateCatalog() {
+        catalogSyncRevision &+= 1
+        catalogSyncTask?.task.cancel()
+        catalogSyncTask = nil
+        categoryImageTask?.cancel()
+        categoryImageTask = nil
+        catalogAuthenticationRevision = nil
+        categories = []; patches = []
+        catalogError = nil
+        isLoading = false
+    }
+
+    /// Preparation is scoped to targets from this license's successful catalog.
+    /// Empty and unavailable catalogs have different meanings at the access gate.
+    func preparationTargets(auth: AuthManager) async throws -> [String] {
+        guard auth.authState == .verified else { throw FeaturePatchError.notAuthenticated }
+        let revision = auth.authenticationRevision
+        if catalogAuthenticationRevision != revision || catalogError != nil {
+            await syncFromServer(auth: auth)
+        }
+        try Task.checkCancellation()
+        guard auth.authState == .verified, auth.authenticationRevision == revision else {
+            throw FeaturePatchError.notAuthenticated
+        }
+        guard catalogAuthenticationRevision == revision, catalogError == nil else {
+            throw NovaXControlError.message(catalogError
+                ?? "Chưa tải được danh mục đã xác thực để chuẩn bị ứng dụng đích. Hãy kiểm tra kết nối rồi thử lại.")
+        }
+        return Array(Set(try patches.map { patch in
+            guard let variant = patch.artifactVariant,
+                  let bundleID = AppSecurityConfiguration.protectedBundleID(forVariant: variant) else {
+                throw ProtectedDownloadError.invalidResponse
+            }
+            return bundleID
+        })).sorted()
+    }
+
+    private func performCatalogSync(auth: AuthManager) async {
+
         let authRevision = auth.authenticationRevision
         catalogSyncRevision &+= 1
         let syncRevision = catalogSyncRevision
@@ -517,17 +578,19 @@ final class FeaturePatchService: ObservableObject {
 
         do {
             let data = try await ProtectedDownloadService.shared.sync(auth: auth)
-            guard auth.authState == .verified, auth.authenticationRevision == authRevision,
+            guard !Task.isCancelled, auth.authState == .verified, auth.authenticationRevision == authRevision,
                   catalogSyncRevision == syncRevision else {
                 throw FeaturePatchError.notAuthenticated
             }
             let response = try JSONDecoder().decode(PatchSyncResponse.self, from: data)
             guard response.success else {
-                print("[FeaturePatch] sync: server returned success=false")
-                return
+                throw ProtectedDownloadError.invalidResponse
             }
 
-            guard response.patches.allSatisfy({ $0.artifactID != nil && $0.password == nil && $0.fileUrl.isEmpty }) else {
+            guard response.patches.allSatisfy({
+                $0.artifactID != nil && $0.password == nil && $0.fileUrl.isEmpty
+                    && AppSecurityConfiguration.protectedBundleID(forVariant: $0.artifactVariant ?? "") != nil
+            }) else {
                 throw ProtectedDownloadError.invalidResponse
             }
 
@@ -535,16 +598,25 @@ final class FeaturePatchService: ObservableObject {
             for previous in patches { _ = patchStorageSlug(previous) }
             categories = response.categories
             patches = response.patches
+            catalogAuthenticationRevision = authRevision
             preloadCategoryImages()
             print("[FeaturePatch] sync OK: \(categories.count) categories, \(patches.count) patches")
 
-            // Tải ảnh danh mục (chỉ vài danh mục thay vì hàng chục patch)
-            for category in categories {
-                await downloadCategoryImageIfNeeded(category)
+            // Images are decorative and must not delay authenticated target
+            // preparation. Their work is canceled when this catalog is replaced.
+            categoryImageTask?.cancel()
+            categoryImageTask = Task { @MainActor [weak self, weak auth] in
+                for category in response.categories {
+                    guard let self, let auth, !Task.isCancelled,
+                          auth.authState == .verified, auth.authenticationRevision == authRevision,
+                          self.catalogSyncRevision == syncRevision else { return }
+                    await self.downloadCategoryImageIfNeeded(category)
+                }
             }
         } catch {
-            guard auth.authenticationRevision == authRevision, catalogSyncRevision == syncRevision else { return }
+            guard !Task.isCancelled, auth.authenticationRevision == authRevision, catalogSyncRevision == syncRevision else { return }
             categories = []; patches = []
+            catalogAuthenticationRevision = nil
             catalogError = error.localizedDescription
             nativeStatusMessage = error.localizedDescription
             print("[FeaturePatch] protected catalog unavailable")
@@ -603,9 +675,8 @@ final class FeaturePatchService: ObservableObject {
             var project = decoded.project
             project.isPrivate = true
             stage = .target
-            guard let expectedBundleID = AppSecurityConfiguration.protectedBundleID(forVariant: patch.artifactVariant ?? ""),
-                  !project.allBundleIdentifiers.isEmpty,
-                  project.allBundleIdentifiers.allSatisfy({ $0 == expectedBundleID }) else {
+            guard AppSecurityConfiguration.permitsProtectedPackage(
+                variant: patch.artifactVariant ?? "", bundleIDs: project.allBundleIdentifiers) else {
                 throw ProtectedDownloadError.invalidResponse
             }
             stage = .access
@@ -811,10 +882,27 @@ final class FeaturePatchService: ObservableObject {
 
     // MARK: - Cache Paths
 
+    static func catalogStorageIdentity(patchID: Int, variant: String?) -> String {
+        let value = variant ?? "legacy"
+        let target: String
+        if value.hasPrefix("bundle:") {
+            // A valid 255-byte Bundle ID plus catalog prefix/extension exceeds
+            // common filesystem component limits. Keep exact, case-sensitive
+            // target binding in a fixed-size digest instead of truncating it.
+            target = "bundle_" + SHA256.hash(data: Data(value.utf8))
+                .map { String(format: "%02x", $0) }.joined()
+        } else {
+            target = value
+        }
+        return "catalog_\(patchID)_" + target
+    }
+
     private func patchStorageSlug(_ patch: PatchItem) -> String {
-        let stable = safeSlug("catalog_\(patch.id)_" + (patch.artifactVariant ?? "legacy"))
+        let stable = safeSlug(Self.catalogStorageIdentity(patchID: patch.id, variant: patch.artifactVariant))
+        let previousStable = safeSlug("catalog_\(patch.id)_" + (patch.artifactVariant ?? "legacy"))
         let legacy = safeSlug(patch.slug + "_" + (patch.artifactVariant ?? "legacy"))
         catalogApplications.migrateIdentity(from: legacy, to: stable)
+        catalogApplications.migrateIdentity(from: previousStable, to: stable)
         return stable
     }
 
@@ -884,7 +972,7 @@ final class FeaturePatchService: ObservableObject {
         guard let remoteURL = fullImageURL(for: category.imageUrl) else { return }
         do {
             let (data, response) = try await pinnedSession.data(from: remoteURL)
-            if let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+            if !Task.isCancelled, let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
                let image = UIImage(data: data) {
                 try? data.write(to: localURL)
                 defaults.set(category.imageUrl, forKey: "cat_img_url_\(category.id)")

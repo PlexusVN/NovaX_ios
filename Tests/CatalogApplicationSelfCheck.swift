@@ -61,6 +61,36 @@ struct CatalogApplicationSelfCheck {
         try manager.createDirectory(at: temp, withIntermediateDirectories: true)
         defer { try? manager.removeItem(at: temp) }
         let entries = fixture["fixtures"] as! [[String: Any]]
+        let maximumTarget = "bundle:" + String(repeating: "a", count: 253) + ".b"
+        try check(AppSecurityConfiguration.protectedBundleID(forVariant: maximumTarget) != nil,
+                  "maximum-size target fixture is invalid")
+        let boundedIdentity = CatalogIdentityCheck.catalogStorageIdentity(patchID: Int.max, variant: maximumTarget)
+        try check((boundedIdentity + ".3105").utf8.count <= 255, "valid target exceeds filesystem filename limit")
+        try check(CatalogIdentityCheck.catalogStorageIdentity(patchID: 7, variant: "bundle:com.example.App")
+            != CatalogIdentityCheck.catalogStorageIdentity(patchID: 7, variant: "bundle:com.example.app"),
+            "case-sensitive application targets share one storage identity")
+        try check(CatalogIdentityCheck.catalogStorageIdentity(patchID: 7, variant: "ffth") == "catalog_7_ffth",
+                  "legacy catalog identity changed")
+        try check(CatalogIdentityCheck.catalogStorageIdentity(patchID: 7, variant: nil) == "catalog_7_legacy",
+                  "legacy pending catalog identity changed")
+        for rejected in fixture["rejectedManifests"] as? [[String: Any]] ?? [] {
+            let name = rejected["name"] as! String
+            do {
+                _ = try decoder.verifyManifest(json(rejected["document"]!))
+                throw CatalogCheckError.failed("accepted signed manifest: " + name)
+            } catch ProtectedArtifactError.invalidDocument {}
+        }
+        for entry in fixture["rejectedTargetFixtures"] as? [[String: Any]] ?? [] {
+            let manifest = entry["signedManifest"] as! [String: Any], grant = entry["signedGrant"] as! [String: Any]
+            let artifactID = (manifest["body"] as! [String: Any])["artifactId"] as! String
+            let grantID = (grant["body"] as! [String: Any])["grantId"] as! String
+            let plain = try decoder.decrypt(signedManifest: json(manifest), signedGrant: json(grant),
+                ciphertext: Data(base64Encoded: entry["ciphertextBase64"] as! String)!, recipientID: recipientID,
+                sessionID: sessionID, requestNonce: nonce, expectedArtifactID: artifactID, expectedGrantID: grantID, now: now)
+            let project = try PatchPackageCodec.decode(plain, password: nil).project
+            try check(!AppSecurityConfiguration.permitsProtectedPackage(variant: entry["variant"] as! String,
+                bundleIDs: project.allBundleIdentifiers), "accepted a signed package with a different target")
+        }
         let migrationSuite = "astra-identity-migration-" + UUID().uuidString
         let migrationDefaults = UserDefaults(suiteName: migrationSuite)!
         defer { migrationDefaults.removePersistentDomain(forName: migrationSuite) }
@@ -96,7 +126,17 @@ struct CatalogApplicationSelfCheck {
                 try check(plain == Data(contentsOf: folder.appendingPathComponent("\(sourceID).3105")), "protected plaintext differs")
                 var project = try PatchPackageCodec.decode(plain, password: nil).project
                 project.isPrivate = true
-                try check(project.allBundleIdentifiers.allSatisfy { $0 == AppSecurityConfiguration.protectedBundleID(forVariant: variant) }, "apply bundle mismatch")
+                try check(AppSecurityConfiguration.permitsProtectedPackage(variant: variant,
+                    bundleIDs: project.allBundleIdentifiers), "apply bundle mismatch")
+                if let expectedBundleID = entry["bundleID"] as? String {
+                    try check(project.allBundleIdentifiers == [expectedBundleID], "target case or identity changed")
+                }
+                do {
+                    _ = try decoder.decrypt(signedManifest: json(manifest), signedGrant: json(grant), ciphertext: ciphertext,
+                        recipientID: recipientID, sessionID: UUID().uuidString.lowercased(), requestNonce: nonce,
+                        expectedArtifactID: artifactID, expectedGrantID: grantID, now: now)
+                    throw CatalogCheckError.failed("custom target accepted a grant from another session")
+                } catch ProtectedArtifactError.contextMismatch {}
                 let base = temp.appendingPathComponent(String(sourceID), isDirectory: true), container = base.appendingPathComponent("container", isDirectory: true)
                 try manager.createDirectory(at: container, withIntermediateDirectories: true)
                 let original = Data("public original test content".utf8)
@@ -176,6 +216,6 @@ struct CatalogApplicationSelfCheck {
                 print("[PASS] catalog \(sourceID): CryptoKit, apply/restore, missing flag recovery, existing receipt adoption, interrupted restore")
             } catch { print("[FAIL] catalog \(sourceID): \(String(reflecting: error))"); throw error }
         }
-        print("[PASS] \(entries.count) actual catalog packages: complete protected decode/apply/restore")
+        print("[PASS] \(entries.count) actual catalog packages: complete protected decode/apply/restore; signed target/kind and session binding retained")
     }
 }

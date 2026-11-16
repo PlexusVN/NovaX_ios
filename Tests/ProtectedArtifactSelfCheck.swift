@@ -74,6 +74,22 @@ struct ProtectedArtifactSelfCheck {
         try require(AppSecurityConfiguration.protectedBundleID(forVariant: "ffmax") == "com.dts.freefiremax", "FFMAX apply target")
         try require(AppSecurityConfiguration.protectedBundleID(forVariant: "capcut") == "com.lemon.lvoverseas", "CapCut apply target")
         try require(AppSecurityConfiguration.protectedBundleID(forVariant: "unknown") == nil, "unknown apply target rejected")
+        try require(AppSecurityConfiguration.protectedBundleID(forVariant: "bundle:com.example.Editor") == "com.example.Editor", "custom apply target")
+        try require(AppSecurityConfiguration.protectedBundleID(forVariant: "bundle:com.apple.mobilenotes") == "com.apple.mobilenotes", "system application target")
+        try require(AppSecurityConfiguration.protectedBundleID(forVariant: "bundle:Com.Example-App.Editor") == "Com.Example-App.Editor", "target case retained")
+        try require(AppSecurityConfiguration.protectedBundleID(forVariant: "com.example.Editor") == nil, "custom variant prefix required")
+        for invalid in ["bundle:", "bundle:com..example", "bundle:com.-example", "bundle:com.example-", "bundle:com.foo\n.app", "bundle:com.example/*", "bundle:com.ex\u{00e9}mple"] {
+            try require(AppSecurityConfiguration.protectedBundleID(forVariant: invalid) == nil, "malformed target rejected: " + invalid)
+        }
+        try require(AppSecurityConfiguration.permitsProtectedArtifact(variant: "bundle:com.example.Editor", kind: "package"), "custom package permitted")
+        try require(AppSecurityConfiguration.permitsProtectedArtifact(variant: "ffth", kind: "mod"), "legacy native mod retained")
+        try require(AppSecurityConfiguration.permitsProtectedArtifact(variant: "ffmax", kind: "original"), "legacy native restore retained")
+        for variant in ["bundle:com.example.Editor", "bundle:com.dts.freefireth", "capcut"] {
+            for kind in ["mod", "original"] {
+                try require(!AppSecurityConfiguration.permitsProtectedArtifact(variant: variant, kind: kind), "native target remains restricted")
+            }
+        }
+        try require(!AppSecurityConfiguration.permitsProtectedArtifact(variant: "ffth", kind: "unknown"), "unknown artifact kind rejected")
         let path = CommandLine.arguments.dropFirst().first ?? "Tests/Fixtures/artifact_crypto_v1.json"
         let fixtureData = try Data(contentsOf: URL(fileURLWithPath: path))
         let fixture = try JSONSerialization.jsonObject(with: fixtureData) as! [String: Any]

@@ -1,0 +1,415 @@
+{
+  "warning": "Public synthetic Node-server interoperability fixtures; no production data or keys.",
+  "signerPublicKeyPKCS1Base64": "MIIBCgKCAQEA4B3uMTC+BitQ32EE29aIrtIASJA5SWCzHBN+buPWHg2uZ/FoxzH8NqTwGlg6IrJAu7ZWkuLt7MeAv7oJ6mLMjhPZJMnlRgUIqD1PKcHV6y2nqExjFT57qHYYBT8YKIxyYAL6p9P8MEfwcdErOZxjn5hUNc9hlrAcb5XFFowaJ/P6lyfrV+e1NC9blUhZkgRO7E3vlzH3JFYfnYOqAw0tuaJdzEnLcL33CByuDj5I6PKolF2oTtIApZJ/o2xohC0zGyyvaBkhaaaOSsAdckJCJysdND3guBQplymvku2pigVY9zc16setxm/zUvjUrYfMglZqE5NhSyL1F/3JlZpmTwIDAQAB",
+  "recipientPrivateHex": "3131313131313131313131313131313131313131313131313131313131313131",
+  "context": {
+    "recipientId": "4f257aa1-7534-4534-8aa6-e51073e79cfd",
+    "sessionId": "a127f7f1-3d71-42c9-b789-953994efc44d",
+    "requestNonce": "2477f0ef9f07b8254475ffa6c18863c4",
+    "now": 1804248000
+  },
+  "fixtures": [
+    {
+      "sourceId": 2001,
+      "variant": "bundle:com.example.Editor",
+      "bundleID": "com.example.Editor",
+      "expectedTargetRejected": false,
+      "plaintextSHA256": "d7d180d6cf85b05151b464ab0210d66caba76069a95fa27f76afdae8bab3012b",
+      "signedManifest": {
+        "protocol": "astra-artifact-v1",
+        "type": "manifest",
+        "algorithm": "RS256",
+        "keyId": "public-catalog-test-rsa",
+        "body": {
+          "artifactId": "8fc129b7-3cd9-423b-b146-f9d262d688bb",
+          "releaseId": "catalog-custom-2001",
+          "releaseVersion": 1,
+          "variant": "bundle:com.example.Editor",
+          "kind": "package",
+          "fileName": "protected.3105",
+          "plaintextSHA256": "d7d180d6cf85b05151b464ab0210d66caba76069a95fa27f76afdae8bab3012b",
+          "plaintextSize": 1221,
+          "contentEncryption": {
+            "algorithm": "A256GCM",
+            "nonce": "uV107UjPY4iBVbVr",
+            "tag": "HUK+qQZoM/YYEzTuXpv+dA=="
+          },
+          "ciphertextSHA256": "184c6723eb58190bb933b4b1146bc1b3455879c64c1c2292f5a29d2fe5196276",
+          "ciphertextSize": 1221
+        },
+        "signature": "s6ww0Lxi0Ms50H0NqxIdfyAAIHsnTHQCtaa1SiF8Vi9DILhTEOR5rGYswjx/CZ+vggG16UOeZXk3QghuukX931crs/MWEx1M0UwuBmX97/CS/h0LsSRCmApieOkbG+fmDZj3qVFi3wSyDqiTbCKR3jzObKe/OTblMntufUzjn3ruwDEXdyNIdoyJNFy9XpBF918vXwCIFD+YB/PZYtq3rfmR9YJ/B87YVVrs+rs7aZmZP5uWOsQdfLNVWKG83pV0f1f0NhiJrDNbhyW7SNo+FOVPuzWz5yV5KGvl+oFK6HhEawOCo/0QycgnEywibfQQsEByZSNIOAg7FzLwyg1PNA=="
+      },
+      "signedGrant": {
+        "protocol": "astra-artifact-v1",
+        "type": "grant",
+        "algorithm": "RS256",
+        "keyId": "public-catalog-test-rsa",
+        "body": {
+          "grantId": "138a5675-7329-468e-86b3-55bf1f7d0d45",
+          "artifactId": "8fc129b7-3cd9-423b-b146-f9d262d688bb",
+          "manifestDigest": "2f520e2ed53a2792611124bbd3bf68702c224061043d606d3eb4bcdbf2b253b1",
+          "recipientId": "4f257aa1-7534-4534-8aa6-e51073e79cfd",
+          "recipientKeySHA256": "a431db2d0b6d484ba5d7e142f5355e4aed28fd6c35223e941d256c3eae7c5502",
+          "sessionId": "a127f7f1-3d71-42c9-b789-953994efc44d",
+          "requestNonce": "2477f0ef9f07b8254475ffa6c18863c4",
+          "issuedAt": 1804248000,
+          "expiresAt": 1804248060,
+          "keyEnvelope": {
+            "algorithm": "P256-ECDH-HKDF-SHA256-A256GCM",
+            "ephemeralPublicKey": "BID8pNUoPNH9mh2msJQ5B9G0dOCau9WU1Ps/repXY9Ivw6x4M1aokbMQoh5hgD5Pm5+a3htV3mDXd1DwX/ALZn0=",
+            "salt": "c2AnQW4WyT2+VgKygsqjxT7tAn0TyoSObm1nhw9senE=",
+            "nonce": "OMYxZbbrt91FO6vU",
+            "ciphertext": "Yl7z2sKiOUP7DkyAJ+VrPulMnl1zz+IB4drmnpXqpw4=",
+            "tag": "e7fFYTQ9zvLCs8FV0/003w=="
+          }
+        },
+        "signature": "F1xPYtEVIQQdV9RJbi4h/NogjcZsKKvYLIS38KRx2y4t6hUE/3XpP+oVZy/dR2alH+9XJVielIkauM9Oh9msXALQxNhOEUQNxIjS66oQ/eSJM/lEtwEHAiESnZdPolBvkDpFnt0WRjGpQVokN/MS2+Wzbzd/O74oKcw3ykGHdR6Q+KiuMQb6oO0y8Y27C9oY4oGqWt8n5THEAWvFbBzL0Aw2W/YLarYLCX3004pMb7CjHnKPCPut++vYev9dHZeJ5kJQpihyjZMeKchHAqxCxzymS2luFjKE+bR+Su7pwWpkpNWolPxFkrFSQ4U79xrlAcEsA0j3OQFWMMidsXcvTw=="
+      },
+      "ciphertextBase64": "yQukPdJglwtzT5BQlU3Uv8YcMwrCguTvCnOK970lghPv6w8yu0Vx2r2sVjlFVNgnVH6sGUZ5qfeoMHSdPpYF3hOhK+Nze4Z0hEwPuGrEk6AL4vo1FTew1o30JtFlu7qz+0BSEIE9SsXyczlNWKEfoMgGg42xIEK8mh68awir6QVw6P0LCsOq0G1U8uIUPiBBYD6F3y55pz0rk4oUpAr32wkBOmK2zHHdXTLcqwHgsXfJem4YJ2r8DUoYdk3o2UrKN2Uv6n4zAQfSbb6xKoGyhZo6ncZaNZqbNOtjXq1QZ5MPb8syMzRDCFZZaJuz3A/JQsqbHWUODECAAyIlrADmh3unbBVRnEp3Q1RysxMLgSBdvf+MS73km9ZodWvcuGce9no89HDiel/SAcY6Xp8sQaFLCiF9WFYSgDFCRJeSdmnuhPLtKZ4rthpkIPku166j5i7x93Vk6YQrZn6oMok92QePvIQTLR9gj78qg0VuGEFnlfHB17lquIZR5agTrJZJ53fVIPBYtJXVGXlJ11wA1TcxOSJf22+QotVrfqbFYy4uh6mYPETnizTfPaGfod2ZaPK0H5zUjsdFp/gAklyeoWVxKEN1mSCHKMs8CfcGn5rPqXiQsKQJ+INY/vLQBLVw5JRGHDrTGLHFEppU3ZZT8MT9Zv/OzYqUk/Sdmjq0Dtg1FlSY7NjNnKKYwtGXchJuG4QFZ5dca9vH8fMfHZmTQHUQydh+mxjwcWx38fTNkGKcbNkpE7Rkbd95/Hh0JdBGn/BXKTUZraCKzjTLdkwFnTKg9KgQK6PhKs0xbB+GH+QOP2LnZjB45Lg0Q5ET67juLwy4y7G5jjSn9KFtbF3QgtBXkd7rPsFD29Dys+J385uuXsHqxDXVLgmqGQU1fLuHQwAL+LmU01cp4fV6MJ0Bow9k4Uxeh1sqR1JZj5E5mRS91v2Wq8RQBhOGTnSfQxsgkpTTe8C9DRnD95D4Zohjuv5sbPzQwNmsO8gZY6C4wtriKlDdh/624Gg/wX6sa+dUd8DN2kwc/ighQDhN82Q9kQBZWhJzrjjOP4O+/34SJS6UAwKuF816a5sj0g/7le5HJtbL2jHHXahT2xV0QYS0Jq/US/jO6INluG6OAazdGuqThuMGpH0MzlHasfoZTOoeNkqawavyJzczEF81C7BPGve8+cl+0KgMH9ezqtvkYjXlqIoLhklZYlY0HFDpz2tm0bDt2mwf7bcbESmOyMZxrt/yJC9RznMh4uhto/i+GgXBfXzsspqhVHIJeLCNGp6abYMDeyv9BuglyLCPri9hgh6kGqE6EgjhSmn86Vbzn8oFLzC3MrifvSI3FEms288ANMDiX3nJ3Y8DCjRtZPWJteJpS+eJ+evO3z0u4czECEhsGlm3WdXDmnzueviZI1f+UAflv/E82jSuWk74NKPQR8e1qdn78lguo6UXiuPd5nZvSLHpozBxey1hmBVf+xalEnHwgo20QVCERm/kBRQhAqnmPzcTN62fm27sdvnILtPLqYAXK3qO/9GpYytOl/tv2pXJ0NTG3FEYcwZdrgWUcGdiHru6pZ47Q0Lr7Sj1eXN/noBlycGXtsYT0Ql0ATZ4A/Sm8nLFw9VV0dm3IlnlEXMtBm9t"
+    },
+    {
+      "sourceId": 2002,
+      "variant": "bundle:Com.Example-App.Reader",
+      "bundleID": "Com.Example-App.Reader",
+      "expectedTargetRejected": false,
+      "plaintextSHA256": "5e641e439ea3edfae1225ed108c5d455c0135d268362dbb571e6d8841186b863",
+      "signedManifest": {
+        "protocol": "astra-artifact-v1",
+        "type": "manifest",
+        "algorithm": "RS256",
+        "keyId": "public-catalog-test-rsa",
+        "body": {
+          "artifactId": "bfdd8d06-b6d2-4a61-ab45-32f87b10ce19",
+          "releaseId": "catalog-custom-2002",
+          "releaseVersion": 1,
+          "variant": "bundle:Com.Example-App.Reader",
+          "kind": "package",
+          "fileName": "protected.3105",
+          "plaintextSHA256": "5e641e439ea3edfae1225ed108c5d455c0135d268362dbb571e6d8841186b863",
+          "plaintextSize": 1229,
+          "contentEncryption": {
+            "algorithm": "A256GCM",
+            "nonce": "WB3z7mP0IgTIuQaM",
+            "tag": "XwLbURkOpg9S/+0sWW4CnA=="
+          },
+          "ciphertextSHA256": "5ae79653c345bc2fb42d1bd095744e13ef8b7e37f0279516d883b500ac80ac2c",
+          "ciphertextSize": 1229
+        },
+        "signature": "hEm+/81yu8zbquHFGqWcgVZhy3j10AGBNxcxwOOF4pdcxKDNjBAb2mn8VJUxWHSym200Pvmi2K+bz7VL6sSFaVukKtsca7rbRNgNgqZyesV/Epay/lS3wbiPXbNX0rapyH4tUmUL1XJsRxTLJJHAVJ1EQk1oSnuaRn8AciCymBeXYAFWGHi5YuqEnnftvcdreZfBup6ZGA3pY9kuHgOlz3OJOL6GOfCuI0iVMincmA0IRae3g0MseLW9jPyCeW+Uv41rsAD/XWQc47QRCaR6UI1OageItw/2GqEDpJnyjxiq/8t6qwcc/ybfoAjZGuRt0wDiUGrFV4+16UurWXQUCA=="
+      },
+      "signedGrant": {
+        "protocol": "astra-artifact-v1",
+        "type": "grant",
+        "algorithm": "RS256",
+        "keyId": "public-catalog-test-rsa",
+        "body": {
+          "grantId": "05c3a359-e7db-4e4b-9332-9be8999fa593",
+          "artifactId": "bfdd8d06-b6d2-4a61-ab45-32f87b10ce19",
+          "manifestDigest": "671c4f5a49e0a32e7bdc2a3ce1884c577b308d49ab78d347189262a4d44149b8",
+          "recipientId": "4f257aa1-7534-4534-8aa6-e51073e79cfd",
+          "recipientKeySHA256": "a431db2d0b6d484ba5d7e142f5355e4aed28fd6c35223e941d256c3eae7c5502",
+          "sessionId": "a127f7f1-3d71-42c9-b789-953994efc44d",
+          "requestNonce": "2477f0ef9f07b8254475ffa6c18863c4",
+          "issuedAt": 1804248000,
+          "expiresAt": 1804248060,
+          "keyEnvelope": {
+            "algorithm": "P256-ECDH-HKDF-SHA256-A256GCM",
+            "ephemeralPublicKey": "BF24uR3dEOnkdB1QsxLc1Tie5g8hdDLnluVHaTgajzPuf7bAzG8DkSqb/ZQtAyCD2KaKJXoxdRIKzR9kbTjR+oo=",
+            "salt": "NbzU9OvEeTxtY1I0x9qzj+L8d0a85DOtFfUz9765/Ts=",
+            "nonce": "In86PaiaaszYpjDp",
+            "ciphertext": "hLw/Es2lYy3syIakufaMg1iN9fdUcqauI8A9j77AkWs=",
+            "tag": "ZoM6rz4qaY12snnU/3NAjw=="
+          }
+        },
+        "signature": "rIF0HhonT1VwBIKf7UgHY9a3IkL6/fjnc3u7ADK3dNWpDhzGj7YVLqEfFEOsgWAaNC0MfDhVhsi4SM+yGmc23cFi522zVBbvU5Z5YbpXms7sjbPYwrLU0oagW0fNWhPmwFJcTRQ9tw5OdyTO6x7EfZa6fPjD7chRTUiHEUhM2yZZK3bXvBpO8GMkFgutuKtkoERU529OSkkV03p9y1eyAX+cG8qBJH4g5zNqSqEEvzFqC6/WReCTxbsbEb5TfzzPlhNcGC0oDme6yjBz75DSpvpwf9EATTrWS36tOvxkif3fxchJ1oXRau/OSkEgrDUir3brX9xyjGUU1oFL2M30Dg=="
+      },
+      "ciphertextBase64": "+wLuZxWhpYkmB8tPjhQ7T0kmQwY2Oml1H0tAfurBPMDk36BqqV+0Mqodm1KW8kUqo9OCgF45+R93hltisru3sTAmqvQu/IS+lrNIx5CWxbEunQC3rzdIl0on5plGfu/HymLjH58CVvebA3RaF8Ff7JzVZfkgvXeXdUJnLygbfs0FridaTYokLjtVBq2lCZYw95+JKEtO6fKw47xplevSmV9nNI/EQWWyZB1WYP3BWgo7ZYnCrO3yQmRp4l2OJFtslO/2aNkzFTfdZMm6ComNGUn4xTTOz2QtoRoLtbc10EQL7Rofx7Wu9XsS1VMVgYII/hIYLyc7DQuLdgEcPW7PtOAr48ehtt7OQbdUn/FagJ32/Okom7S1uUAmPaLxlaBbW4fSxKPohCle0ALRGj2xaCraYv7GXKtGfquzn90MYBjfJhIGy2ExUtzDMNM1qHpfZUV0QgCmi7qQQWK+trQQ51U1EDYNyRD1/V6n1n5PvnfuTOBCdW6XLXVR+y1wJYYGOE5484ng9huJed8Y16IRV+tk47xmuqyuiPJcCMaK1Yu2QM2qXONu64Fjjzlhxo3K5WE1q7nhxtk2xNAqfebk5s+FlFJOD/yDI8DuPQHMxmSklU34jcVFX8Y08WJAVXMzqduISXDF8cNSo98zPSQpT+u2cWJw1fZuoa9W6xn7lH7O8JoVDS4dqDBDvDKWfRJcxa3yJCWq1LMHJdRTPBCYwMn4OUnOARwecoFuGYUqLJGRBxIsXKYUDpxAwoINIMOGRPDiGqpMK99B6jV/Et66WmWmhSHV+M6k9XhUG992KoS/atOjofw66IUF8AQq67ACVzQrlFBb+jr80AOltRlg1VWOJu0NcMiqEATei2ahJHcRNGvKb94NXVnTij27noYITmx70nE6yDSYJ2YKyu/JZMG4y28war3bTqiss7G765j9fOoxm7X/jHs9MAFl9Bm8BWLTRCoILusBQP4+6ERUFa7qHRkLOpsRtL1dadhlnvNyoZavc8ivTE000PusVXcE50TuivWD62+AQKG8a1C2xULzCTAyfxp/DbCyW9TqQIdn3lxQX9g4ETmWBG4iTCVzPEmlLNlkAfxkUhDCP4sg5GErQkr2wr2c+jzWfg3oYTbKtnlwo0PAn1XZOPF4YuhmH6NQSD1l1ayjuFQU8J9k1OJZmiLhS4Giytm4XkfWZayv1WKyEDnSQwfBscvvMTYFowBY1nrjUufnaww8UY7NMnwIsIpLnyvHiiRCnfzVyA6awkbyrfPPxuIwHNiSibXRByMA2VxnXmyzF8cXX1w/a8gVHguYW05Wd56u7FoZxDzkGre2W3Hu1hkOcb94rU6JXNzcYV6g2aqrbeXXklRqWb1+vb74OFdGHvlfNRWHVzY7cBWZbMJW6Ikm2ekeXcnSXHsDMwm3anrF5lNxfBwVwWDS5SykkJ95L+M/TgfrulvFtDI4wynM6LOmsPJsMxo6fiOYWTM3cguhBakrwh13WUCz0ZFWVCAUgyfkjOpmPO1VS6xC8T/lClVSi99+4oQiI4fvhArpr0EsInUERXPqrH/CJiwy5ygZrdVSuSJDnbwjAfMOTNTGRz4kgpAHp4PMxxMS07xugRVj1zdA1bY9NnDTcbDqDjE6oQDRpDo="
+    },
+    {
+      "sourceId": 2003,
+      "variant": "bundle:com.apple.mobilenotes",
+      "bundleID": "com.apple.mobilenotes",
+      "expectedTargetRejected": false,
+      "plaintextSHA256": "b9d3f9f08d0b04c8992bae2fe83d873f28037fdb6f92c58e18a532a2e7def41a",
+      "signedManifest": {
+        "protocol": "astra-artifact-v1",
+        "type": "manifest",
+        "algorithm": "RS256",
+        "keyId": "public-catalog-test-rsa",
+        "body": {
+          "artifactId": "caa8d9e5-03c6-48e2-a61b-4b3df48e09b2",
+          "releaseId": "catalog-custom-2003",
+          "releaseVersion": 1,
+          "variant": "bundle:com.apple.mobilenotes",
+          "kind": "package",
+          "fileName": "protected.3105",
+          "plaintextSHA256": "b9d3f9f08d0b04c8992bae2fe83d873f28037fdb6f92c58e18a532a2e7def41a",
+          "plaintextSize": 1227,
+          "contentEncryption": {
+            "algorithm": "A256GCM",
+            "nonce": "nWDpoo1hzFMmh7fu",
+            "tag": "4q/Th2gOTmZNkX/YVyFw4w=="
+          },
+          "ciphertextSHA256": "8332aa2dc98027c65d7485621b55e710ae64f9c2108f9d8d789243bb4af7457c",
+          "ciphertextSize": 1227
+        },
+        "signature": "1ItLSHXOTJrIdqkPhx+iBpaiP/n1+5UfSBptRMSlrOjgZvthYQNYBQj3oE0fHXXUsMrcCaeW+ICoa3xsCIlkAmOyW9GfzYtDFXhE81h6aJ61x921G17zahefiIfRya3pDzq3RV187qJy+cFZV2morvimbJrjl2EhyPvbktDW9G197jmSUr5M4UFhiYyTQq9gTurDVzssBBhE8pAaNITxZq5WOShweqiBc93xBy2nD6h0lkEJC9ilGb5sYO8nBbJ/hSrryV4O2JR4i6em3j+bZzmeO11ZGjERdIgIAX8mC0SVo2xOrQAGyrt8c/M9mYQW/jky/6j6jvAv8dJZ8J3qCw=="
+      },
+      "signedGrant": {
+        "protocol": "astra-artifact-v1",
+        "type": "grant",
+        "algorithm": "RS256",
+        "keyId": "public-catalog-test-rsa",
+        "body": {
+          "grantId": "0cbf1eaf-7d58-4e77-a697-0a241a8f57f9",
+          "artifactId": "caa8d9e5-03c6-48e2-a61b-4b3df48e09b2",
+          "manifestDigest": "aa63dd07f502b394ac821c2652bcca7ce0d544219c13ac47554e7d54de86b3b8",
+          "recipientId": "4f257aa1-7534-4534-8aa6-e51073e79cfd",
+          "recipientKeySHA256": "a431db2d0b6d484ba5d7e142f5355e4aed28fd6c35223e941d256c3eae7c5502",
+          "sessionId": "a127f7f1-3d71-42c9-b789-953994efc44d",
+          "requestNonce": "2477f0ef9f07b8254475ffa6c18863c4",
+          "issuedAt": 1804248000,
+          "expiresAt": 1804248060,
+          "keyEnvelope": {
+            "algorithm": "P256-ECDH-HKDF-SHA256-A256GCM",
+            "ephemeralPublicKey": "BGLRgDyeypNtPUGc9zxUBmIpPuRBnVqSLdQDJjN11arOU4U1S3qDlTIFT4leOjxwq/90ozguMvqTjxcLHX5iroE=",
+            "salt": "nb1hmXck4ABjoU8EYRbTL8Af1Zp0/sdXDuC7tGOTtLo=",
+            "nonce": "XgCKsLjeiyJ1lvzH",
+            "ciphertext": "U3tcq6aOxyujetzu57v8vBt0k1wNah4WpfJKA3bhz3E=",
+            "tag": "6PMW1La0tdN3J+Qj6NAqqw=="
+          }
+        },
+        "signature": "3d0Hn1JzOCFbvos/Hw4chSwciXHAHXtKckAd+dWMdlkn+tYrHLEcwgyEZXLTOpcBYYdYj1xKSprslc7SsuNbudzkOGv2S76e2n49sZ7TykdRipS5HX+3ghU6H8+tbuNLZWQn0gH7nX2tGmiHsZRuEkZDUOQL87MM8Z9hCezpe94OK9NR7B4JH1WyxWqMLeS7SVucWdOJ5PZ8ZVCKeccQt5viNWmJsZggyVEmyzW3cReLFC6FKM3ijjDv/HwqQP/IwjRssZKBJOuWEEc0p7vDdVAmqRUoLInWEJiYZLciNUUV0nkDqMhJm85IwoTSssAb1Y0kdK86ttRDhAn6zzkS4Q=="
+      },
+      "ciphertextBase64": "ryDtnw/4yaG/gbyTNsHNW5G6S4JQQ0Mh9qSz7R5m4e5UB5qzsMXtSufiyUzKXhkWJX590+DvAfhEI63RH2X8R8tFEqu/v2poiScRwBKeeMB6cHacEJEYbKFbNPz4/XAqp9jAtWokKwUBJmG8IYDIDHz/Cor6q0w6Tk1R+7Z3dRY7jc3JwdJ8Fc2AmWtk25LVCDUBjt9lfpI9PTEsjkIaE2zDXXLuUuTTG0Fva9jHA6bGQ5SZokctPAzzkwBhGvDoTtVAPFsMhJrsDgSKs2P76ieGOx4A66JqmR3hxd2lxljfYi1RQAGsuQ6GVDe1Hmd+lvZImBgICjep3BfOXRgayqAr9CUTMjCqIl1ENCSFQVOFy4i0HlVKFJbZOF2KN5Caza6CSfsx0nvxKg3Gy56Nmihpa3s8b5PIBl06CkTZdg3RQiu0NZl9kio9xtGFmHvo2UB8B1U89vPdiLyP0ruVqUJ5MUqaY3WRdURWQR/TYwjJqHa5ONVJRsbAb6VAivak6+5uEayOl2loOfnYuTg+FXFi77MC0Z0SqWvrmzWGHyT+tMYEhOg8/RMYNHzkzBvnSyK4Qkr+J4OxWddnRre47qMvMYAY9/P183fHuwTdVmLku0vRLGIvXpv0sPQ155JWhAnd2E66sa+6ayS55Kv4M1mOmjojj4WXsGqsvL9cPt+qwuMsTG0JvtsMYod8geW2MGhIFUdMMUzBGgGaesrOzg8RePJP/pEyKeE9wfbxQtBNZplZDcZgl2ge5pF9A3GK+KBB/Bgof4OjInFjEuWvJGOrYd0G4bX+gwPFgz8ktGmLi1DOp2ZfEhSaqKKTb+sa3T+hqtVpe4iopLDiKkFPLOxXrgI6Qe3H6jezzplfZK1KmBchf8MLQsWXlH9mnJ3zP6161OyjtekRBBhhRB7nMgJ124l+IFx8d583xGWnbHSKhd4eQ7TfDelFpysFYwxr0Usr4l8jqLxefN+b4S6cE6bvZuwT/Eo0HRF5SjtUwSiW948vWDzX37+pIUpPt6g68bMOqcTdHX1M2cHyeYF9XTmQMCu0PUvUoXg/t4Gcb9xsKoSuIAC26OAYM7McfVwhq7FVg+Qz3ny6eeIHAYNsho1F01MGc0KiHrj0Eezzqok5zEPkRA8fYpZwYrPS+NtW0c/bdV3tFeUZ9LtfRi/oe/lwxe8pEOXyRO/rHpAkuTChmQozldh9RbTq1ck1cOEhltlPTHafA3MZJr6+EDbTlV9hd7kwZRWGNcNWuNj79FhhH1p91XLwdy31N7UiXxz3+0PC3RUYmhEj4Kq88Crxks2/5/AAocGrHWy8mKVGNdAVAz+owG9KQVsRceDV4qZwcplZ/OloJZwA3xZ0+4PT6zzxUIh7Zu23qvRyjOlaaoW6qTy3su6vbNCUO/62cZpOgqe6z7DQZGrpNn2oysw1NDVgz7Wmgoal0NO2vFYvNZXzf9K1iDeVH8m5CQpllA6DraprmieASiOySwR1ZUysg3k4HLlob9QrBfSJpqF2hPaD0gLNG2hShNT+RCoymFkwLjD0OpP7rHQNyhPPh+Z0Lnmuu/ePnl4yz0lW4wU8iKh/XlWC5X08rZxZerq7lWjtrCL0FYxrcB1rRNJHlq55flORLE93szDQgFGC"
+    }
+  ],
+  "rejectedTargetFixtures": [
+    {
+      "sourceId": 2101,
+      "variant": "bundle:com.example.Editor",
+      "bundleID": "com.example.Other",
+      "expectedTargetRejected": true,
+      "plaintextSHA256": "b15775f2ee43c887753a533558cb8cb5b1e81989581fff5244897b5bbc9777b0",
+      "signedManifest": {
+        "protocol": "astra-artifact-v1",
+        "type": "manifest",
+        "algorithm": "RS256",
+        "keyId": "public-catalog-test-rsa",
+        "body": {
+          "artifactId": "1645134a-f83b-45fe-a0b0-804c703613d1",
+          "releaseId": "catalog-custom-2101",
+          "releaseVersion": 1,
+          "variant": "bundle:com.example.Editor",
+          "kind": "package",
+          "fileName": "protected.3105",
+          "plaintextSHA256": "b15775f2ee43c887753a533558cb8cb5b1e81989581fff5244897b5bbc9777b0",
+          "plaintextSize": 1219,
+          "contentEncryption": {
+            "algorithm": "A256GCM",
+            "nonce": "yt64UK4CGAYhTwpN",
+            "tag": "+zBkxVyXlGET4YxTjiEhxg=="
+          },
+          "ciphertextSHA256": "a42f69967074e6af2e55684db7e950f1c9eb07bfa7a5aa4c2af8ff4a69339bab",
+          "ciphertextSize": 1219
+        },
+        "signature": "d0QlSMeEqzi0MzBPcnCGz9xthisk4fXy9NQrbVWYpeEwrr79AiTu+w6CG/vMouXHpwYIX7S1od2InuIDJ+OnQSOwdyrmdRdYbFxgSJSibsBEa/qJyGONsB0Nxhkaq+9IH7a0C/PWdQ7TVYAkYwMM07YdBenZ5nx97Vn0dWibeYtTVHr93tIMqFyRHVCbgV2d/+ZdRnULN7ov/JzZAl/D6O69aTDCNAC9lJLK6qjIkDDDNEal4FTEYPMnNeIx1C3/1SkWj/TqVzPlkZb+QMwZehHmsve/GTIbpfS5wAQ629z+VJT2600l7rsSfeYuI3uUwh7I1bKgHOLVC5jhIeUVeg=="
+      },
+      "signedGrant": {
+        "protocol": "astra-artifact-v1",
+        "type": "grant",
+        "algorithm": "RS256",
+        "keyId": "public-catalog-test-rsa",
+        "body": {
+          "grantId": "055d81fd-950d-4f44-badb-49b4e834fd98",
+          "artifactId": "1645134a-f83b-45fe-a0b0-804c703613d1",
+          "manifestDigest": "1ea8051b010ab8145ffb1dc0745c4f88c7cce04f9943ffe39fddff2fdb49c117",
+          "recipientId": "4f257aa1-7534-4534-8aa6-e51073e79cfd",
+          "recipientKeySHA256": "a431db2d0b6d484ba5d7e142f5355e4aed28fd6c35223e941d256c3eae7c5502",
+          "sessionId": "a127f7f1-3d71-42c9-b789-953994efc44d",
+          "requestNonce": "2477f0ef9f07b8254475ffa6c18863c4",
+          "issuedAt": 1804248000,
+          "expiresAt": 1804248060,
+          "keyEnvelope": {
+            "algorithm": "P256-ECDH-HKDF-SHA256-A256GCM",
+            "ephemeralPublicKey": "BByvirn/Y+8p9B4L6eyswbGW2bO0RE8IUH90XFWAVrAEr106xNsZHjG3O/+FH1JC8g6iQFcrL6hopnrtcaOPKxs=",
+            "salt": "Pa4VId8thktVH9uBili53ndKh0OG444LzEsHQdbWF3A=",
+            "nonce": "svTzPww8kG6tp7nH",
+            "ciphertext": "b6NANejn6/VxWFGAUN/tRDX1RxyxhXe5JZ5fEtkxWo4=",
+            "tag": "ji8424WZx6+uU8h0oKYe1g=="
+          }
+        },
+        "signature": "AyuyrV2apMJ8REqfDgj7kaR/n+WYRZo5PMGEYvllX2sxaiFoOxaBVraDGQ0yaZzFbG09RPzvKVEzLf7SlQwWzcVzJcQEOItMYCaxmC7ZMyM0ywJGMTtxgqxvCK0Ue/FgQhFSQ1xbCqKCX8DXrBowkplC/b9HnkrW1Du/cI41Mlw42Xv1HD3FAozMvrJpL+1iWQCbCo8szg0JX3gUGyC0QsD1Hj8gdhLjngxFBWuPoRLcxMiFoZs54k1A+/QY5OwmDdFEwmSqQ/R42Via9KqZCsyyjMAgDARzoTiUtDeK5wW7ORGrIkA+15l+2N2D57XSkpKyGnwpP/ZAtNPuWvN3Nw=="
+      },
+      "ciphertextBase64": "OUVYr6PQYxDVAUIn75aVeNCGICSmcaZtYzg6mjLVJXK0eG+TVeZF4Ca31gLjjnX8NjjaUUlR9AvZhoqImRhUQuJLwbcQHYvhTzjnXIsk2wD8mKkfu4xniBvxy15T1YwoQeGsZYWkCgqgeIDjsskkcY/pbJ6BWcoZsZ51GGUwWQWdNKcJByAZf+69HqIJJWj5yv6yqXBA5eSPcZhrUVpM63godJwTTKA9WHM4NDAkxcLgFPrdMM9iJF19sNGb6HV25RflL84B0/ff3y9iU2sugrfj3+MI1g3Aqn7/W0wAwuPpJ2merfgv06EvJlnQW2xjuR8iv33lGbpfzt3/wd9y+r/4T3N+03D5hC7MgGbzW0hJq+t3IELCnpWiplSyG8tkyx0KylanyHWaoOnS/Kh7VJs6y+h0tKEaHlnJHlBQfMwUs4evO/ITeRuxTz0Wtc6wWFFRC3AWOaYSzsbVce9pVBQph5hn2gwkR1dJrqUxBuf8F77Flpf3Y3q5NHI6sFTX2EaXk4219FPEfz4Bv2CLOVjQw6c3+7TveoG1MudZNTD0OLGimkezx6l9Urzidczo9S0jWcYcvMoSxlZhbLIXudv18sYImsOa9a8/JyyaNmyuwtRS0DxtiShBHr1mCb2TeghXZ5+Z7Z6lcEfvjLklKhSwhT0888FGE/KrigNEHjaJgMBpdhNjiOMo4D/OlFsjQ0op2D1KYLkph3NMHbmlRb963P4x0Qb9vQusOnlwvtTR0paWF7rYoaAB+mIU9Zl0rXn5ZOi9VHhZcOcE1EGjwpEvX5QH/EbfKg8QIK26Cvrs5Htv1ER6B88+YD+3p4IciN9xtJgcBilNwkSOV9hSAY1qiznvBpTs+FwG96lVh+fFmiYrpg428ekVzjyNLNiwWkkYzMC4OUm9y394z0INpnmBgOLY9wKyAO0G16X/wAgVEShjkFxtTz9WUHgkEK6A84sI8nOqsQ43gcJiDN5RkVd04M7ERWP6/VJNYvsZvo1rndWEcMFsobnhLejYK7vxHkXzb9BYeulXEn1pL6AsWWCqNuYbEWCLYStfE36SaBe1CcbBmQRhaipqHf3NCiTSqZijoiab5xG11TgvReZpDt0ZtDo42541VChOl9V6MyNNlLIfLrkZDQ87WZdkw00w0BE61sAV4vTr12o6Mmt9uz09FOr44lqzSGCSESSqpqC7z7C2Nu0jH2M6XXTltFzSgQoz0Z4NUlXLaI+K46YMoILnr0LynAgqAFKqRUXk9TUeUbNjLS5JBQTAUpvmaMS2x3iNUGffwYI7lEkn8wFSCRBcfccNUQVgetuloOOMhohg6G/ZSq8NkYCtcUa0+fMPPx2Q1Oxa5hPKM6AJhtBylCZ8tXSTSHj+K9QDfSVhVrisjDufpa7snEMj8Dc9zreUJ1inihM/GRlYTgnuCZe9M5SWvtB4Hk4rzcuodAOUTC83fzrrAhCa/Ke74AbQgouTqoQPfIQMgaMDUtrV4+tyMw+7vGEF6LIz5neZMlcr66fVDRSydUOz8rEVvHmH2evc6bHGdo8A6MDmeI4EMNKkLju3SM3a0RSHJY+XZ7qQwsZwFR+pVwGMZwWkw8Hxcc3KdnMGF4zB2K6XBedfT6TtqlWShw=="
+    },
+    {
+      "sourceId": 2102,
+      "variant": "bundle:com.example.Editor",
+      "bundleID": "Com.Example.Editor",
+      "expectedTargetRejected": true,
+      "plaintextSHA256": "9e9ba166ada580bf0e1ece16b5bce3dc0cadaf89582ae256a0648d74a769efbf",
+      "signedManifest": {
+        "protocol": "astra-artifact-v1",
+        "type": "manifest",
+        "algorithm": "RS256",
+        "keyId": "public-catalog-test-rsa",
+        "body": {
+          "artifactId": "2477e381-30ae-4537-8672-3883876e623a",
+          "releaseId": "catalog-custom-2102",
+          "releaseVersion": 1,
+          "variant": "bundle:com.example.Editor",
+          "kind": "package",
+          "fileName": "protected.3105",
+          "plaintextSHA256": "9e9ba166ada580bf0e1ece16b5bce3dc0cadaf89582ae256a0648d74a769efbf",
+          "plaintextSize": 1221,
+          "contentEncryption": {
+            "algorithm": "A256GCM",
+            "nonce": "RSuFbI0L+69IXKF0",
+            "tag": "81vQHCqHBJiHddNj7Dqm2w=="
+          },
+          "ciphertextSHA256": "22caf24a7ea885fe652d0cda00503d27c2276ae07b288e4f7a5f97a03610846a",
+          "ciphertextSize": 1221
+        },
+        "signature": "soSMJPYD6rC+sPP/Gzt9L6ahgwUm+6xmvqqbgD6NrngDq6wnQjxBLQrRuISwH4dr8BJzBZJGeWEEYoTUGWPGhXdD/gnyOqsQYgeQ8qqKq0U5DW5Y8g+oBE+GiKJWey4DIGwcPClxM95zJ4bPJf3LlF/omnlqIPehRBqFS4OLY22/L0UA8Pn6dgSt9nFo8cA9KeJR6ycSimSUrGwlVPjj3h5L1trOw0zldLKPZ7EGhBhzoyDK5a8a81HIJ0y9hTuQFZV4pxjJYeLYuhRZkz41mWmYwUhHOGHzgJBsNrr3T6q0OytQ9tTlG8KqA0G26Gd771fvFq6ZarPWB6bl6kpt+A=="
+      },
+      "signedGrant": {
+        "protocol": "astra-artifact-v1",
+        "type": "grant",
+        "algorithm": "RS256",
+        "keyId": "public-catalog-test-rsa",
+        "body": {
+          "grantId": "591c6bf0-c57d-4361-b239-a3957cf011fb",
+          "artifactId": "2477e381-30ae-4537-8672-3883876e623a",
+          "manifestDigest": "4a55076bfec95943d449253a988bfa294124b20286b71d25044ae5519e19286d",
+          "recipientId": "4f257aa1-7534-4534-8aa6-e51073e79cfd",
+          "recipientKeySHA256": "a431db2d0b6d484ba5d7e142f5355e4aed28fd6c35223e941d256c3eae7c5502",
+          "sessionId": "a127f7f1-3d71-42c9-b789-953994efc44d",
+          "requestNonce": "2477f0ef9f07b8254475ffa6c18863c4",
+          "issuedAt": 1804248000,
+          "expiresAt": 1804248060,
+          "keyEnvelope": {
+            "algorithm": "P256-ECDH-HKDF-SHA256-A256GCM",
+            "ephemeralPublicKey": "BKZWGL65i0eQvJohDkKRjE8KF+zKWwfr4TQ9m4DTgOOYmI0A0teOg8mfonKgw7kJ9stPRW5LEiozbyWtwLIS0PE=",
+            "salt": "0RveHONj5hOAbgejIULOM6dwGdonEQbIR8XkW7qR/U0=",
+            "nonce": "RPOyfsCce7TCMwIq",
+            "ciphertext": "82BeGYFGcwjDBUhj9pyyIYtZmlvYhDOQEzTx3xPcJGQ=",
+            "tag": "SEX7hN+YqHoC85Ysw4FFrg=="
+          }
+        },
+        "signature": "P9sJO9COQehAEI08fWmjLskki76CC01FazAhFjte558JQ+b67qTvg+M0ijVoHfUHdIlpdko9n2QAp3f6iKS1ohL3JLTOq1Q2xY3fyldu1rprFccAdBOV1Dubm8XZaNUej2wImd+gem6DPXLUcfUaaWH3WfXs/0i/3sC+WyLU9ITbA9zhAaF2jVL6vPN0V0k5RDWMVYHPZ2cQeaIrktJQdQo3BoUwOshRbvJkB/lmbEt9s86uNiAlQZc6Lv1TDiXUNT+M/Oz6PTEW6rVROAs0SlcES+9nj4+ltu+wt4yXFBzIR40L/qdIe5Ycn7W7h6z5RTNkhawctwufWOGIX24a+w=="
+      },
+      "ciphertextBase64": "C3kb3XuhKTy8Po2CBy5UrXMN5yRtoFa72uHDmWNuV0dW3PCoU0N/MlJ1/ncokqQTijH0Ge4d2ZonP9oUgS8a2qVAlmwrmvQBIC/NbUik2INqaeFCFbsREGHJ6K8vuY03VmNZpIrA3GNQh2Lfhghoi+/FmSRaXtXVz1uE3CDHfDjUYSkNM8MMgYQkwSsJqwHHGKhamOZb24l9Zt8Qz6xn0z76ltY5IjiVOs2/MzJALJ4w/JnaHhbNUbYF0YUcClfBzpQBpLHxE1QMfkYEl6qxEFiMBSaLh2UJ6UtPtPVAhsLovPPlNrSFqmspJYIQ/bfPnf/HtKL5xpHgC/2Y1jThBuaL2p6tXfzAxB8W1oMeejOBwYVSBiATOd1uSEvpzVcV3CAIO8QpiFZX0i6Y6BxL5+gloInc+2rvlsn0luxr7/bjY7FYTfp1MKVkBso2BFAoIV4a7ud2HnLPLQSx4JX7ZWAzkWyJO11nqOOa84H6l6prOtjeIFmdyGwPGqTwhcKxAXmB9hjYYUn1vZh8Ndf8JXyR4eZ1jPqZ8p1RBqf0r21PvCzdLnPAC69kIwp7pwAoxfQQTEb5c+j3EZ/Wkqw+Hd9BSZn1+VfAGQtMPG8r7mXvplMMoXev61vPZbom7WaRSpqzC0WAeJsaxN6aD9JdJClv/bxy/gt43UQcxVgtF8POB5yBOmhDZjTJ7OMbNJI3808RBxCuIPKFvN9yu6PUyHSSz8sIywm9YhzpA0ZreVuhyvlYm67xZBWJst4/R8uAGCLfvR2KIisx1uWwLbcRRrenGHDOIUHJAd9rqsWrGgiVkLn4AsaBIPDymgZjWVnEUROVSmLC3bmwr+NzwgWt4o6i9D+XdsvhszBUZpK1YepdsQWTQw/cFmje5UyhArrEynosj85LLjdVDcuqb5/ByCD8A+x0hvgtY15NTMdhl+4N4YMN0151zAMuhwF67DW7nSzS4M+doamostxBR0js2uc5rf9m40T0crpDMFhKFFbfZ2+00D8fS2Wm/J9Rf/W67UAKnR7mioOHxqj+bxOIuzOgAtu1kNAzQNC2mS/G6kDH9zhq77Q0SAiwnyIWm7sveUuMohTkp8SeZlCBtBaBN3vV0L/9VQFf852jgiKrh9sIkFbJMlVLxtlz5Yvjb/VGm/3UxnEFsHKfEitNlvMTxxQ2knPs/NCcqGDUzvtdZYRPosSStKtcYRMidJCLn7SQkkz8pVjemgheoaLw5LSpn0mZBo3RFUXeD+XDXsNCE/Qi3rO7V8haYmxMlltv8S3PRP1tW6MJmM9sXu6CBnaHTASgEZw/R6elTBBHWolxKXOvs3b95GBhGtUyOAbtCIN5IZZzCib9QADA7qHq/uKcMGPp+E1akgR4+ZdDDL8VK1kB2JDzbrI9glpNdXJg6jovJs4IkXvz6u+RiTebCmDwo1FXnYtjXLj/ko1m2S447fOIAO3V1XFQpDBuniXpC1t3CjMINt0cTt39s2BITJ5+XGF5Eebw4CIUBEWN6xKkidVy6CxDTLSeg2SfwqaE/Gof1TZBJjIjr91AUKvPJ1OaZBq3rjoeqMHIXLHD59rwk1A8owkWUrW5/4gkE/J/6EHbdjnqaaZT1tTdFpyZRY/xUS2+53Uq"
+    }
+  ],
+  "rejectedManifests": [
+    {
+      "name": "custom native mod",
+      "document": {
+        "protocol": "astra-artifact-v1",
+        "type": "manifest",
+        "algorithm": "RS256",
+        "keyId": "public-catalog-test-rsa",
+        "body": {
+          "artifactId": "8fc129b7-3cd9-423b-b146-f9d262d688bb",
+          "releaseId": "catalog-custom-2001",
+          "releaseVersion": 1,
+          "variant": "bundle:com.example.Editor",
+          "kind": "mod",
+          "fileName": "protected.3105",
+          "plaintextSHA256": "d7d180d6cf85b05151b464ab0210d66caba76069a95fa27f76afdae8bab3012b",
+          "plaintextSize": 1221,
+          "contentEncryption": {
+            "algorithm": "A256GCM",
+            "nonce": "uV107UjPY4iBVbVr",
+            "tag": "HUK+qQZoM/YYEzTuXpv+dA=="
+          },
+          "ciphertextSHA256": "184c6723eb58190bb933b4b1146bc1b3455879c64c1c2292f5a29d2fe5196276",
+          "ciphertextSize": 1221
+        },
+        "signature": "OGeAw2gW+gS+nIoF/bgFa3jNwXb+1BQn4xADfpIJ+AUVVD7CtV9NhX1xKP2auyDlCVCOv51q5s9+daUy1jOohVt60cfWdDDF052hUkcZDjSla99xLlUhHyfw7vHFRB46Nyq7cF5tT4xggN0rnPVLerDjvyE5iWnpFKo/O8MZa/4MsU0rj1vAuRrTNNUtofeHDqcHE/VXnQY0RW7z0VS03fuFAok/d5VqiHepV6rno2N6rl9FyoYMQYOBrZe/AcCILmTLv1n3kKyxWJJUw82c9k5vAgyaZFLhtu8fTdOadaSvEbcv6NJT8e/1g8gVKrpDpFvqIXvQ+ArH812ukqD/6w=="
+      }
+    },
+    {
+      "name": "custom native original",
+      "document": {
+        "protocol": "astra-artifact-v1",
+        "type": "manifest",
+        "algorithm": "RS256",
+        "keyId": "public-catalog-test-rsa",
+        "body": {
+          "artifactId": "8fc129b7-3cd9-423b-b146-f9d262d688bb",
+          "releaseId": "catalog-custom-2001",
+          "releaseVersion": 1,
+          "variant": "bundle:com.example.Editor",
+          "kind": "original",
+          "fileName": "protected.3105",
+          "plaintextSHA256": "d7d180d6cf85b05151b464ab0210d66caba76069a95fa27f76afdae8bab3012b",
+          "plaintextSize": 1221,
+          "contentEncryption": {
+            "algorithm": "A256GCM",
+            "nonce": "uV107UjPY4iBVbVr",
+            "tag": "HUK+qQZoM/YYEzTuXpv+dA=="
+          },
+          "ciphertextSHA256": "184c6723eb58190bb933b4b1146bc1b3455879c64c1c2292f5a29d2fe5196276",
+          "ciphertextSize": 1221
+        },
+        "signature": "zR0XuPfUHrx+2vJpNy2BkxnPN3hru17DtXj5xEmSCAFgzjnX0vWY33/vdt1aQJnmTYydFsS+T/Y8Z1ze4E8LvRG60b2MFrVMYWht6LBA7YdgDoAWyfaM/xoQA1mZaSQn3wxYHla83z9IhiceXMIYFQZ4exJ2atza5QAkmEngmiyIqiD90UuBwBSs3/Upc7U+Z2wnhy3osD/BciTq+QttsuY3df2kDh04/a4vVZikCd8c1yCypN4MY3b+suQFvYL1KFt1k895/TQxO9cw9m8csM+BtTUGQGOnzhC/1YfxYtUDu2icLd37hZJgfLdqjoZYY8BU/aZ1NEhTr18SCTlOjQ=="
+      }
+    },
+    {
+      "name": "malformed target",
+      "document": {
+        "protocol": "astra-artifact-v1",
+        "type": "manifest",
+        "algorithm": "RS256",
+        "keyId": "public-catalog-test-rsa",
+        "body": {
+          "artifactId": "8fc129b7-3cd9-423b-b146-f9d262d688bb",
+          "releaseId": "catalog-custom-2001",
+          "releaseVersion": 1,
+          "variant": "bundle:com..example",
+          "kind": "package",
+          "fileName": "protected.3105",
+          "plaintextSHA256": "d7d180d6cf85b05151b464ab0210d66caba76069a95fa27f76afdae8bab3012b",
+          "plaintextSize": 1221,
+          "contentEncryption": {
+            "algorithm": "A256GCM",
+            "nonce": "uV107UjPY4iBVbVr",
+            "tag": "HUK+qQZoM/YYEzTuXpv+dA=="
+          },
+          "ciphertextSHA256": "184c6723eb58190bb933b4b1146bc1b3455879c64c1c2292f5a29d2fe5196276",
+          "ciphertextSize": 1221
+        },
+        "signature": "hjPBKv2zV0q4N1o9/UlMpEQ4QHZJDIb7MUnhOOlZrvXRzAgiOLt8RxV93XW+PIS9SkirHrAs+BDXXMpFkaH1gED1DLq1g7KuGrQa7Bow1NrPjrQfvrlGXvZF2dEfj0iIxVk3dHEPeB+79nuEc/sTe8zJiIAXcZvtU1RW5/1ToWJ+pywjXTJdTiZSZLJjIFKn8AaK8X5WB3ZcFWGRRt8pd5dcGqqXr/cgR+xVjxsqGwfzD/coGy9l6ZbAyPH2EJqdpgw+JfVePKr1AwzuCkr4KkTMfzRoGEr3sQzoJKiaQsdUU91btsyKRwIjiwhbX0GwJdenujex0Zj5xEI1tqbqPg=="
+      }
+    },
+    {
+      "name": "unprefixed target",
+      "document": {
+        "protocol": "astra-artifact-v1",
+        "type": "manifest",
+        "algorithm": "RS256",
+        "keyId": "public-catalog-test-rsa",
+        "body": {
+          "artifactId": "8fc129b7-3cd9-423b-b146-f9d262d688bb",
+          "releaseId": "catalog-custom-2001",
+          "releaseVersion": 1,
+          "variant": "com.example.Editor",
+          "kind": "package",
+          "fileName": "protected.3105",
+          "plaintextSHA256": "d7d180d6cf85b05151b464ab0210d66caba76069a95fa27f76afdae8bab3012b",
+          "plaintextSize": 1221,
+          "contentEncryption": {
+            "algorithm": "A256GCM",
+            "nonce": "uV107UjPY4iBVbVr",
+            "tag": "HUK+qQZoM/YYEzTuXpv+dA=="
+          },
+          "ciphertextSHA256": "184c6723eb58190bb933b4b1146bc1b3455879c64c1c2292f5a29d2fe5196276",
+          "ciphertextSize": 1221
+        },
+        "signature": "c8DI2Y230OuFoRrMlbAQMCsKk145TiswzO3VF4gnAYGu9tC2USYlpiCgcUQJF4xioCUwP0iZp1SfIvdr0kVPkifPuddbOTsgGG56vmj/3iE4U5sHaVK4Dw1+sYx78l6YsW+S0R7WaXfN/GRltPN8p9pxIbkXsH5QsQ675XFRG0Th9U6gDBylfVVdGo+miTJcBiOKH8WWYZHm//29vQ7Lst2D7vhuKg0bYbtbNSY95xwOO7DYHv7dafOckx0BR0cLTeabMdDziDtSs97XoT1s+4JKr9Kna4fXaQSL+8ADQWmqLyVcCY8BgVmP7f7rOIINKFq521Odn22nh1/shP482w=="
+      }
+    }
+  ]
+}

@@ -110,8 +110,9 @@ jobs:
             Tests/ProtectedIdentityResumeSelfCheck.swift -o "$RUNNER_TEMP/astra-identity-resume-selfcheck"
           "$RUNNER_TEMP/astra-identity-resume-selfcheck"
 
-      - name: Verify actual catalog decoding and apply restore transactions
+      - name: Verify legacy and arbitrary-target catalog decoding and transactions
         run: |
+          python3 Tests/extract_catalog_identity.py "$RUNNER_TEMP/CatalogIdentity.swift"
           swiftc ThreeOneOSFive/helpers/AppSecurityConfiguration.swift \
             ThreeOneOSFive/helpers/ServerSignatureVerifier.swift \
             ThreeOneOSFive/helpers/ProtectedArtifactDecoder.swift \
@@ -119,8 +120,10 @@ jobs:
             ThreeOneOSFive/helpers/PatchPackageCodec.swift \
             ThreeOneOSFive/helpers/DirectPatchExecutor.swift \
             ThreeOneOSFive/helpers/PatchTransaction.swift \
+            "$RUNNER_TEMP/CatalogIdentity.swift" \
             Tests/CatalogApplicationSelfCheck.swift -o "$RUNNER_TEMP/astra-catalog-selfcheck"
           "$RUNNER_TEMP/astra-catalog-selfcheck" Tests/Fixtures/catalog
+          "$RUNNER_TEMP/astra-catalog-selfcheck" Tests/Fixtures/catalog-custom
 
       - name: Verify transaction crash recovery and final restore bytes
         run: |
@@ -174,7 +177,7 @@ jobs:
           test -d "$APP_NAME"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$APP_NAME/Info.plist")" = "Astra"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_NAME/Info.plist")" = "2.4"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_NAME/Info.plist")" = "38"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_NAME/Info.plist")" = "39"
           EXECUTABLE=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP_NAME/Info.plist")
           test -x "$APP_NAME/$EXECUTABLE"
           python3 ReleaseTools/verify_native_compatibility.py --app "$APP_NAME" --max-ios 16.0
@@ -219,5 +222,5 @@ jobs:
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Astra-Unsigned-IPA-2.4-38
+          name: Astra-Unsigned-IPA-2.4-39
           path: build/Astra.ipa

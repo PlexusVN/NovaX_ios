@@ -22,9 +22,6 @@ struct ThreeOneOSFiveApp: App {
         setupLogCapture()
         log("app: Astra launching — iOS \(AppInfo.osVersion) (\(AppInfo.osBuild)) \(AppInfo.machineName)")
         configureAppearance()
-        if requiresWorseQueryPreparation {
-            IOS27ContainerPreparation.shared.configureTargets(bundleIDs: AppSecurityConfiguration.protectedBundleIDs)
-        }
     }
 
     private func configureAppearance() {
@@ -62,6 +59,7 @@ struct ThreeOneOSFiveApp: App {
                 Group {
                     if authManager.authState == .verified && requiresWorseQueryPreparation && !ios27Preparation.didContinue {
                         IOS27PreparationView(preparation: ios27Preparation)
+                            .id(authManager.authenticationRevision)
                             .zIndex(2)
                     } else if authManager.authState == .verified && gatekeeper.requiresPairingForCurrentDevice && !gatekeeper.canBypassGatekeeper {
                         IOS27PairingSetupView(auth: authManager) {
@@ -126,6 +124,7 @@ struct ThreeOneOSFiveApp: App {
                 guard authManager.authState == .verified else {
                     showMainInterface = false
                     ios27Preparation.reset()
+                    featurePatchService.invalidateCatalog()
                     return
                 }
 
@@ -137,6 +136,9 @@ struct ThreeOneOSFiveApp: App {
                 }
             }
             .onAppear {
+                ios27Preparation.configureTargetLoader {
+                    try await featurePatchService.preparationTargets(auth: authManager)
+                }
                 networkAccess.setActive(scenePhase == .active)
                 updateManager.checkForUpdate()
                 appState.detectSupport()
@@ -169,6 +171,12 @@ struct ThreeOneOSFiveApp: App {
                 if state == .verified {
                     Task { await featurePatchService.syncFromServer(auth: authManager) }
                 }
+            }
+            .onChange(of: authManager.authenticationRevision) { _ in
+                // Catalog capabilities and native discovery belong to the
+                // current license context; late work cannot authorize a new one.
+                featurePatchService.invalidateCatalog()
+                ios27Preparation.reset()
             }
             .onOpenURL { url in
                 patchDraftCoordinator.presentImport(url)

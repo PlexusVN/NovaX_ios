@@ -818,9 +818,7 @@ final class ProtectedDownloadService: ObservableObject {
     private func downloadArtifact(_ descriptor: ProtectedArtifactDescriptor,
                                   auth: AuthManager) async throws -> ProtectedCodePatchDownload {
         guard UUID(uuidString: descriptor.artifactID) != nil,
-              ["package", "mod", "original"].contains(descriptor.kind),
-              AppSecurityConfiguration.protectedBundleID(forVariant: descriptor.variant) != nil,
-              descriptor.variant != "capcut" || descriptor.kind == "package" else {
+              AppSecurityConfiguration.permitsProtectedArtifact(variant: descriptor.variant, kind: descriptor.kind) else {
             throw ProtectedDownloadError.invalidResponse
         }
         let initialLicenseDigest = licenseDigest

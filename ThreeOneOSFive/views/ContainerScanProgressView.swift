@@ -225,7 +225,7 @@ struct IOS27PreparationView: View {
     private var preparationActions: some View {
         if isPreparing {
             Button(progress.cancelPending ? "Đang dừng…" : "Hủy chuẩn bị") {
-                if progress.snapshot.phase == .scanning { progress.requestCancellation() }
+                preparation.cancel()
             }
             .font(.subheadline)
             .foregroundColor(AppTheme.gamingTextSecondary)

@@ -30,6 +30,8 @@ final class IOS27ContainerPreparation: ObservableObject {
     private let progress: ContainerScanProgress
     private let operation: @Sendable ([String], Bool) throws -> [String: String]
     private var targetBundleIDs: [String] = []
+    private var targetLoader: (@MainActor () async throws -> [String])?
+    private var cancellationRequested = false
     private var forceNextScan = false
 
     init(progress: ContainerScanProgress = .shared,
@@ -40,8 +42,14 @@ final class IOS27ContainerPreparation: ObservableObject {
         self.operation = operation
     }
 
-    /// The application supplies its known capabilities before displaying the
-    /// mandatory preparation gate. The discovery engine contains no game list.
+    /// Runtime targets come from the current authenticated catalog. Installing
+    /// the provider again does not discard roots already verified in this session.
+    func configureTargetLoader(_ loader: @escaping @MainActor () async throws -> [String]) {
+        targetLoader = loader
+    }
+
+    /// Explicit targets remain available for callers and offline native checks.
+    /// The discovery engine itself contains no application allowlist.
     func configureTargets(bundleIDs: [String]) {
         do {
             let requested = try validatedTargets(bundleIDs)
@@ -63,7 +71,9 @@ final class IOS27ContainerPreparation: ObservableObject {
 
     func prepareIfNeeded(force: Bool = false) async {
         guard work == nil, state != .ready || force else { return }
-        guard !targetBundleIDs.isEmpty else {
+        guard !cancellationRequested || force else { return }
+        if force { cancellationRequested = false }
+        guard targetLoader != nil || !targetBundleIDs.isEmpty else {
             state = .failed; failure = "Chưa có ứng dụng hợp lệ để chuẩn bị quyền truy cập."
             return
         }
@@ -77,17 +87,35 @@ final class IOS27ContainerPreparation: ObservableObject {
         state = .preparing; failure = nil; didContinue = false
         IOS27ContainerSession.reset()
         let operation = self.operation
-        let targets = targetBundleIDs
+        let loader = targetLoader
         let forceScan = force || forceNextScan
         forceNextScan = false
-        let task = Task.detached(priority: .userInitiated) { try operation(targets, forceScan) }
+        let task = Task { @MainActor in
+            let targets: [String]
+            if let loader {
+                // A failed request must fail the gate. Only a successfully
+                // authenticated, empty catalog can admit the app without grants.
+                targets = try self.validatedTargets(try await loader(), allowEmpty: true)
+            } else {
+                targets = try self.validatedTargets(self.targetBundleIDs)
+            }
+            try Task.checkCancellation()
+            guard revision == self.generation else { throw CancellationError() }
+            self.targetBundleIDs = targets
+            if targets.isEmpty { return [String: String]() }
+            let native = Task.detached(priority: .userInitiated) { try operation(targets, forceScan) }
+            return try await withTaskCancellationHandler(operation: { try await native.value },
+                                                        onCancel: { native.cancel() })
+        }
         work = task
         do {
             let roots = try await withTaskCancellationHandler(operation: { try await task.value }, onCancel: { task.cancel() })
             try Task.checkCancellation()
             guard revision == generation else { return }
-            let verified = try validatedRoots(roots, requested: targets)
-            guard !verified.isEmpty else { throw WorseQueryError.preparationRequired }
+            let verified = try validatedRoots(roots, requested: targetBundleIDs)
+            guard !verified.isEmpty || (loader != nil && targetBundleIDs.isEmpty) else {
+                throw WorseQueryError.preparationRequired
+            }
             IOS27ContainerSession.install(verified)
             state = .ready
         } catch {
@@ -150,9 +178,9 @@ final class IOS27ContainerPreparation: ObservableObject {
         }
     }
 
-    private func validatedTargets(_ bundleIDs: [String]) throws -> [String] {
+    private func validatedTargets(_ bundleIDs: [String], allowEmpty: Bool = false) throws -> [String] {
         let targets = Set(try bundleIDs.map { try PatchPathValidator.canonicalBundleIdentifier($0) })
-        guard !targets.isEmpty else { throw WorseQueryError.preparationRequired }
+        guard allowEmpty || !targets.isEmpty else { throw WorseQueryError.preparationRequired }
         return targets.sorted()
     }
 
@@ -170,11 +198,23 @@ final class IOS27ContainerPreparation: ObservableObject {
         didContinue = true
     }
 
+    func cancel() {
+        guard state == .idle || state == .preparing else { return }
+        if progress.snapshot.phase == .scanning { progress.requestCancellation() }
+        generation &+= 1
+        work?.cancel(); work = nil
+        IOS27ContainerSession.reset()
+        cancellationRequested = true
+        state = .failed; didContinue = false
+        failure = "Đã dừng chuẩn bị. Chọn Thử lại để tiếp tục hoặc sao chép thông tin lỗi để được hỗ trợ."
+    }
+
     func reset(forceScan: Bool = false) {
         generation &+= 1
         work?.cancel(); work = nil
         IOS27ContainerSession.reset()
         state = .idle; failure = nil; didContinue = false
+        cancellationRequested = false
         forceNextScan = forceScan
     }
 }

@@ -1,0 +1,1625 @@
+{
+  "warning": "Generated from server patch_targets.js; harmless policy matrix.",
+  "cases": [
+    {
+      "variant": "ffth",
+      "kind": "package",
+      "expectedBundleID": "com.dts.freefireth",
+      "expectedAllowed": true
+    },
+    {
+      "variant": "ffth",
+      "kind": "mod",
+      "expectedBundleID": "com.dts.freefireth",
+      "expectedAllowed": true
+    },
+    {
+      "variant": "ffth",
+      "kind": "original",
+      "expectedBundleID": "com.dts.freefireth",
+      "expectedAllowed": true
+    },
+    {
+      "variant": "ffth",
+      "kind": "unknown",
+      "expectedBundleID": "com.dts.freefireth",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "ffth",
+      "kind": "",
+      "expectedBundleID": "com.dts.freefireth",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "ffmax",
+      "kind": "package",
+      "expectedBundleID": "com.dts.freefiremax",
+      "expectedAllowed": true
+    },
+    {
+      "variant": "ffmax",
+      "kind": "mod",
+      "expectedBundleID": "com.dts.freefiremax",
+      "expectedAllowed": true
+    },
+    {
+      "variant": "ffmax",
+      "kind": "original",
+      "expectedBundleID": "com.dts.freefiremax",
+      "expectedAllowed": true
+    },
+    {
+      "variant": "ffmax",
+      "kind": "unknown",
+      "expectedBundleID": "com.dts.freefiremax",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "ffmax",
+      "kind": "",
+      "expectedBundleID": "com.dts.freefiremax",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "capcut",
+      "kind": "package",
+      "expectedBundleID": "com.lemon.lvoverseas",
+      "expectedAllowed": true
+    },
+    {
+      "variant": "capcut",
+      "kind": "mod",
+      "expectedBundleID": "com.lemon.lvoverseas",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "capcut",
+      "kind": "original",
+      "expectedBundleID": "com.lemon.lvoverseas",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "capcut",
+      "kind": "unknown",
+      "expectedBundleID": "com.lemon.lvoverseas",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "capcut",
+      "kind": "",
+      "expectedBundleID": "com.lemon.lvoverseas",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "auto",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "auto",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "auto",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "auto",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "auto",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "unknown",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "unknown",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "unknown",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "unknown",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "unknown",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.example.Editor",
+      "kind": "package",
+      "expectedBundleID": "com.example.Editor",
+      "expectedAllowed": true
+    },
+    {
+      "variant": "bundle:com.example.Editor",
+      "kind": "mod",
+      "expectedBundleID": "com.example.Editor",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.example.Editor",
+      "kind": "original",
+      "expectedBundleID": "com.example.Editor",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.example.Editor",
+      "kind": "unknown",
+      "expectedBundleID": "com.example.Editor",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.example.Editor",
+      "kind": "",
+      "expectedBundleID": "com.example.Editor",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:Com.Example-App.Reader",
+      "kind": "package",
+      "expectedBundleID": "Com.Example-App.Reader",
+      "expectedAllowed": true
+    },
+    {
+      "variant": "bundle:Com.Example-App.Reader",
+      "kind": "mod",
+      "expectedBundleID": "Com.Example-App.Reader",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:Com.Example-App.Reader",
+      "kind": "original",
+      "expectedBundleID": "Com.Example-App.Reader",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:Com.Example-App.Reader",
+      "kind": "unknown",
+      "expectedBundleID": "Com.Example-App.Reader",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:Com.Example-App.Reader",
+      "kind": "",
+      "expectedBundleID": "Com.Example-App.Reader",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.apple.mobilenotes",
+      "kind": "package",
+      "expectedBundleID": "com.apple.mobilenotes",
+      "expectedAllowed": true
+    },
+    {
+      "variant": "bundle:com.apple.mobilenotes",
+      "kind": "mod",
+      "expectedBundleID": "com.apple.mobilenotes",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.apple.mobilenotes",
+      "kind": "original",
+      "expectedBundleID": "com.apple.mobilenotes",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.apple.mobilenotes",
+      "kind": "unknown",
+      "expectedBundleID": "com.apple.mobilenotes",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.apple.mobilenotes",
+      "kind": "",
+      "expectedBundleID": "com.apple.mobilenotes",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.a",
+      "kind": "package",
+      "expectedBundleID": "com.a",
+      "expectedAllowed": true
+    },
+    {
+      "variant": "bundle:com.a",
+      "kind": "mod",
+      "expectedBundleID": "com.a",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.a",
+      "kind": "original",
+      "expectedBundleID": "com.a",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.a",
+      "kind": "unknown",
+      "expectedBundleID": "com.a",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.a",
+      "kind": "",
+      "expectedBundleID": "com.a",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:a.b",
+      "kind": "package",
+      "expectedBundleID": "a.b",
+      "expectedAllowed": true
+    },
+    {
+      "variant": "bundle:a.b",
+      "kind": "mod",
+      "expectedBundleID": "a.b",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:a.b",
+      "kind": "original",
+      "expectedBundleID": "a.b",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:a.b",
+      "kind": "unknown",
+      "expectedBundleID": "a.b",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:a.b",
+      "kind": "",
+      "expectedBundleID": "a.b",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.1-App",
+      "kind": "package",
+      "expectedBundleID": "com.1-App",
+      "expectedAllowed": true
+    },
+    {
+      "variant": "bundle:com.1-App",
+      "kind": "mod",
+      "expectedBundleID": "com.1-App",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.1-App",
+      "kind": "original",
+      "expectedBundleID": "com.1-App",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.1-App",
+      "kind": "unknown",
+      "expectedBundleID": "com.1-App",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.1-App",
+      "kind": "",
+      "expectedBundleID": "com.1-App",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.b",
+      "kind": "package",
+      "expectedBundleID": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.b",
+      "expectedAllowed": true
+    },
+    {
+      "variant": "bundle:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.b",
+      "kind": "mod",
+      "expectedBundleID": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.b",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.b",
+      "kind": "original",
+      "expectedBundleID": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.b",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.b",
+      "kind": "unknown",
+      "expectedBundleID": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.b",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.b",
+      "kind": "",
+      "expectedBundleID": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.b",
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.b",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.b",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.b",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.b",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.b",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com..app",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com..app",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com..app",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com..app",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com..app",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.-app",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.-app",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.-app",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.-app",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.-app",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.app-",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.app-",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.app-",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.app-",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.app-",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.app ",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.app ",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.app ",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.app ",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.app ",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo\n.app",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo\n.app",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo\n.app",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo\n.app",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo\n.app",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo\r.app",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo\r.app",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo\r.app",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo\r.app",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo\r.app",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo\t.app",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo\t.app",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo\t.app",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo\t.app",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo\t.app",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo\u0000.app",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo\u0000.app",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo\u0000.app",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo\u0000.app",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo\u0000.app",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo/bar",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo/bar",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo/bar",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo/bar",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo/bar",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo\\bar",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo\\bar",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo\\bar",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo\\bar",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo\\bar",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo:*",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo:*",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo:*",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo:*",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.foo:*",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.exémple",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.exémple",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.exémple",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.exémple",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.exémple",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com._app",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com._app",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com._app",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com._app",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com._app",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com...app",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com...app",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com...app",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com...app",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com...app",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.app.",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.app.",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.app.",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.app.",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "bundle:com.app.",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.example.Editor",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.example.Editor",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.example.Editor",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.example.Editor",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.example.Editor",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "Com.Example-App.Reader",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "Com.Example-App.Reader",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "Com.Example-App.Reader",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "Com.Example-App.Reader",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "Com.Example-App.Reader",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.apple.mobilenotes",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.apple.mobilenotes",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.apple.mobilenotes",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.apple.mobilenotes",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.apple.mobilenotes",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.a",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.a",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.a",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.a",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.a",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "a.b",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "a.b",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "a.b",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "a.b",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "a.b",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.1-App",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.1-App",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.1-App",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.1-App",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.1-App",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.b",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.b",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.b",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.b",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.b",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.b",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.b",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.b",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.b",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.b",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com..app",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com..app",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com..app",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com..app",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com..app",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.-app",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.-app",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.-app",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.-app",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.-app",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.app-",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.app-",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.app-",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.app-",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.app-",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.app ",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.app ",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.app ",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.app ",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.app ",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo\n.app",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo\n.app",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo\n.app",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo\n.app",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo\n.app",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo\r.app",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo\r.app",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo\r.app",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo\r.app",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo\r.app",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo\t.app",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo\t.app",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo\t.app",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo\t.app",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo\t.app",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo\u0000.app",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo\u0000.app",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo\u0000.app",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo\u0000.app",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo\u0000.app",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo/bar",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo/bar",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo/bar",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo/bar",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo/bar",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo\\bar",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo\\bar",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo\\bar",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo\\bar",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo\\bar",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo:*",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo:*",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo:*",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo:*",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.foo:*",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.exémple",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.exémple",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.exémple",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.exémple",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.exémple",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com._app",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com._app",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com._app",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com._app",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com._app",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com...app",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com...app",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com...app",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com...app",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com...app",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.app.",
+      "kind": "package",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.app.",
+      "kind": "mod",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.app.",
+      "kind": "original",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.app.",
+      "kind": "unknown",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    },
+    {
+      "variant": "com.app.",
+      "kind": "",
+      "expectedBundleID": null,
+      "expectedAllowed": false
+    }
+  ]
+}

@@ -1,3 +1,11 @@
+## Astra 2.4 (39): package cho Bundle ID bất kỳ
+
+Đồng bộ policy `bundle:<BundleID>` với server, giữ binding chính xác một ứng
+dụng/gói và các kiểm tra crypto. Preparation dùng catalog đã xác thực thay vì
+ba target cố định; hỗ trợ hủy khi đang tải catalog và giữ tên file ngắn cho
+Bundle ID dài. Xem [phạm vi và kiểm chứng](docs/ARBITRARY_PACKAGE_TARGETS_20261116.md).
+Kết quả build/IPA và thử thiết bị được ghi riêng khi hoàn tất.
+
 ## Astra 2.4 (38): đối chiếu IPA và sửa luồng truy cập
 
 Build 38 khôi phục thứ tự tra Bundle ID → MCM path/LaunchServices → worse_query
