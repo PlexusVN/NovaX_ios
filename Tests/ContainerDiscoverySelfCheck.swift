@@ -278,6 +278,7 @@ final class RestartFlag: @unchecked Sendable {
         await preparation.prepareIfNeeded(force: true); await drain()
         precondition(preparation.state == .ready && DiscoveryFixture.ranges.last!.1 == 2_100_000)
         precondition(IOS27ContainerSession.path(for: DiscoveryFixture.gameID) == nil)
+        preparation.enterApplication()
         do {
             try await preparation.prepareAdditionalTargets(bundleIDs: [DiscoveryFixture.gameID])
             preconditionFailure("unmatched target became prepared for patch")
