@@ -106,7 +106,8 @@ func log(_ text: String) {}
         precondition(ContainerStore.grantContainerAccess(fallback) == -1,
                      "path-only iOS 16 fallback invented a separate sandbox handle")
         for v in [(26,6,2,""),(26,7,1,""),(26,7,2,""),(27,0,1,""),(27,1,0,""),
-                  (27,2,0,"24B5084k"),(27,2,0,"24B5089g"),(27,2,0,"24B5099f"),(27,2,0,"")] {
+                  (27,2,0,"24B5084k"),(27,2,0,"24B5089g"),(27,2,0,"24B5099f"),(27,2,0,""),
+                  (27,2,1,"24B119"),(27,3,0,"24C5037i"),(27,3,0,"24C5049d"),(27,3,9,"24C100")] {
             AppInfo.versionTuple = (v.0,v.1,v.2); AppInfo.osBuild = v.3
             Calls.reset(); Calls.cachedRootExists = true
             UserDefaults.standard.set(Calls.root, forKey:"astra.resolved_container.\(id)")
@@ -119,7 +120,7 @@ func log(_ text: String) {}
             precondition(ContainerStore.grantContainerAccess(prepared) == 88 && Calls.events.last == "worse_query")
         }
         for v in [(18,7,2,""),(18,11,0,""),(26,7,3,""),(26,8,0,""),(17,8,0,""),
-                  (25,0,0,""),(27,2,1,"24B5099f"),(27,3,0,"")] {
+                  (25,0,0,""),(27,4,0,"")] {
             AppInfo.versionTuple = (v.0,v.1,v.2); AppInfo.osBuild = v.3
             Calls.reset(); Calls.cachedRootExists = true
             UserDefaults.standard.set(Calls.root, forKey:"astra.resolved_container.\(id)")
@@ -132,3 +133,4 @@ func log(_ text: String) {}
         print("[PASS] Actual container resolver/grant dispatch: cold cached iOS 16.7.16 activation, fresh UUID precedence, MHA failure path-only fallback, MHA before LS, mandatory WQ roots, no cross-engine fallback")
     }
 }
+
