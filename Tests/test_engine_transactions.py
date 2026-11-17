@@ -56,8 +56,11 @@ func applicationStore() throws -> PatchEngineApplicationStore { Fixture.store }
             source += extract_function(coordinator, signature) + '\n'
         source += '}\n'
         feature = (ROOT / 'ThreeOneOSFive/helpers/FeaturePatchService.swift').read_text(encoding='utf-8')
+        source += feature[feature.index('// BEGIN CATALOG OPERATION PROGRESS'):feature.index('// END CATALOG OPERATION PROGRESS')]
         source += '''
 @MainActor final class FeaturePatchService {
+var patchOperation:FeaturePatchOperationProgress?
+var cancelCatalogOperation:(()->Void)?
 let defaults=UserDefaults.standard
 var catalogApplications:CatalogPatchApplicationRegistry { CatalogPatchApplicationRegistry(defaults:defaults) }
 var patchProjectsDir:URL { Fixture.root }
@@ -69,7 +72,8 @@ func attemptEnable(_ patch:PatchItem,newProjectID:UUID) throws {
     Fixture.enableAssociations += 1
 }
 '''
-        for signature in ['func restorePatch(', 'func disablePatch(', 'private func patchDisableBinding(',
+        for signature in ['func cancelPatchOperation(', 'private func updatePatchOperation(', 'private func withCatalogOperation<T:',
+                          'func restorePatch(', 'func disablePatch(', 'private func patchDisableBinding(',
                           'func isPatchDisabledPendingRestore(', 'func isPatchToggleOn(',
                           'private func requirePatchEnableAllowed(',
                           'private func restorePatchInOperation(', 'func patchApplicationState(']:

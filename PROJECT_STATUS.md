@@ -1,3 +1,11 @@
+## Astra 2.4 (40): thời gian tải bảo mật và tiến trình thao tác
+
+Dùng giờ từ phản hồi HTTPS đã xác thực và uptime để kiểm grant, giữ nguyên
+expiry tuyệt đối; P01 có mã DL theo điều kiện. Card hiển thị bước thật, giữ task
+đến completion và cho hủy trước commit. Xem
+[phạm vi, kiểm thử và giới hạn](docs/P01_CLOCK_AND_PROGRESS_20261117.md).
+Kết quả CI/IPA và thử thiết bị được ghi riêng sau build.
+
 ## Astra 2.4 (39): package cho Bundle ID bất kỳ
 
 Đồng bộ policy `bundle:<BundleID>` với server, giữ binding chính xác một ứng

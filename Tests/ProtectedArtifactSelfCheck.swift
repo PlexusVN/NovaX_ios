@@ -123,6 +123,19 @@ struct ProtectedArtifactSelfCheck {
                 expectedGrantID: expectedGrant ?? grantID, now: at ?? date)
         }
         try require(try decrypt() == bytes(fixture["expectedPlaintextHex"] as! String), "golden ECDH/HKDF/GCM plaintext")
+        let issuedDate = Date(timeIntervalSince1970: (grantBody["issuedAt"] as! NSNumber).doubleValue)
+        let responseClock = ProtectedResponseTime(serverDate: issuedDate,
+            requestStartedAt: 100, receivedAt: 100.2)!
+        let responseNow = responseClock.verificationDate(at: 100.3)!
+        try require(try decrypt(at: responseNow) == bytes(fixture["expectedPlaintextHex"] as! String),
+                    "pinned server response time authorizes a fresh grant without local clock dependence")
+        let expiredResponseClock = responseClock.verificationDate(at: 401)
+        try require(expiredResponseClock == nil, "stale response clock cannot authorize a later grant")
+        let expiryUptime = 100.2 + (grantBody["expiresAt"] as! NSNumber).doubleValue
+            - issuedDate.timeIntervalSince1970
+        try rejects("pinned clock cannot extend grant expiry") {
+            _ = try decrypt(at: responseClock.verificationDate(at: expiryUptime)!)
+        }
         var unsigned = manifestObject; unsigned.removeValue(forKey: "signature")
         try require(String(data: ProtectedArtifactDecoder.canonicalData(unsigned), encoding: .utf8) == expected["manifestSignatureInputUTF8"] as? String,
                     "manifest canonical signature bytes")

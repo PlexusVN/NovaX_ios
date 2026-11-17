@@ -478,7 +478,13 @@ struct PatchCardView: View {
     private var applicationState: PatchApplicationState { service.patchApplicationState(patch) }
     private var isApplied: Bool { service.isPatchToggleOn(patch) }
     private var isRecoveryPending: Bool { service.isPatchDisabledPendingRestore(patch) }
-    @State private var isWorking = false
+    @State private var isSubmitting = false
+    @State private var operationTask: Task<Void, Never>?
+    private var operationProgress: FeaturePatchOperationProgress? {
+        guard service.patchOperation?.identity == patch.downloadIdentity else { return nil }
+        return service.patchOperation
+    }
+    private var isWorking: Bool { isSubmitting || operationProgress != nil }
     @Binding var activeToast: ToastInfo?
     @State private var glowPulse = false
 
@@ -500,11 +506,25 @@ struct PatchCardView: View {
                         .font(.system(size: 10, weight: .semibold, design: .rounded))
                 }
                 .foregroundColor(isApplied ? AppTheme.statusSuccess : AppTheme.gamingTextSecondary)
+                if let progress = operationProgress {
+                    Text(progress.message)
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .foregroundColor(AppTheme.gamingBlueBright)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if progress.canCancel || progress.cancellationPending {
+                        Button(progress.cancellationPending ? "Đang dừng…" : "Hủy thao tác") {
+                            service.cancelPatchOperation(identity: patch.downloadIdentity)
+                        }
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundColor(AppTheme.gamingTextSecondary)
+                        .disabled(progress.cancellationPending)
+                    }
+                }
                 if isRecoveryPending {
                     Button("Thử khôi phục file") { togglePatch(restoreOnly: true) }
                         .font(.system(size: 10, weight: .semibold, design: .rounded))
                         .foregroundColor(AppTheme.gamingBlueBright)
-                        .disabled(isWorking)
+                        .disabled(isWorking || service.patchOperation != nil)
                 }
             }
 
@@ -550,6 +570,10 @@ struct PatchCardView: View {
         }
         .onChange(of: isApplied) { applied in
             if applied { startGlow() } else { glowPulse = false }
+        }
+        .onChange(of: operationProgress?.message) { message in
+            guard let message, isWorking else { return }
+            activeToast = ToastInfo(title: "Đang xử lý chức năng", message: message, isSuccess: true)
         }
     }
 
@@ -645,72 +669,49 @@ struct PatchCardView: View {
                 .animation(.spring(response: 0.35, dampingFraction: 0.65), value: isApplied)
             }
             .buttonStyle(GamingPressButtonStyle(scale: 0.95))
+            .disabled(service.patchOperation != nil)
         }
     }
 
     // MARK: - Actions
 
     private func togglePatch(restoreOnly: Bool = false) {
+        guard !isWorking, service.patchOperation == nil else { return }
         Haptics.medium()
-        isWorking = true
-        activeToast = ToastInfo(
-            title: (isApplied || restoreOnly) ? "Chức năng đang tắt" : "Chức năng đang bật",
-            message: "Vui lòng chờ...",
-            isSuccess: true
-        )
-
+        isSubmitting = true
         let targetIsApplied = isApplied || restoreOnly
-        Task.detached(priority: .userInitiated) {
-            if targetIsApplied {
-                do {
+        activeToast = ToastInfo(
+            title: targetIsApplied ? "Chức năng đang tắt" : "Chức năng đang bật",
+            message: "Đang chuẩn bị thao tác…", isSuccess: true)
+
+        // The service dispatches native and filesystem work to its existing
+        // workers. Keep this UI task observable and await actual completion.
+        operationTask = Task { @MainActor in
+            defer { isSubmitting = false; operationTask = nil }
+            do {
+                if targetIsApplied {
                     let outcome = try await service.disablePatch(patch, auth: auth)
-                    await MainActor.run {
-                        isWorking = false
-                        if outcome == .restored { Haptics.success() } else { Haptics.medium() }
-                        activeToast = ToastInfo(
-                            title: outcome == .restored ? "Tắt chức năng thành công" : "Đã tắt · File chưa khôi phục",
-                            message: outcome == .restored
-                                ? "Đã khôi phục dữ liệu đã sao lưu trước lần áp dụng này."
-                                : "Công tắc đã tắt trong Astra. File game chưa được khôi phục nên có thể vẫn còn tác dụng. Bản sao lưu được giữ lại; hãy chọn Thử khôi phục file để thử lại.",
-                            isSuccess: outcome == .restored
-                        )
-                    }
-                } catch {
-                    await MainActor.run {
-                        isWorking = false
-                        Haptics.error()
-                        activeToast = ToastInfo(
-                            title: "Không thể tắt chức năng",
-                            message: (error as? LocalizedError)?.errorDescription
-                                ?? "Không thể khôi phục dữ liệu (mã \((error as NSError).code)).",
-                            isSuccess: false
-                        )
-                    }
-                }
-            } else {
-                do {
+                    if outcome == .restored { Haptics.success() } else { Haptics.medium() }
+                    activeToast = ToastInfo(
+                        title: outcome == .restored ? "Tắt chức năng thành công" : "Đã tắt · File chưa khôi phục",
+                        message: outcome == .restored
+                            ? "Đã khôi phục dữ liệu đã sao lưu trước lần áp dụng này."
+                            : "Công tắc đã tắt trong Astra. File game chưa được khôi phục nên có thể vẫn còn tác dụng. Bản sao lưu được giữ lại; hãy chọn Thử khôi phục file để thử lại.",
+                        isSuccess: outcome == .restored)
+                } else {
                     try await service.applyPatch(patch, auth: auth)
-                    await MainActor.run {
-                        isWorking = false
-                        Haptics.success()
-                        activeToast = ToastInfo(
-                            title: "Bật chức năng thành công",
-                            message: "Chức năng đang bật.",
-                            isSuccess: true
-                        )
-                    }
-                } catch {
-                    await MainActor.run {
-                        isWorking = false
-                        Haptics.error()
-                        activeToast = ToastInfo(
-                            title: "Không thể bật chức năng",
-                            message: (error as? LocalizedError)?.errorDescription
-                                ?? "Không thể hoàn tất thao tác (mã \((error as NSError).code)).",
-                            isSuccess: false
-                        )
-                    }
+                    Haptics.success()
+                    activeToast = ToastInfo(title: "Bật chức năng thành công", message: "Chức năng đang bật.", isSuccess: true)
                 }
+            } catch {
+                let underlying = (error as? PatchOperationError)?.underlying ?? error
+                let wasCancelled = underlying is CancellationError || (underlying as? URLError)?.code == .cancelled
+                if wasCancelled { Haptics.soft() } else { Haptics.error() }
+                activeToast = ToastInfo(
+                    title: wasCancelled ? "Đã dừng thao tác" : (targetIsApplied ? "Không thể tắt chức năng" : "Không thể bật chức năng"),
+                    message: (error as? LocalizedError)?.errorDescription
+                        ?? "Không thể hoàn tất thao tác (mã \((error as NSError).code)).",
+                    isSuccess: false)
             }
         }
     }

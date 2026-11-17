@@ -57,10 +57,10 @@ struct FixturePublisher { func send() {} }
     var authState:State = .verified
     var authenticationRevision:UInt64=0
 }
-enum FeaturePatchError:Error { case notAuthenticated }
+enum FeaturePatchError:Error { case notAuthenticated, operationInProgress }
 enum PatchRestoreError:Error { case missingReceipt, recoveryRequired, disabledPendingRestore }
 func log(_ value:String) {}
-struct PatchItem { let identity:String }
+struct PatchItem { let identity:String; var downloadIdentity:String { identity } }
 enum WorseQueryHelper {
     static let isAvailable=false
     static func isScopeSupported(for path:String)->Bool { false }

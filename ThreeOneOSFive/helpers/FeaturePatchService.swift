@@ -250,12 +250,42 @@ struct NovaXCommandResponse: Codable {
 
 // MARK: - Feature Patch Service
 
+// BEGIN CATALOG OPERATION PROGRESS — retained until the underlying work ends.
+struct FeaturePatchOperationProgress: Equatable, Sendable {
+    enum Stage: Equatable, Sendable {
+        case waiting, download, decode, target, access, write, restore
+        var message: String {
+            switch self {
+            case .waiting: return "Đang chờ thao tác trước hoàn tất…"
+            case .download: return "Đang tải và xác minh dữ liệu bảo mật…"
+            case .decode: return "Đang kiểm tra dữ liệu chức năng…"
+            case .target: return "Đang xác minh thư mục ứng dụng đích…"
+            case .access: return "Đang kiểm tra kết nối và quyền truy cập…"
+            case .write: return "Đang ghi và xác minh dữ liệu. Vui lòng giữ app hoạt động."
+            case .restore: return "Đang khôi phục và xác minh dữ liệu. Vui lòng giữ app hoạt động."
+            }
+        }
+        var canCancel: Bool { self != .write && self != .restore }
+    }
+    let id: UUID
+    let identity: String
+    var stage: Stage
+    var cancellationPending = false
+    var message: String {
+        cancellationPending ? "Đang dừng, chờ thao tác hiện tại kết thúc…" : stage.message
+    }
+    var canCancel: Bool { stage.canCancel && !cancellationPending }
+}
+// END CATALOG OPERATION PROGRESS
+
 @MainActor
 final class FeaturePatchService: ObservableObject {
     @Published var categories: [PatchCategory] = []
     @Published var patchStepMessage: String = ""
     @Published var patches: [PatchItem] = []
     @Published var isLoading = false
+    @Published private(set) var patchOperation: FeaturePatchOperationProgress?
+    private var cancelCatalogOperation: (() -> Void)?
 
     static let colorOptions: [NovaXFeatureOption] = [
         NovaXFeatureOption(value: 0, title: "Cầu vồng"),
@@ -645,9 +675,45 @@ final class FeaturePatchService: ObservableObject {
 
     // MARK: - Apply / Restore
 
+    /// Cancel only before a file commit is admitted. Keeping this task alive
+    /// until the awaited worker actually returns also keeps its staging and gate.
+    func cancelPatchOperation(identity: String) {
+        guard var progress = patchOperation, progress.identity == identity, progress.canCancel else { return }
+        progress.cancellationPending = true
+        patchOperation = progress
+        cancelCatalogOperation?()
+    }
+
+    private func updatePatchOperation(_ stage: FeaturePatchOperationProgress.Stage) {
+        guard var progress = patchOperation else { return }
+        progress.stage = stage
+        patchOperation = progress
+    }
+
+    private func withCatalogOperation<T: Sendable>(
+        _ patch: PatchItem, operation: @escaping @MainActor () async throws -> T
+    ) async throws -> T {
+        guard patchOperation == nil else { throw FeaturePatchError.operationInProgress }
+        try Task.checkCancellation()
+        let id = UUID()
+        patchOperation = FeaturePatchOperationProgress(id: id, identity: patch.downloadIdentity, stage: .waiting)
+        let task = Task { @MainActor in try await operation() }
+        cancelCatalogOperation = { task.cancel() }
+        defer {
+            if patchOperation?.id == id {
+                patchOperation = nil
+                cancelCatalogOperation = nil
+            }
+        }
+        return try await withTaskCancellationHandler(operation: { try await task.value },
+                                                    onCancel: { task.cancel() })
+    }
+
     func applyPatch(_ patch: PatchItem, auth: AuthManager) async throws {
-        try await withExclusivePatchOperation { operationID in
-            try await self.applyPatchInOperation(patch, auth: auth, operationID: operationID)
+        try await withCatalogOperation(patch) {
+            try await withExclusivePatchOperation { operationID in
+                try await self.applyPatchInOperation(patch, auth: auth, operationID: operationID)
+            }
         }
     }
 
@@ -661,6 +727,7 @@ final class FeaturePatchService: ObservableObject {
         let authRevision = auth.authenticationRevision
         defer { applicationRevision &+= 1 }
         var stage = PatchOperationStage.download
+        updatePatchOperation(.download)
         do {
             print("[FeaturePatch] applying patch: \(patch.name) (slug: \(patch.slug))")
             // Remove only this catalog item's old reusable download from pre-v2.
@@ -670,16 +737,19 @@ final class FeaturePatchService: ObservableObject {
             guard auth.authState == .verified, auth.authenticationRevision == authRevision else { throw FeaturePatchError.notAuthenticated }
             let slug = patchStorageSlug(patch)
             stage = .decode
+            updatePatchOperation(.decode)
             let data = try Data(contentsOf: cachedURL)
             let decoded = try PatchPackageCodec.decode(data, password: nil)
             var project = decoded.project
             project.isPrivate = true
             stage = .target
+            updatePatchOperation(.target)
             guard AppSecurityConfiguration.permitsProtectedPackage(
                 variant: patch.artifactVariant ?? "", bundleIDs: project.allBundleIdentifiers) else {
                 throw ProtectedDownloadError.invalidResponse
             }
             stage = .access
+            updatePatchOperation(.access)
             log("patch engine: iOS=\(AppInfo.versionTuple) build=\(AppInfo.osBuild) worseQueryOS=\(WorseQueryHelper.isOSSupported) worseQueryReady=\(WorseQueryHelper.isAvailable) storage=\(ExploitSupportPolicy.currentStorageMode)")
             guard ExploitSupportPolicy.currentStorageMode != .unsupported else {
                 throw WorseQueryError.unsupportedOS(AppInfo.osBuild)
@@ -694,10 +764,12 @@ final class FeaturePatchService: ObservableObject {
                 roots = nil
             } else {
                 stage = .target
+                updatePatchOperation(.target)
                 // MainActor service calls hop back to MainActor even when the
                 // View used Task.detached. Discover before entering the commit.
                 roots = try await DevicePatchService.prepareContainers(bundleIDs: project.allBundleIdentifiers)
                 stage = .access
+                updatePatchOperation(.access)
                 try Task.checkCancellation()
                 try NetworkAccessGate.shared.validateGeneration(networkGeneration)
                 guard auth.authState == .verified, auth.authenticationRevision == authRevision else {
@@ -709,6 +781,7 @@ final class FeaturePatchService: ObservableObject {
             try NetworkAccessGate.shared.validateGeneration(networkGeneration)
             guard auth.authState == .verified, auth.authenticationRevision == authRevision else { throw FeaturePatchError.notAuthenticated }
             stage = .write
+            updatePatchOperation(.write)
             // Store the verified project association before writing so an app
             // interruption cannot leave a journal that the OFF switch ignores.
             catalogApplications.associate(project.id, with: slug)
@@ -743,15 +816,18 @@ final class FeaturePatchService: ObservableObject {
     }
 
     func restorePatch(_ patch: PatchItem, auth: AuthManager) async throws {
-        try await withExclusivePatchOperation { operationID in
-            try await self.restorePatchInOperation(patch, auth: auth, operationID: operationID)
+        try await withCatalogOperation(patch) {
+            try await withExclusivePatchOperation { operationID in
+                try await self.restorePatchInOperation(patch, auth: auth, operationID: operationID)
+            }
         }
     }
 
     /// Keep the restore API strict. An explicit OFF request can instead retain
     /// recovery evidence and persist only the user's catalog toggle choice.
     func disablePatch(_ patch: PatchItem, auth: AuthManager) async throws -> PatchDisableOutcome {
-        try await withExclusivePatchOperation { operationID in
+        try await withCatalogOperation(patch) {
+          try await withExclusivePatchOperation { operationID in
             guard auth.authState == .verified else { throw FeaturePatchError.notAuthenticated }
             let authRevision = auth.authenticationRevision
             do {
@@ -771,6 +847,7 @@ final class FeaturePatchService: ObservableObject {
                 self.applicationRevision &+= 1
                 return .disabledWithoutRestore
             }
+          }
         }
     }
 
@@ -811,6 +888,7 @@ final class FeaturePatchService: ObservableObject {
     private func restorePatchInOperation(_ patch: PatchItem, auth: AuthManager, operationID: UUID) async throws {
         try await PatchFilesystemGate.shared.validate(operationID)
         guard auth.authState == .verified else { throw FeaturePatchError.notAuthenticated }
+        updatePatchOperation(.access)
         let authRevision = auth.authenticationRevision
         defer { applicationRevision &+= 1 }
         let slug = patchStorageSlug(patch)
@@ -840,12 +918,14 @@ final class FeaturePatchService: ObservableObject {
         guard auth.authState == .verified, auth.authenticationRevision == authRevision else { throw FeaturePatchError.notAuthenticated }
         if let receipt {
             try await AppIntegrityRuntime.shared.requireAllowed(force:true)
+            updatePatchOperation(.target)
             let roots = try await DevicePatchService.prepareContainers(receipt: receipt)
             try Task.checkCancellation()
             try NetworkAccessGate.shared.validateGeneration(networkGeneration)
             guard auth.authState == .verified, auth.authenticationRevision == authRevision else {
                 throw FeaturePatchError.notAuthenticated
             }
+            updatePatchOperation(.restore)
             try await DirectPatchExecutor.run(validation: {
                 try NetworkAccessGate.shared.validateGeneration(networkGeneration)
                 guard auth.authState == .verified, auth.authenticationRevision == authRevision else { throw FeaturePatchError.notAuthenticated }
@@ -1647,6 +1727,7 @@ enum FeaturePatchError: LocalizedError {
     case httpError(statusCode: Int)
     case hashMismatch(expected: String, got: String)
     case notAuthenticated
+    case operationInProgress
 
     var errorDescription: String? {
         switch self {
@@ -1655,6 +1736,7 @@ enum FeaturePatchError: LocalizedError {
         case .httpError(let code): return "Máy chủ phản hồi mã lỗi \(code)"
         case .hashMismatch: return "Dữ liệu không toàn vẹn. Vui lòng thử lại"
         case .notAuthenticated: return "Vui lòng đăng nhập để sử dụng chức năng này"
+        case .operationInProgress: return "Đang có thao tác dữ liệu chưa kết thúc. Hãy chờ hoặc hủy bước chuẩn bị đang chạy."
         }
     }
 }
