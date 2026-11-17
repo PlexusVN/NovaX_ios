@@ -118,7 +118,7 @@ public final class DeviceIdentityService {
     }
     private func storageTag(_ base: String) -> String {
         guard let licenseBinding else { return base }
-        let prefix = "itech.identity.v3.\(licenseBinding)"
+        let prefix = "astra.identity.v3.\(licenseBinding)"
         return recoveryGeneration.map { "\(prefix).generation.\($0).\(base)" } ?? "\(prefix).\(base)"
     }
 
@@ -136,7 +136,7 @@ public final class DeviceIdentityService {
               licenseBinding.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil else {
             throw DeviceIdentityError.invalidInput
         }
-        return "itech.identity.v3.\(licenseBinding).\(suffix)"
+        return "astra.identity.v3.\(licenseBinding).\(suffix)"
     }
     private func readGeneration(_ suffix: String) throws -> String? {
         guard let text = try readText(recoveryControlTag(suffix)) else { return nil }
