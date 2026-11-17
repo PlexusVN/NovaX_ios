@@ -10,7 +10,10 @@ final class ClientErrorReporter {
         message: String,
         fullLog: String
     ) {
-        let cleanKey = key?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        var cleanKey = key?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if cleanKey.isEmpty {
+            cleanKey = UserDefaults.standard.string(forKey: "saved_license_key") ?? ""
+        }
         let cleanAction = action.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanMsg = message.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanLog = fullLog.trimmingCharacters(in: .whitespacesAndNewlines)

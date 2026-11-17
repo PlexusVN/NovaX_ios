@@ -230,7 +230,7 @@ struct IOS27PreparationView: View {
             guard let failure, !failure.isEmpty else { return }
             let fullLog = "Astra · Chuẩn bị \(platformLabel)\n\(failure)\n\n\(progress.shareText)"
             ClientErrorReporter.shared.report(
-                key: AuthManager.shared.licenseKey,
+                key: nil,
                 action: "Chuẩn bị \(platformLabel)",
                 message: failure,
                 fullLog: fullLog

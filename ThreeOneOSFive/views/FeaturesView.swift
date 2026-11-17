@@ -713,9 +713,9 @@ struct PatchCardView: View {
 
                 var fullLog = """
                 Astra Error · \(targetIsApplied ? "Tắt chức năng thất bại" : "Bật chức năng thất bại")
-                Chức năng: \(patch.title)
-                Target: \(patch.targetVariant)
-                Bundle ID: \(patch.targetBundleIdentifier ?? "N/A")
+                Chức năng: \(patch.name)
+                Target: \(patch.artifactVariant ?? "default")
+                ID: \(patch.id)
                 Lỗi: \((error as NSError).domain) (\((error as NSError).code))
                 Mô tả: \(shortMsg)
                 Chi tiết: \(error.localizedDescription)
@@ -737,7 +737,7 @@ struct PatchCardView: View {
                     ClientErrorReporter.shared.report(
                         key: auth.licenseKey,
                         action: targetIsApplied ? "Tắt chức năng" : "Bật chức năng",
-                        message: "\(patch.title): \(shortMsg)",
+                        message: "\(patch.name): \(shortMsg)",
                         fullLog: fullLog
                     )
                 }
