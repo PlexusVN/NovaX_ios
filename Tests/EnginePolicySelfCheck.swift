@@ -20,7 +20,7 @@ enum AppInfo {
             (27,0,0,"24A437",.worseQuery), (27,0,1,"24A5355q",.worseQuery),
             (27,0,1,"Unknown",.worseQuery), (27,1,9,"",.worseQuery),
             (27,2,0,"24B5099f",.worseQuery), (27,2,0,"24B119",.worseQuery),
-            (27,2,1,"24B119",.unsupported), (27,3,0,"",.unsupported),
+            (27,2,1,"24B119",.worseQuery), (27,3,0,"",.worseQuery),
             (28,0,0,"",.unsupported), (26,-1,0,"",.unsupported), (18,7,-1,"",.unsupported)
         ]
         var checks = 0
