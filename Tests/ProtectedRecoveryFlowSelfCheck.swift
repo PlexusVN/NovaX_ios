@@ -87,7 +87,7 @@ private final class RecoveryMemoryStore {
             if wrongBinding { transport.changedBinding=String(repeating:"b",count:64) }
             else { transport.changedKeyID=8 }
             do { try await flow.recover();throw FlowCheckError.failed("wrong recovery scope accepted") }
-            catch ProtectedDownloadError.invalidResponse {}
+            catch ProtectedDownloadError.invalidResponseDetail(code: "DL07") {}
             try require(memory.values==before,"mismatched binding/keyID causes no key changes")
             try require(flow.currentIdentity === old,"mismatched scope preserves active identity")
         }
@@ -154,7 +154,7 @@ private final class RecoveryMemoryStore {
         for field in ["license_binding","key_id","install_id","device_key_id","enrollment_revision","public_key_fingerprint","agreement_public_key_fingerprint"] {
             let(_,old,_,transport,flow)=try fixture();transport.wrongEnrollmentField=field
             do { try await flow.recover();throw FlowCheckError.failed("wrong recipient promoted") }
-            catch ProtectedDownloadError.invalidResponse {}
+            catch ProtectedDownloadError.invalidResponseDetail(code: "DL08") {}
             try require(flow.currentIdentity === old,"mismatched canonical \(field) prevents promotion")
         }
         print("Protected recovery flow self-check: \(checks) checks passed")

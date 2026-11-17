@@ -68,6 +68,9 @@ parts = [prefix, section('enum ProtectedDownloadError:', '@MainActor'),
          section('// BEGIN RECOVERY CHALLENGE CONTRACT','// END RECOVERY CHALLENGE CONTRACT'),
          section('private actor ProtectedRequestGate','@MainActor\nfinal class ProtectedDownloadService')]
 parts.append((root / 'ProtectedReleaseLease.swift').read_text(encoding='utf-8'))
+decoder = (root / 'ProtectedArtifactDecoder.swift').read_text(encoding='utf-8')
+parts.append(decoder[decoder.index('struct ProtectedResponseTime {'):
+                     decoder.index('struct ProtectedArtifactManifest:')])
 api = (root / 'SecureAPIClient.swift').read_text(encoding='utf-8')
 parts.append(api[api.index('enum SecureAPIEndpointPolicy {'):api.index('/// Validate before attaching credentials')])
 utils = (root.parent / 'views/SecurityUtils.swift').read_text(encoding='utf-8')
@@ -84,6 +87,7 @@ parts.append(r'''
     private var sessionID = "", sessionToken = ""
     private var sessionExpiry = Date.distantPast
     private var releaseLease = ProtectedReleaseLease()
+    private var lastResponseTime: ProtectedResponseTime?
     private let scopedBoundary: (String) throws -> DeviceIdentityService
     private let legacyBoundary: () -> DeviceIdentityService
     private let recoveryBoundary: (String) throws -> DeviceIdentityService
