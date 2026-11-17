@@ -222,9 +222,3 @@ jobs:
         with:
           name: Astra-Unsigned-IPA-2.5-39
           path: build/Astra.ipa
-				B91900000000000000000011 /* Viet99BQCore.m */,
-				B91900000000000000000012 /* Viet99BQCore.h */,
-				B91900000000000000000013 /* VIET99-KAMUI-LICENSE.txt */,
-
-				B91900000000000000000001 /* Viet99BQCore.m in Sources */,
-				B91900000000000000000002 /* VIET99-KAMUI-LICENSE.txt in Resources */,

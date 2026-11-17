@@ -92,6 +92,8 @@
 		A57A00000000000000000003 /* ProtectedArtifactDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57A00000000000000000004; };
 		A57A00000000000000000005 /* ProtectedDownloadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57A00000000000000000006; };
 		A57A00000000000000000007 /* NetworkAccessGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57A00000000000000000008; };
+		B91900000000000000000001 /* Viet99BQCore.m in Sources */ = {isa = PBXBuildFile; fileRef = B91900000000000000000011; };
+		B91900000000000000000002 /* VIET99-KAMUI-LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = B91900000000000000000013; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -202,6 +204,9 @@
 		A57A00000000000000000004 /* ProtectedArtifactDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtectedArtifactDecoder.swift; sourceTree = "<group>"; };
 		A57A00000000000000000006 /* ProtectedDownloadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtectedDownloadService.swift; sourceTree = "<group>"; };
 		A57A00000000000000000008 /* NetworkAccessGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkAccessGate.swift; sourceTree = "<group>"; };
+		B91900000000000000000011 /* Viet99BQCore.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = Viet99BQCore.m; sourceTree = "<group>"; };
+		B91900000000000000000012 /* Viet99BQCore.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = Viet99BQCore.h; sourceTree = "<group>"; };
+		B91900000000000000000013 /* VIET99-KAMUI-LICENSE.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "VIET99-KAMUI-LICENSE.txt"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -272,6 +277,9 @@
 				3105A041 /* mcm_bridge.h */,
 				3105F100 /* wallpaper_zip.c */,
 				3105F101 /* wallpaper_zip.h */,
+				B91900000000000000000011 /* Viet99BQCore.m */,
+				B91900000000000000000012 /* Viet99BQCore.h */,
+				B91900000000000000000013 /* VIET99-KAMUI-LICENSE.txt */,
 			);
 			path = exploit;
 			sourceTree = "<group>";
@@ -442,6 +450,7 @@
 			files = (
 				3105A211,
 				3105A228,
+				B91900000000000000000002 /* VIET99-KAMUI-LICENSE.txt in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -551,6 +560,7 @@
 				A57A00000000000000000007,
 				A57A00000000000000000009,
 				A57E00000000000000000001,
+				B91900000000000000000001 /* Viet99BQCore.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
