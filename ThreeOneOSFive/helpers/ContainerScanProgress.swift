@@ -63,7 +63,7 @@ final class ContainerScanProgress: ObservableObject {
             .appendingPathComponent("Astra", isDirectory: true).appendingPathComponent("ContainerScanHistory.json")
     }
 
-    func track<T>(bundleID: String, successMessage: String = "Đã tìm thấy thư mục dữ liệu. Astra tiếp tục thao tác bạn đã chọn.", operation: (UUID) throws -> T) throws -> T {
+    func track<T>(bundleID: String, successMessage: String = "Đã tìm thấy thư mục dữ liệu. Astra tiếp tục thao tác bạn đã chọn.", showUI: Bool = false, operation: (UUID) throws -> T) throws -> T {
         let id = UUID()
         lock.lock()
         activeID = id
@@ -72,7 +72,9 @@ final class ContainerScanProgress: ObservableObject {
         onMain {
             self.snapshot = ContainerScanSnapshot(id: id, bundleID: bundleID, phase: .scanning)
             self.cancelPending = false
-            self.isPresented = true
+            if showUI {
+                self.isPresented = true
+            }
             self.append("Bắt đầu tìm thư mục dữ liệu: \(bundleID)")
             self.saveHistory(force: true)
         }

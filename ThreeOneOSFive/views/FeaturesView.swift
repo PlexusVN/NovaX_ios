@@ -707,11 +707,40 @@ struct PatchCardView: View {
                 let underlying = (error as? PatchOperationError)?.underlying ?? error
                 let wasCancelled = underlying is CancellationError || (underlying as? URLError)?.code == .cancelled
                 if wasCancelled { Haptics.soft() } else { Haptics.error() }
+                let errorTitle = wasCancelled ? "Đã dừng thao tác" : (targetIsApplied ? "Không thể tắt chức năng" : "Không thể bật chức năng")
+                let shortMsg = (error as? LocalizedError)?.errorDescription
+                    ?? "Không thể hoàn tất thao tác (mã \((error as NSError).code))."
+
+                var fullLog = """
+                Astra Error · \(targetIsApplied ? "Tắt chức năng thất bại" : "Bật chức năng thất bại")
+                Chức năng: \(patch.title)
+                Target: \(patch.targetVariant)
+                Bundle ID: \(patch.targetBundleIdentifier ?? "N/A")
+                Lỗi: \((error as NSError).domain) (\((error as NSError).code))
+                Mô tả: \(shortMsg)
+                Chi tiết: \(error.localizedDescription)
+                Underlying: \(underlying)
+                iOS: \(AppInfo.osVersion) (\(AppInfo.osBuild))
+                Thời gian: \(ISO8601DateFormatter().string(from: Date()))
+                """
+                if !ContainerScanProgress.shared.snapshot.logs.isEmpty {
+                    fullLog += "\n\n--- Container Diagnostics ---\n" + ContainerScanProgress.shared.shareText
+                }
+
                 activeToast = ToastInfo(
-                    title: wasCancelled ? "Đã dừng thao tác" : (targetIsApplied ? "Không thể tắt chức năng" : "Không thể bật chức năng"),
-                    message: (error as? LocalizedError)?.errorDescription
-                        ?? "Không thể hoàn tất thao tác (mã \((error as NSError).code)).",
-                    isSuccess: false)
+                    title: errorTitle,
+                    message: shortMsg,
+                    isSuccess: false,
+                    copyText: wasCancelled ? nil : fullLog)
+
+                if !wasCancelled {
+                    ClientErrorReporter.shared.report(
+                        key: auth.licenseKey,
+                        action: targetIsApplied ? "Tắt chức năng" : "Bật chức năng",
+                        message: "\(patch.title): \(shortMsg)",
+                        fullLog: fullLog
+                    )
+                }
             }
         }
     }

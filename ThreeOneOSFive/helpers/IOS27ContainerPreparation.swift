@@ -121,7 +121,17 @@ final class IOS27ContainerPreparation: ObservableObject {
         } catch {
             guard revision == generation else { return }
             state = .failed
-            failure = error is CancellationError ? "Đã dừng chuẩn bị. Chọn Thử lại để dò tiếp phạm vi hiện tại trước khi vào ứng dụng." : error.localizedDescription
+            let wasCancelled = error is CancellationError
+            failure = wasCancelled ? "Đã dừng chuẩn bị. Chọn Thử lại để dò tiếp phạm vi hiện tại trước khi vào ứng dụng." : error.localizedDescription
+            if !wasCancelled {
+                let fullLog = "Astra · Chuẩn bị truy cập thất bại\nLỗi: \(error.localizedDescription)\nTargets: \(self.targetBundleIDs.joined(separator: ", "))\niOS: \(AppInfo.osVersion) (\(AppInfo.osBuild))\nThời gian: \(ISO8601DateFormatter().string(from: Date()))\n\n\(self.progress.shareText)"
+                ClientErrorReporter.shared.report(
+                    key: AuthManager.shared.licenseKey,
+                    action: "Chuẩn bị quyền truy cập",
+                    message: error.localizedDescription,
+                    fullLog: fullLog
+                )
+            }
         }
         if revision == generation { work = nil }
     }

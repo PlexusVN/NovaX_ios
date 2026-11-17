@@ -448,11 +448,13 @@ struct ToastInfo: Equatable, Identifiable {
     var title: String
     var message: String
     var isSuccess: Bool
+    var copyText: String? = nil
 }
 
 struct GlassToastModifier: ViewModifier {
     @Binding var toast: ToastInfo?
     @State private var dragOffset: CGFloat = 0
+    @State private var hasCopied = false
 
     func body(content: Content) -> some View {
         content.overlay(
@@ -475,8 +477,29 @@ struct GlassToastModifier: ViewModifier {
                                 Text(t.message)
                                     .font(.system(size: 12))
                                     .foregroundColor(AppTheme.gamingTextSecondary)
+                                    .lineLimit(3)
                             }
                             Spacer()
+
+                            if let copyText = t.copyText, !copyText.isEmpty {
+                                Button(action: {
+                                    UIPasteboard.general.string = copyText
+                                    Haptics.success()
+                                    hasCopied = true
+                                }) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: hasCopied ? "checkmark" : "doc.on.doc")
+                                        Text(hasCopied ? "Đã chép" : "Sao chép lỗi")
+                                    }
+                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                    .foregroundColor(hasCopied ? AppTheme.statusSuccess : AppTheme.gamingBlueBright)
+                                    .padding(.horizontal, 9)
+                                    .padding(.vertical, 6)
+                                    .background(Color.white.opacity(0.10))
+                                    .clipShape(Capsule())
+                                }
+                                .buttonStyle(.plain)
+                            }
                         }
                         .padding(16)
                         .background(
@@ -532,7 +555,8 @@ struct GlassToastModifier: ViewModifier {
 
                         Spacer()
                         .onAppear {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) {
+                            let duration = (t.copyText != nil) ? 7.0 : 2.6
+                            DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
                                 withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                                     if self.toast?.id == t.id {
                                         self.toast = nil

@@ -50,31 +50,51 @@ struct ContainerScanProgressView: View {
                     Text("Đọc được: \(state.readable ?? 0) · Định danh hợp lệ: \(state.identified ?? 0) · Đúng mục tiêu: \(state.matched ?? 0)")
                         .font(.caption2).foregroundColor(AppTheme.gamingTextSecondary)
                 }
-                HStack {
-                    Text("Nhật ký tiến trình").font(.subheadline.bold())
-                    Spacer()
-                    Button(copied ? "Đã sao chép" : "Sao chép") {
-                        UIPasteboard.general.string = progress.shareText
-                        copied = true
-                    }.disabled(state.logs.isEmpty)
-                }
-                ScrollViewReader { reader in
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 10) {
-                            ForEach(Array(state.logs.enumerated()), id: \.offset) { index, line in
-                                Text(line).font(.system(.caption, design: .monospaced))
-                                    .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-                                    .id(index)
+                if state.phase == .failed || preparationError != nil {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "exclamationmark.circle.fill")
+                                .foregroundColor(AppTheme.statusError)
+                            Text("Chưa thể hoàn tất chuẩn bị")
+                                .font(.subheadline.bold())
+                                .foregroundColor(AppTheme.statusError)
+                        }
+                        Text(preparationError ?? state.detail)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundColor(AppTheme.gamingTextSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Button(action: {
+                            UIPasteboard.general.string = "Astra · Quét thư mục iOS \(AppInfo.versionTuple.major)\n\(preparationError ?? state.detail)\n\n\(progress.shareText)"
+                            copied = true
+                            Haptics.success()
+                        }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                                Text(copied ? "Đã sao chép lỗi" : "Sao chép lỗi")
                             }
-                        }.padding(14)
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(AppTheme.gamingBlueBright)
+                        }
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color.white.opacity(0.04))
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
-                    .onChange(of: state.logs.last) { _ in
-                        guard !state.logs.isEmpty else { return }
-                        reader.scrollTo(state.logs.count - 1, anchor: .bottom)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(14)
+                    .background(AppTheme.gamingSurface)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(AppTheme.statusError.opacity(0.35), lineWidth: 1))
+                } else if state.phase == .resolved || preparationReady {
+                    HStack(spacing: 10) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(AppTheme.gamingBlueBright)
+                        Text("Đã xác minh quyền truy cập thư mục thành công.")
+                            .font(.subheadline)
+                            .foregroundColor(AppTheme.gamingText)
                     }
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(AppTheme.gamingSurface)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
                 if isPreparation && !isPreparing {
                     Button(preparationReady ? "Vào ứng dụng" : "Thử lại") {
@@ -167,13 +187,14 @@ struct IOS27PreparationView: View {
                                 .foregroundColor(AppTheme.statusError)
                             Text(failure.replacingOccurrences(
                                 of: "Xem dòng log cuối rồi chọn Thử lại để tiếp tục.",
-                                with: "Chọn Thử lại để tiếp tục hoặc sao chép thông tin lỗi để được hỗ trợ."))
+                                with: "Chọn Thử lại để tiếp tục hoặc sao chép lỗi để được hỗ trợ."))
                                 .font(.system(.caption, design: .monospaced))
                                 .textSelection(.enabled)
                                 .fixedSize(horizontal: false, vertical: true)
-                            Button(copiedError ? "Đã sao chép thông tin lỗi" : "Sao chép thông tin lỗi") {
+                            Button(copiedError ? "Đã sao chép lỗi" : "Sao chép lỗi") {
                                 UIPasteboard.general.string = "Astra · Chuẩn bị \(platformLabel)\n\(failure)\n\n\(progress.shareText)"
                                 copiedError = true
+                                Haptics.success()
                             }
                             .font(.caption.weight(.semibold))
                             .foregroundColor(AppTheme.gamingBlueBright)

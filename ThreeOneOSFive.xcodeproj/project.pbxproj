@@ -24,6 +24,7 @@
 		3105W005 /* ContainerScanProgressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105W017; };
 		3105W006 /* IOS27ContainerPreparation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105W018; };
 		3105W007 /* DirectPatchExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105W019; };
+		3105W008 /* ClientErrorReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105W020; };
 		3105A210 /* mcm_bridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 3105A030; };
 		3105A220 /* kexploit_opa334.m in Sources */ = {isa = PBXBuildFile; fileRef = 3105A080; };
 		3105A221 /* offsets.m in Sources */ = {isa = PBXBuildFile; fileRef = 3105A081; };
@@ -115,6 +116,7 @@
 		3105W017 /* ContainerScanProgressView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContainerScanProgressView.swift; sourceTree = "<group>"; };
 		3105W018 /* IOS27ContainerPreparation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOS27ContainerPreparation.swift; sourceTree = "<group>"; };
 		3105W019 /* DirectPatchExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectPatchExecutor.swift; sourceTree = "<group>"; };
+		3105W020 /* ClientErrorReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientErrorReporter.swift; sourceTree = "<group>"; };
 		3105A030 /* mcm_bridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = mcm_bridge.m; sourceTree = "<group>"; };
 		3105A031 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		3105A040 /* bad_query.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bad_query.h; sourceTree = "<group>"; };
@@ -310,6 +312,7 @@
 				3105W016 /* ContainerScanProgress.swift */,
 				3105W018 /* IOS27ContainerPreparation.swift */,
 				3105W019 /* DirectPatchExecutor.swift */,
+				3105W020 /* ClientErrorReporter.swift */,
 				3105A099 /* Localization.swift */,
 				3105A104 /* ContainerStore.swift */,
 				3105A109 /* ContainerBrowserLogic.swift */,
@@ -488,6 +491,7 @@
 				3105W005 /* ContainerScanProgressView.swift in Sources */,
 				3105W006 /* IOS27ContainerPreparation.swift in Sources */,
 				3105W007 /* DirectPatchExecutor.swift in Sources */,
+				3105W008 /* ClientErrorReporter.swift in Sources */,
 				3105A210, 3105A220, 3105A221, 3105A222, 3105A223,
 				3105A224, 3105A225,
 				3105A226,
