@@ -226,6 +226,16 @@ struct IOS27PreparationView: View {
             do { try await Task.sleep(nanoseconds: 200_000_000) } catch { return }
             await preparation.prepareIfNeeded()
         }
+        .onChange(of: preparation.failure) { failure in
+            guard let failure, !failure.isEmpty else { return }
+            let fullLog = "Astra · Chuẩn bị \(platformLabel)\n\(failure)\n\n\(progress.shareText)"
+            ClientErrorReporter.shared.report(
+                key: AuthManager.shared.licenseKey,
+                action: "Chuẩn bị \(platformLabel)",
+                message: failure,
+                fullLog: fullLog
+            )
+        }
     }
 
     @ViewBuilder
