@@ -1,9 +1,9 @@
-"""Execute actual engine provenance, strict restore and desired-OFF policy.
+"""Execute actual engine provenance, strict restore and filesystem gating.
 
-Production methods/registry are extracted intact. Native restoration is a
-controlled boundary; temporary files prove failed OFF attempts retain existing
-target, package, journal, backup and provenance bytes. Direct transaction I/O is
-covered separately by DirectTransactionProvenanceSelfCheck.
+Production coordinator/state/gate bodies are extracted intact. Feature-service
+apply/restore wiring is checked against Astra's catalog contract without
+importing Astra's separate desired-OFF API. Direct transaction I/O is covered
+separately by DirectTransactionProvenanceSelfCheck.
 """
 from pathlib import Path
 import os
@@ -18,6 +18,32 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class EngineTransactions(unittest.TestCase):
     def test_actual_coordinator_and_provenance(self):
+        feature = (ROOT / 'ThreeOneOSFive/helpers/FeaturePatchService.swift').read_text(encoding='utf-8')
+        public_apply = extract_function(feature, 'func applyPatch(')
+        public_restore = extract_function(feature, 'func restorePatch(')
+        apply = extract_function(feature, 'private func applyPatchInOperation(')
+        restore = extract_function(feature, 'private func restorePatchInOperation(')
+        self.assertIn('withExclusivePatchOperation', public_apply)
+        self.assertIn('withExclusivePatchOperation', public_restore)
+        self.assertLess(
+            apply.index('PatchFilesystemGate.shared.validate(operationID)'),
+            apply.index('downloadPatch('),
+        )
+        self.assertLess(
+            restore.index('PatchFilesystemGate.shared.validate(operationID)'),
+            restore.index('DevicePatchService.latestReceipt('),
+        )
+        for contract in [
+                'PatchEngineApplicationStore.requireDirectRestore(',
+                'DevicePatchService.prepareContainers(receipt: receipt)',
+                'DirectPatchExecutor.run(validation:']:
+            self.assertIn(contract, restore)
+        self.assertNotIn('AppInfo.versionTuple.major >= 27', restore)
+        self.assertLess(
+            restore.index('DevicePatchService.restore('),
+            restore.index('catalogApplications.clear(slug)'),
+        )
+
         native = shutil.which('swiftc')
         distro = os.environ.get('ASTRA_SWIFT_WSL_DISTRIBUTION')
         if native:
@@ -55,29 +81,6 @@ func applicationStore() throws -> PatchEngineApplicationStore { Fixture.store }
                           'func projectApplicationState(', 'func applyPatchProject(', 'func applyPatchProjectInOperation(']:
             source += extract_function(coordinator, signature) + '\n'
         source += '}\n'
-        feature = (ROOT / 'ThreeOneOSFive/helpers/FeaturePatchService.swift').read_text(encoding='utf-8')
-        source += '''
-@MainActor final class FeaturePatchService {
-let defaults=UserDefaults.standard
-var catalogApplications:CatalogPatchApplicationRegistry { CatalogPatchApplicationRegistry(defaults:defaults) }
-var patchProjectsDir:URL { Fixture.root }
-var applicationRevision=0
-func patchStorageSlug(_ patch:PatchItem)->String { patch.identity }
-func attemptEnable(_ patch:PatchItem,newProjectID:UUID) throws {
-    try requirePatchEnableAllowed(patch)
-    catalogApplications.associate(newProjectID,with:patchStorageSlug(patch))
-    Fixture.enableAssociations += 1
-}
-'''
-        for signature in ['func restorePatch(', 'func disablePatch(', 'private func patchDisableBinding(',
-                          'func isPatchDisabledPendingRestore(', 'func isPatchToggleOn(',
-                          'private func requirePatchEnableAllowed(',
-                          'private func restorePatchInOperation(', 'func patchApplicationState(']:
-            source += extract_function(feature, signature) + '\n'
-        source += '}\n'
-        apply = extract_function(feature, 'private func applyPatchInOperation(')
-        self.assertLess(apply.index('try requirePatchEnableAllowed(patch)'), apply.index('downloadPatch('))
-        self.assertLess(apply.index('try requirePatchEnableAllowed(patch)'), apply.index('catalogApplications.associate('))
         with tempfile.TemporaryDirectory() as directory:
             actual = Path(directory) / 'ActualCoordinator.swift'
             actual.write_text(source, encoding='utf-8')
@@ -89,3 +92,4 @@ func attemptEnable(_ patch:PatchItem,newProjectID:UUID) throws {
 
 if __name__ == '__main__':
     unittest.main()
+
