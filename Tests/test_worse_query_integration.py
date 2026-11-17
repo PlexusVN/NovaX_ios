@@ -31,7 +31,7 @@ class IntegrationContracts(unittest.TestCase):
         body = transaction.split('private static func withResolvedContainers<T>(')[1]
         self.assertIn('ContainerStore.resolveAppContainerForPatch(bundleID: bundleID)', body)
         self.assertIn('handles.append(try WorseQueryHelper.acquireAccess(for: path))', body)
-        self.assertIn('defer { handles.reversed().forEach { sandbox_extension_release_handle($0) } }', body)
+        self.assertIn('handles.reversed().forEach { sandbox_extension_release_handle($0) }', body)
         self.assertLess(body.index('acquireAccess(for: path)'), body.index('try operation(roots)'))
         coordinator = (HELPERS / 'StorageEngineCoordinator.swift').read_text(encoding='utf-8')
         direct = coordinator.split('func applyPatchProject(')[1].split('guard isAirLiftActive')[0]

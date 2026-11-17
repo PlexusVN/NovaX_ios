@@ -1,6 +1,6 @@
 import Foundation
 
-struct PatchRule: Codable, Identifiable, Hashable, Sendable {
+struct PatchRule: Codable, Identifiable, Hashable {
     var id: UUID
     var bundleID: String
     var relativePath: String
@@ -28,7 +28,7 @@ struct PatchRule: Codable, Identifiable, Hashable, Sendable {
     }
 }
 
-struct PatchDirectory: Codable, Identifiable, Hashable, Sendable {
+struct PatchDirectory: Codable, Identifiable, Hashable {
     var id: UUID
     var bundleID: String
     var relativePath: String
@@ -44,7 +44,7 @@ struct PatchDirectory: Codable, Identifiable, Hashable, Sendable {
     }
 }
 
-struct PatchProject: Codable, Identifiable, Hashable, Sendable {
+struct PatchProject: Codable, Identifiable, Hashable {
     var id: UUID
     var name: String
     var author: String

@@ -2,7 +2,7 @@
 //  StorageEngineCoordinator.swift
 //  ThreeOneOSFive
 //
-//  Created by Astra AirLift Integration on 03/10/2026.
+//  Updated for Astra Astra 2.4 runtime integration on 03/10/2026.
 //  Coordinates dual-engine I/O: Direct/Kernel Exploit vs AirLift Loopback.
 //
 
@@ -166,14 +166,25 @@ final class StorageEngineCoordinator: ObservableObject {
     /// Applies a complete .3105 project through the on-device AirTraffic path.
     /// Rules sharing a destination directory are sent in one batch. Every batch
     /// requires an authenticated tunnel and a successful canary read-back first.
-    func applyPatchProject(_ project: PatchProject) async throws {
+    func applyPatchProject(
+        _ project: PatchProject,
+        beforeWriting: (() throws -> Void)? = nil
+    ) async throws {
         try await withExclusivePatchOperation { operationID in
-            try await self.applyPatchProjectInOperation(project, operationID: operationID)
+            try await self.applyPatchProjectInOperation(
+                project,
+                operationID: operationID,
+                beforeWriting: beforeWriting
+            )
         }
     }
 
     /// Caller already owns the shared filesystem operation. Never reacquire it.
-    func applyPatchProjectInOperation(_ project: PatchProject, operationID: UUID) async throws {
+    func applyPatchProjectInOperation(
+        _ project: PatchProject,
+        operationID: UUID,
+        beforeWriting: (() throws -> Void)? = nil
+    ) async throws {
         try await PatchFilesystemGate.shared.validate(operationID)
         try await AppIntegrityRuntime.shared.requireAllowed(force:true)
         try PatchPackageCodec.validate(project)
@@ -262,6 +273,7 @@ final class StorageEngineCoordinator: ObservableObject {
                 // Timeout/cancellation cannot prove no bytes were written.
                 record.phase = .writing
                 try store.save(record)
+                try beforeWriting?()
                 dispatchStarted = true
                 try await AirTrafficProtocolClient.shared.writeFiles(
                     files,

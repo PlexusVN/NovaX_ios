@@ -6,18 +6,58 @@ enum ProtectedArtifactError: LocalizedError {
     case invalidDocument
     case invalidSignature
     case contextMismatch
+    case recipientKeyMismatch
     case authenticationFailed
-    case clockNotSynchronized
-    case grantExpired
+    case grantTimingInvalid
 
-    var errorDescription: String? {
+    var diagnosticCode: String {
         switch self {
-        case .clockNotSynchronized:
-            return "Ngày và giờ trên thiết bị chưa khớp máy chủ. Hãy bật Ngày & giờ tự động trong Cài đặt rồi thử lại."
-        case .grantExpired:
-            return "Quyền tải đã hết hạn trước khi hoàn tất xác minh. Hãy kiểm tra kết nối và ngày giờ tự động, rồi thử tải lại."
-        default:
-            return "Không thể xác minh hoặc giải mã dữ liệu được cấp cho thiết bị này."
+        case .invalidDocument: return "A01"
+        case .invalidSignature: return "A02"
+        case .contextMismatch: return "A03"
+        case .recipientKeyMismatch: return "A04"
+        case .authenticationFailed: return "A05"
+        case .grantTimingInvalid: return "A06"
+        }
+    }
+    var errorDescription: String? {
+        if case .grantTimingInvalid = self {
+            return "Phiên tải đã hết hạn hoặc bị gián đoạn. Hãy giữ app hoạt động rồi thử lại. [\(diagnosticCode)]"
+        }
+        return "Không thể xác minh hoặc giải mã dữ liệu được cấp cho thiết bị này. [\(diagnosticCode)]"
+    }
+}
+
+/// ContinuousClock includes device sleep; pausing the app must not pause a grant.
+enum ProtectedArtifactTransferClock {
+    private static let clock = ContinuousClock()
+    private static let origin = clock.now
+
+    static func now() -> TimeInterval {
+        let elapsed = origin.duration(to: clock.now).components
+        return TimeInterval(elapsed.seconds) + TimeInterval(elapsed.attoseconds) / 1_000_000_000_000_000_000
+    }
+}
+
+/// A fresh content response binds its signed grant to the request nonce. Start
+/// the budget before sending that request, then use only monotonic time: device
+/// clock skew must not reject a grant that the server has just authorized.
+struct ProtectedArtifactTransferTiming {
+    static let maximumLifetime: TimeInterval = 60
+    // issuedAt is floored to whole seconds by the server. Reserve that possible
+    // subsecond rounding loss so a locally anchored deadline cannot run late.
+    private static let roundingMargin: TimeInterval = 1
+    let requestStartedAt: TimeInterval
+    let receivedAt: TimeInterval
+
+    func requireValid(lifetime: TimeInterval, now: TimeInterval) throws {
+        guard lifetime.isFinite, lifetime.rounded() == lifetime,
+              lifetime > Self.roundingMargin, lifetime <= Self.maximumLifetime,
+              requestStartedAt.isFinite, receivedAt.isFinite, now.isFinite,
+              requestStartedAt >= 0, receivedAt >= requestStartedAt, now >= receivedAt,
+              (requestStartedAt + lifetime).isFinite,
+              now < requestStartedAt + lifetime - Self.roundingMargin else {
+            throw ProtectedArtifactError.grantTimingInvalid
         }
     }
 }
@@ -75,6 +115,7 @@ final class ProtectedArtifactDecoder {
     private let verifier: ServerSignatureVerifier
     private let recipientIdentity: () throws -> (id: String, publicKey: Data)
     private let sharedSecret: (Data) throws -> SharedSecret
+    private let monotonicClock: () -> TimeInterval
 
     private convenience init() {
         self.init(verifier: .shared, recipientIdentity: {
@@ -91,10 +132,12 @@ final class ProtectedArtifactDecoder {
     /// trusting their test signer or test private scalar in production.
     init(verifier: ServerSignatureVerifier,
          recipientIdentity: @escaping () throws -> (id: String, publicKey: Data),
-         sharedSecret: @escaping (Data) throws -> SharedSecret) {
+         sharedSecret: @escaping (Data) throws -> SharedSecret,
+         monotonicClock: @escaping () -> TimeInterval = { ProtectedArtifactTransferClock.now() }) {
         self.verifier = verifier
         self.recipientIdentity = recipientIdentity
         self.sharedSecret = sharedSecret
+        self.monotonicClock = monotonicClock
     }
 
     func verifyManifest(_ data: Data) throws -> ProtectedArtifactManifest {
@@ -104,20 +147,19 @@ final class ProtectedArtifactDecoder {
 
     func decrypt(signedManifest: Data, signedGrant: Data, ciphertext: Data,
                  recipientID: String, sessionID: String, requestNonce: String,
-                 expectedArtifactID: String, expectedGrantID: String, now: Date = Date()) throws -> Data {
+                 expectedArtifactID: String, expectedGrantID: String, now: Date = Date(),
+                 transferTiming: ProtectedArtifactTransferTiming? = nil) throws -> Data {
         let manifestDocument = try verifiedDocument(signedManifest, type: "manifest")
         let manifest = try manifestBody(manifestDocument)
         let grantDocument = try verifiedDocument(signedGrant, type: "grant")
         let grant = try grantBody(grantDocument)
         let recipient = try recipientIdentity()
-        let nowSeconds = Int64(now.timeIntervalSince1970)
         guard manifest.artifactId == expectedArtifactID,
               grant.grantId == expectedGrantID,
               grant.artifactId == manifest.artifactId,
               grant.manifestDigest == Self.sha256(try Self.canonicalData(manifestDocument)),
               recipient.id == recipientID, grant.recipientId == recipientID,
               recipient.publicKey.count == 65, recipient.publicKey.first == 4,
-              grant.recipientKeySHA256 == Self.sha256(recipient.publicKey),
               grant.sessionId == sessionID, grant.requestNonce == requestNonce,
               Self.matches(requestNonce, #"^[0-9a-f]{32}$"#),
               UUID(uuidString: sessionID) != nil, UUID(uuidString: recipientID) != nil,
@@ -125,10 +167,14 @@ final class ProtectedArtifactDecoder {
               Self.sha256(ciphertext) == manifest.ciphertextSHA256 else {
             throw ProtectedArtifactError.contextMismatch
         }
-        // Report a trusted grant's time failure separately. Keep the absolute
-        // expiry and every signature/recipient/session/nonce check unchanged.
-        guard grant.issuedAt <= nowSeconds else { throw ProtectedArtifactError.clockNotSynchronized }
-        guard nowSeconds < grant.expiresAt else { throw ProtectedArtifactError.grantExpired }
+        guard grant.recipientKeySHA256 == Self.sha256(recipient.publicKey) else {
+            // The signed grant was wrapped for the server's enrolled recipient
+            // key, but this installation no longer has that exact private key.
+            // The caller may enter the signed, server-authorized recovery flow;
+            // no other document/authentication failure is recoverable this way.
+            throw ProtectedArtifactError.recipientKeyMismatch
+        }
+        try requireGrantTime(grant, now: now, transferTiming: transferTiming)
 
         let envelope = grant.keyEnvelope
         let peer = try Self.base64(envelope.ephemeralPublicKey, count: 65)
@@ -139,6 +185,7 @@ final class ProtectedArtifactDecoder {
         let wrappingKey = shared.hkdfDerivedSymmetricKey(using: SHA256.self,
             salt: try Self.base64(envelope.salt, count: 32),
             sharedInfo: Data("astra-artifact-v1/device-key-wrap".utf8), outputByteCount: 32)
+        let plaintext: Data
         do {
             let wrapped = try AES.GCM.SealedBox(
                 nonce: AES.GCM.Nonce(data: Self.base64(envelope.nonce, count: 12)),
@@ -152,15 +199,35 @@ final class ProtectedArtifactDecoder {
                 nonce: AES.GCM.Nonce(data: Self.base64(manifest.contentEncryption.nonce, count: 12)),
                 ciphertext: ciphertext,
                 tag: Self.base64(manifest.contentEncryption.tag, count: 16))
-            let plaintext = try AES.GCM.open(sealedContent, using: SymmetricKey(data: contentKey),
-                                            authenticating: Self.contentAAD(manifest))
+            plaintext = try AES.GCM.open(sealedContent, using: SymmetricKey(data: contentKey),
+                                        authenticating: Self.contentAAD(manifest))
             guard plaintext.count == manifest.plaintextSize,
                   Self.sha256(plaintext) == manifest.plaintextSHA256 else {
                 throw ProtectedArtifactError.authenticationFailed
             }
-            return plaintext
         } catch {
             throw ProtectedArtifactError.authenticationFailed
+        }
+        // Live signature verification and decryption must not outlive the same
+        // continuous-clock budget that covered the response transfer itself.
+        try requireGrantTime(grant, now: now, transferTiming: transferTiming)
+        return plaintext
+    }
+
+    private func requireGrantTime(_ grant: ProtectedArtifactGrant, now: Date,
+                                  transferTiming: ProtectedArtifactTransferTiming?) throws {
+        if let transferTiming {
+            // The server creates this nonce-bound grant after request start.
+            // requestStart + signed TTL minus rounding margin is therefore no
+            // later than its expiry, including whole-second server timestamps.
+            try transferTiming.requireValid(lifetime: TimeInterval(grant.expiresAt - grant.issuedAt),
+                                            now: monotonicClock())
+        } else {
+            // Standalone/offline callers retain the original absolute-time rule.
+            let seconds = now.timeIntervalSince1970
+            guard seconds.isFinite, seconds >= Double(grant.issuedAt), seconds < Double(grant.expiresAt) else {
+                throw ProtectedArtifactError.grantTimingInvalid
+            }
         }
     }
 
@@ -201,7 +268,7 @@ final class ProtectedArtifactDecoder {
               Self.matches(manifest.releaseId, #"^[A-Za-z0-9_.:@-]{1,128}$"#),
               manifest.releaseVersion > 0, manifest.releaseVersion <= 9_007_199_254_740_991,
               AppSecurityConfiguration.protectedBundleID(forVariant: manifest.variant) != nil,
-              manifest.variant != "capcut" || manifest.kind == "package",
+              !["capcut", "ffvn"].contains(manifest.variant) || manifest.kind == "package",
               ["package", "mod", "original"].contains(manifest.kind),
               manifest.fileName.utf8.count <= 255,
               Self.matches(manifest.fileName, #"^[A-Za-z0-9_~%+ .()=-]+$"#),

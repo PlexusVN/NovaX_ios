@@ -2,8 +2,8 @@ import CryptoKit
 import Darwin
 import Foundation
 
-/// Keep filesystem diagnostics through the P06 wrapper without exposing a path
-/// or the localized NSError text, which can include private container names.
+/// Preserve the failing filesystem step and POSIX cause without exposing a
+/// private container path or localized NSError text.
 private struct PatchFilesystemFailure: LocalizedError {
     let operation: String
     let underlying: NSError
@@ -14,7 +14,10 @@ private struct PatchFilesystemFailure: LocalizedError {
         var posix: Int?
         for _ in 0..<8 {
             guard let error = current else { break }
-            if error.domain == NSPOSIXErrorDomain { posix = error.code; break }
+            if error.domain == NSPOSIXErrorDomain {
+                posix = error.code
+                break
+            }
             current = error.userInfo[NSUnderlyingErrorKey] as? NSError
         }
         let reason: String
@@ -25,8 +28,12 @@ private struct PatchFilesystemFailure: LocalizedError {
         case Int(ENOENT): reason = "File hoặc thư mục cần dùng không còn tồn tại."
         default: reason = "Thao tác file chưa hoàn tất."
         }
-        let code = "\(underlying.domain):\(underlying.code)" + (posix.map { "; errno=\($0)" } ?? "")
-        let rollback = rollbackCompleted.map { $0 ? " Đã hoàn tác giao dịch." : " Chưa xác nhận hoàn tác đầy đủ; bản sao lưu được giữ lại." } ?? ""
+        let code = "\(underlying.domain):\(underlying.code)" +
+            (posix.map { "; errno=\($0)" } ?? "")
+        let rollback = rollbackCompleted.map {
+            $0 ? " Đã hoàn tác giao dịch." :
+                " Chưa xác nhận hoàn tác đầy đủ; bản sao lưu được giữ lại."
+        } ?? ""
         return "\(reason) [\(operation); \(code)]\(rollback)"
     }
 }
@@ -61,40 +68,75 @@ enum PatchApplicationState: Equatable {
     var requiresRestore: Bool { self != .off }
 }
 
-/// An OFF request may leave file recovery pending. Only a verified restore
-/// changes the transaction journal; the fallback changes the catalog toggle.
 enum PatchDisableOutcome: Equatable, Sendable {
-    case restored, disabledWithoutRestore
+    case restored
+    case disabledWithoutRestore
 }
 
-// BEGIN PATCH ENGINE PROVENANCE — Foundation-only state and persistence.
-enum PatchWriteEngine: String, Codable { case legacy3105, worseQuery, airLift }
-enum PatchEnginePhase: String, Codable { case writing, applied, recoveryRequired, restored }
-enum PatchBaseline: String, Codable { case capturedPriorState, unavailable, legacyUnknown }
+enum PatchWriteEngine: String, Codable {
+    case legacy3105
+    case worseQuery
+    case airLift
+}
+
+enum PatchEnginePhase: String, Codable {
+    case writing
+    case applied
+    case recoveryRequired
+    case restored
+}
+
+enum PatchBaseline: String, Codable {
+    case capturedPriorState
+    case unavailable
+    case legacyUnknown
+}
+
 enum PatchEngineStateError: LocalizedError {
-    case recoveryRequired, legacyAmbiguous, legacyTargetsUnknown, invalidRecord, airLiftNoBackup, unsupportedAirLiftDirectory, operationNotHeld, restoreProviderUnavailable
+    case recoveryRequired
+    case legacyAmbiguous
+    case legacyTargetsUnknown
+    case invalidRecord
+    case airLiftNoBackup
+    case unsupportedAirLiftDirectory
+    case operationNotHeld
+    case restoreProviderUnavailable
+
     var errorDescription: String? {
         switch self {
-        case .recoveryRequired: return "Giao dịch trước chưa được khôi phục. Giữ nguyên bản sao lưu và xử lý trạng thái cũ trước khi ghi tiếp."
-        case .legacyAmbiguous: return "Có cả lịch sử AirLift và bản sao lưu trực tiếp cũ, chưa xác định được bản sao lưu được tạo trước hay sau AirLift. Astra giữ nguyên dữ liệu để tránh khôi phục nhầm file đã sửa."
-        case .legacyTargetsUnknown: return "Lịch sử AirLift cũ thiếu thông tin ứng dụng/đường dẫn; cần xác minh hoặc khôi phục bản gốc chính thức trước khi ghi tiếp. Astra giữ nguyên lịch sử và bản sao lưu."
-        case .invalidRecord: return "Thông tin giao dịch không còn hợp lệ. Bản sao lưu và lịch sử được giữ nguyên để kiểm tra."
-        case .airLiftNoBackup: return "Lần ghi này dùng AirLift và không có bản sao lưu file trước khi ghi. Cần bản gốc chính thức đúng phiên bản; Astra chưa thể xác nhận đã khôi phục."
-        case .unsupportedAirLiftDirectory: return "Gói yêu cầu tạo thư mục rỗng mà AirLift chưa hỗ trợ. Chưa có dữ liệu nào được ghi."
-        case .operationNotHeld: return "Thao tác ghi chưa giữ phiên giao dịch độc quyền."
-        case .restoreProviderUnavailable: return "Bản sao lưu trực tiếp được giữ nguyên, nhưng cơ chế truy cập của phiên bản iOS này chưa hỗ trợ khôi phục giao dịch đó."
+        case .recoveryRequired:
+            return "Giao dịch trước chưa được khôi phục. Astra giữ nguyên bản sao lưu và chặn ghi tiếp."
+        case .legacyAmbiguous:
+            return "Lịch sử AirLift và bản sao lưu trực tiếp cũ không đủ để xác định bản gốc. Astra giữ nguyên dữ liệu để tránh khôi phục nhầm."
+        case .legacyTargetsUnknown:
+            return "Lịch sử AirLift cũ thiếu ứng dụng hoặc đường dẫn đích. Cần xác minh dữ liệu gốc trước khi ghi tiếp."
+        case .invalidRecord:
+            return "Thông tin giao dịch không hợp lệ. Bản sao lưu và lịch sử được giữ lại để kiểm tra."
+        case .airLiftNoBackup:
+            return "Lần ghi này dùng AirLift và không có bản sao lưu file trước khi ghi. Cần gói khôi phục chính thức đúng phiên bản."
+        case .unsupportedAirLiftDirectory:
+            return "Gói yêu cầu tạo thư mục rỗng mà AirLift chưa hỗ trợ. Chưa có dữ liệu nào được ghi."
+        case .operationNotHeld:
+            return "Thao tác ghi chưa giữ phiên giao dịch độc quyền."
+        case .restoreProviderUnavailable:
+            return "Bản sao lưu trực tiếp được giữ nguyên, nhưng cơ chế truy cập hiện tại chưa hỗ trợ khôi phục giao dịch đó."
         }
     }
 }
 
 enum AirLiftPatchCapabilities {
     static func validate(_ project: PatchProject) throws {
-        guard !project.rules.isEmpty else { throw PatchEngineStateError.unsupportedAirLiftDirectory }
-        // Parent directories of payload files are created by the write path.
-        // An independent/empty directory has no corresponding AirTraffic write.
+        guard !project.rules.isEmpty else {
+            throw PatchEngineStateError.unsupportedAirLiftDirectory
+        }
         guard project.directories.allSatisfy({ directory in
-            project.rules.contains { $0.bundleID == directory.bundleID && $0.relativePath.hasPrefix(directory.relativePath + "/") }
-        }) else { throw PatchEngineStateError.unsupportedAirLiftDirectory }
+            project.rules.contains {
+                $0.bundleID == directory.bundleID
+                    && $0.relativePath.hasPrefix(directory.relativePath + "/")
+            }
+        }) else {
+            throw PatchEngineStateError.unsupportedAirLiftDirectory
+        }
     }
 }
 
@@ -110,13 +152,28 @@ struct PatchEngineApplicationRecord: Codable, Equatable {
     var completedBatches: Int
     let totalBatches: Int
 
-    init(projectID: UUID, operationID: UUID = UUID(), engine: PatchWriteEngine,
-         baseline: PatchBaseline, targetKeys: [String], journalID: UUID? = nil,
-         phase: PatchEnginePhase = .writing, totalBatches: Int = 0) {
-        schema = 1; self.projectID = projectID; self.operationID = operationID
-        self.engine = engine; self.baseline = baseline; self.targetKeys = targetKeys.sorted()
-        self.journalID = journalID; self.phase = phase; completedBatches = 0; self.totalBatches = totalBatches
+    init(
+        projectID: UUID,
+        operationID: UUID = UUID(),
+        engine: PatchWriteEngine,
+        baseline: PatchBaseline,
+        targetKeys: [String],
+        journalID: UUID? = nil,
+        phase: PatchEnginePhase = .writing,
+        totalBatches: Int = 0
+    ) {
+        schema = 1
+        self.projectID = projectID
+        self.operationID = operationID
+        self.engine = engine
+        self.baseline = baseline
+        self.targetKeys = targetKeys.sorted()
+        self.journalID = journalID
+        self.phase = phase
+        completedBatches = 0
+        self.totalBatches = totalBatches
     }
+
     var applicationState: PatchApplicationState {
         switch phase {
         case .writing, .recoveryRequired: return .recoveryRequired
@@ -124,11 +181,17 @@ struct PatchEngineApplicationRecord: Codable, Equatable {
         case .restored: return .off
         }
     }
+
     func validate() throws {
-        guard schema == 1, completedBatches >= 0, totalBatches >= completedBatches,
-              !targetKeys.isEmpty, targetKeys == Array(Set(targetKeys)).sorted(),
+        guard schema == 1,
+              completedBatches >= 0,
+              totalBatches >= completedBatches,
+              !targetKeys.isEmpty,
+              targetKeys == Array(Set(targetKeys)).sorted(),
               targetKeys.allSatisfy({ !$0.isEmpty && $0.contains("\0") }),
-              (engine == .airLift ? baseline == .unavailable && journalID == nil : baseline != .unavailable && journalID != nil) else {
+              (engine == .airLift
+                  ? baseline == .unavailable && journalID == nil
+                  : baseline != .unavailable && journalID != nil) else {
             throw PatchEngineStateError.invalidRecord
         }
     }
@@ -136,14 +199,18 @@ struct PatchEngineApplicationRecord: Codable, Equatable {
 
 struct PatchEngineApplicationStore {
     let backupRoot: URL
+
     static let maximumRecordBytes = 2 * 1024 * 1024
     static let maximumJournalBytes = 64 * 1024 * 1024
-    private var directory: URL { backupRoot.appendingPathComponent(".engine-applications", isDirectory: true) }
-    private func url(_ projectID: UUID) -> URL { directory.appendingPathComponent(projectID.uuidString + ".plist") }
 
-    // A projection of the same atomic journal, not another independently
-    // written receipt. Schema 3 binds the immutable engine descriptor to the
-    // backups before any target mutation. Old journals have no descriptor.
+    private var directory: URL {
+        backupRoot.appendingPathComponent(".engine-applications", isDirectory: true)
+    }
+
+    private func url(_ projectID: UUID) -> URL {
+        directory.appendingPathComponent(projectID.uuidString + ".plist")
+    }
+
     private struct JournalProjection: Decodable {
         struct Target: Decodable {
             let bundleID: String
@@ -151,6 +218,7 @@ struct PatchEngineApplicationStore {
             let containerFingerprint: Data
             var key: String { bundleID + "\0" + relativePath }
         }
+
         let schemaVersion: Int
         let transactionID: UUID
         let projectID: UUID
@@ -164,19 +232,28 @@ struct PatchEngineApplicationStore {
 
     static func encodedRecord(_ record: PatchEngineApplicationRecord) throws -> Data {
         try record.validate()
-        let encoder = PropertyListEncoder(); encoder.outputFormat = .binary
+        let encoder = PropertyListEncoder()
+        encoder.outputFormat = .binary
         let data = try encoder.encode(record)
-        guard data.count <= maximumRecordBytes else { throw PatchEngineStateError.invalidRecord }
+        guard data.count <= maximumRecordBytes else {
+            throw PatchEngineStateError.invalidRecord
+        }
         return data
     }
 
-    private func readProjection(projectID: UUID, transactionID: UUID) throws -> JournalProjection {
-        let path = backupRoot.appendingPathComponent(projectID.uuidString, isDirectory: true)
-            .appendingPathComponent(transactionID.uuidString, isDirectory: true).appendingPathComponent("journal.plist")
+    private func readProjection(
+        projectID: UUID,
+        transactionID: UUID
+    ) throws -> JournalProjection {
+        let path = backupRoot
+            .appendingPathComponent(projectID.uuidString, isDirectory: true)
+            .appendingPathComponent(transactionID.uuidString, isDirectory: true)
+            .appendingPathComponent("journal.plist")
         let data = try Data(contentsOf: path)
         guard data.count <= Self.maximumJournalBytes,
               let journal = try? PropertyListDecoder().decode(JournalProjection.self, from: data),
-              (1...3).contains(journal.schemaVersion), journal.projectID == projectID,
+              (1...3).contains(journal.schemaVersion),
+              journal.projectID == projectID,
               journal.transactionID == transactionID,
               ["prepared", "applied", "restored", "rolledBack"].contains(journal.status) else {
             throw PatchEngineStateError.invalidRecord
@@ -184,31 +261,32 @@ struct PatchEngineApplicationStore {
         for target in journal.records + (journal.createdDirectories ?? []) {
             guard try PatchPathValidator.canonicalBundleIdentifier(target.bundleID) == target.bundleID,
                   try PatchPathValidator.canonicalRelativePath(target.relativePath) == target.relativePath,
-                  target.containerFingerprint.count == 32 else { throw PatchEngineStateError.invalidRecord }
+                  target.containerFingerprint.count == 32 else {
+                throw PatchEngineStateError.invalidRecord
+            }
         }
         if let record = journal.engineRecord {
             _ = try Self.encodedRecord(record)
-            guard journal.schemaVersion == 3, record.projectID == projectID,
-                  record.operationID == transactionID, record.journalID == transactionID,
-                  record.engine != .airLift, record.baseline == .capturedPriorState,
-                  record.phase == .writing, record.completedBatches == 0, record.totalBatches == 0,
+            guard journal.schemaVersion == 3,
+                  record.projectID == projectID,
+                  record.operationID == transactionID,
+                  record.journalID == transactionID,
+                  record.engine != .airLift,
+                  record.baseline == .capturedPriorState,
+                  record.phase == .writing,
+                  record.completedBatches == 0,
+                  record.totalBatches == 0,
                   Set(journal.records.map(\.key)).isSubset(of: Set(record.targetKeys)),
                   (journal.createdDirectories ?? []).allSatisfy({ directory in
-                      // Auto-created parents need not be explicit package
-                      // targets, but must belong to a bound payload/directory.
-                      record.targetKeys.contains { $0 == directory.key || $0.hasPrefix(directory.key + "/") }
+                      record.targetKeys.contains {
+                          $0 == directory.key || $0.hasPrefix(directory.key + "/")
+                      }
                   }) else {
                 throw PatchEngineStateError.invalidRecord
             }
-            for key in record.targetKeys {
-                let parts = key.split(separator: "\0", omittingEmptySubsequences: false)
-                guard parts.count == 2,
-                      try PatchPathValidator.canonicalBundleIdentifier(String(parts[0])) == String(parts[0]),
-                      try PatchPathValidator.canonicalRelativePath(String(parts[1])) == String(parts[1]) else {
-                    throw PatchEngineStateError.invalidRecord
-                }
-            }
-        } else if journal.schemaVersion == 3 { throw PatchEngineStateError.invalidRecord }
+        } else if journal.schemaVersion == 3 {
+            throw PatchEngineStateError.invalidRecord
+        }
         return journal
     }
 
@@ -216,22 +294,29 @@ struct PatchEngineApplicationStore {
         let root = backupRoot.appendingPathComponent(projectID.uuidString, isDirectory: true)
         guard FileManager.default.fileExists(atPath: root.path) else { return nil }
         var journals: [JournalProjection] = []
-        for child in try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) {
+        for child in try FileManager.default.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: nil
+        ) {
             guard let transactionID = UUID(uuidString: child.lastPathComponent),
-                  FileManager.default.fileExists(atPath: child.appendingPathComponent("journal.plist").path) else { continue }
+                  FileManager.default.fileExists(
+                      atPath: child.appendingPathComponent("journal.plist").path
+                  ) else { continue }
             journals.append(try readProjection(projectID: projectID, transactionID: transactionID))
         }
-        // Multiple unfinished transactions are not a normal predecessor/successor
-        // transition. Never hide an older recovery obligation behind a new one.
         let unfinished = journals.filter { !$0.isTerminal }
         guard unfinished.count <= 1 else { throw PatchEngineStateError.invalidRecord }
         if let pending = unfinished.first {
-            guard !journals.contains(where: { $0.isTerminal && $0.createdAt > pending.createdAt }) else {
+            guard !journals.contains(where: {
+                $0.isTerminal && $0.createdAt > pending.createdAt
+            }) else {
                 throw PatchEngineStateError.invalidRecord
             }
             return pending.engineRecord == nil ? nil : pending
         }
-        return journals.sorted { $0.createdAt > $1.createdAt }.first.flatMap { $0.engineRecord == nil ? nil : $0 }
+        return journals.sorted { $0.createdAt > $1.createdAt }.first.flatMap {
+            $0.engineRecord == nil ? nil : $0
+        }
     }
 
     func read(_ projectID: UUID) throws -> PatchEngineApplicationRecord? {
@@ -240,32 +325,45 @@ struct PatchEngineApplicationStore {
         if FileManager.default.fileExists(atPath: target.path) {
             let data = try Data(contentsOf: target)
             guard data.count <= Self.maximumRecordBytes,
-                  let record = try? PropertyListDecoder().decode(PatchEngineApplicationRecord.self, from: data),
-                  record.projectID == projectID else { throw PatchEngineStateError.invalidRecord }
-            try record.validate(); sidecar = record
+                  let record = try? PropertyListDecoder().decode(
+                      PatchEngineApplicationRecord.self,
+                      from: data
+                  ),
+                  record.projectID == projectID else {
+                throw PatchEngineStateError.invalidRecord
+            }
+            try record.validate()
+            sidecar = record
         }
-        guard let journal = try latestBoundJournal(projectID), var bound = journal.engineRecord else { return sidecar }
+
+        guard let journal = try latestBoundJournal(projectID),
+              var bound = journal.engineRecord else {
+            return sidecar
+        }
         if let sidecar, sidecar.engine == .airLift, journal.isTerminal {
-            // A later AirLift application has no direct backup. A terminal
-            // direct journal must not hide that new unbacked obligation or
-            // make its old baseline appear restorable after AirLift writes.
             return sidecar
         }
         if let sidecar {
             if sidecar.journalID == bound.journalID {
-                guard sidecar.operationID == bound.operationID, sidecar.engine == bound.engine,
-                      sidecar.baseline == bound.baseline, sidecar.targetKeys == bound.targetKeys else {
+                guard sidecar.operationID == bound.operationID,
+                      sidecar.engine == bound.engine,
+                      sidecar.baseline == bound.baseline,
+                      sidecar.targetKeys == bound.targetKeys else {
                     throw PatchEngineStateError.invalidRecord
                 }
             } else {
-                // A stale project index may only be replaced by a newer bound
-                // journal after proving the previous direct journal terminated.
-                guard sidecar.engine != .airLift, sidecar.baseline != .legacyUnknown,
-                      let previousID = sidecar.journalID, sidecar.operationID == previousID else {
+                guard sidecar.engine != .airLift,
+                      sidecar.baseline != .legacyUnknown,
+                      let previousID = sidecar.journalID,
+                      sidecar.operationID == previousID else {
                     throw PatchEngineStateError.invalidRecord
                 }
-                let previous = try readProjection(projectID: projectID, transactionID: previousID)
-                guard previous.isTerminal, previous.createdAt <= journal.createdAt else {
+                let previous = try readProjection(
+                    projectID: projectID,
+                    transactionID: previousID
+                )
+                guard previous.isTerminal,
+                      previous.createdAt <= journal.createdAt else {
                     throw PatchEngineStateError.invalidRecord
                 }
             }
@@ -277,37 +375,62 @@ struct PatchEngineApplicationStore {
         }
         return bound
     }
+
     func save(_ record: PatchEngineApplicationRecord) throws {
         let data = try Self.encodedRecord(record)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try data.write(to: url(record.projectID), options: .atomic)
     }
+
     func requireResolvedLegacyHistory(defaults: UserDefaults = .standard) throws {
         let prefix = "airlift.applied."
         for (key, value) in defaults.dictionaryRepresentation() where key.hasPrefix(prefix) {
-            guard (value as? NSNumber)?.boolValue == true || value as? Bool == true else { continue }
+            guard (value as? NSNumber)?.boolValue == true || value as? Bool == true else {
+                continue
+            }
             guard let projectID = UUID(uuidString: String(key.dropFirst(prefix.count))),
-                  try read(projectID) != nil else { throw PatchEngineStateError.legacyTargetsUnknown }
+                  try read(projectID) != nil else {
+                throw PatchEngineStateError.legacyTargetsUnknown
+            }
         }
     }
-    func requireNoUnbackedOverlap(projectID: UUID, targetKeys: [String], includingBackedApplications: Bool = false) throws {
+
+    func requireNoUnbackedOverlap(
+        projectID: UUID,
+        targetKeys: [String],
+        includingBackedApplications: Bool = false
+    ) throws {
         guard FileManager.default.fileExists(atPath: directory.path) else { return }
-        for item in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) where item.pathExtension == "plist" {
+        for item in try FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        ) where item.pathExtension == "plist" {
             guard let id = UUID(uuidString: item.deletingPathExtension().lastPathComponent),
-                  let record = try read(id) else { throw PatchEngineStateError.invalidRecord }
-            guard record.phase != .restored, includingBackedApplications || record.engine == .airLift else { continue }
+                  let record = try read(id) else {
+                throw PatchEngineStateError.invalidRecord
+            }
+            guard record.phase != .restored,
+                  includingBackedApplications || record.engine == .airLift else {
+                continue
+            }
             if record.projectID == projectID || record.targetKeys.contains(where: { old in
-                targetKeys.contains { old == $0 || old.hasPrefix($0 + "/") || $0.hasPrefix(old + "/") }
-            }) { throw PatchEngineStateError.recoveryRequired }
+                targetKeys.contains {
+                    old == $0 || old.hasPrefix($0 + "/") || $0.hasPrefix(old + "/")
+                }
+            }) {
+                throw PatchEngineStateError.recoveryRequired
+            }
         }
     }
-    static func reconcile(record: PatchEngineApplicationRecord?, journal: PatchApplicationState?,
-                          legacyAirLift: Bool) -> PatchApplicationState? {
+
+    static func reconcile(
+        record: PatchEngineApplicationRecord?,
+        journal: PatchApplicationState?,
+        legacyAirLift: Bool
+    ) -> PatchApplicationState? {
         if let record {
             if record.engine == .airLift { return record.applicationState }
             guard let journal else { return .recoveryRequired }
-            // A committed journal owns its original bytes and crash recovery;
-            // stale preference booleans cannot override a bound new record.
             if journal == .off { return .off }
             return record.phase == .restored ? .recoveryRequired : journal
         }
@@ -315,11 +438,21 @@ struct PatchEngineApplicationStore {
         if legacyAirLift { return .applied }
         return journal
     }
-    static func requireDirectRestore(record: PatchEngineApplicationRecord?, receiptID: UUID?,
-                                     journal: PatchApplicationState?, legacyAirLift: Bool) throws {
+
+    static func requireDirectRestore(
+        record: PatchEngineApplicationRecord?,
+        receiptID: UUID?,
+        journal: PatchApplicationState?,
+        legacyAirLift: Bool
+    ) throws {
         if let record {
-            guard record.engine != .airLift, record.baseline != .legacyUnknown else { throw PatchEngineStateError.airLiftNoBackup }
-            guard record.journalID == receiptID || journal == .off else { throw PatchEngineStateError.invalidRecord }
+            guard record.engine != .airLift,
+                  record.baseline != .legacyUnknown else {
+                throw PatchEngineStateError.airLiftNoBackup
+            }
+            guard record.journalID == receiptID || journal == .off else {
+                throw PatchEngineStateError.invalidRecord
+            }
             return
         }
         if legacyAirLift {
@@ -328,58 +461,93 @@ struct PatchEngineApplicationStore {
         }
     }
 }
-// END PATCH ENGINE PROVENANCE
 
-// BEGIN PATCH FILESYSTEM GATE — one owner across asynchronous native writes.
 actor PatchFilesystemGate {
     static let shared = PatchFilesystemGate()
+
     private var owner: UUID?
     private var waiters: [(UUID, CheckedContinuation<UUID, Error>)] = []
+
     func acquire() async throws -> UUID {
         try Task.checkCancellation()
         let id = UUID()
-        return try await withTaskCancellationHandler(operation: {
-            if owner == nil { owner = id; return id }
-            return try await withCheckedThrowingContinuation { waiters.append((id, $0)) }
-        }, onCancel: { Task { await self.cancel(id) } })
+        return try await withTaskCancellationHandler(
+            operation: {
+                if owner == nil {
+                    owner = id
+                    return id
+                }
+                return try await withCheckedThrowingContinuation {
+                    waiters.append((id, $0))
+                }
+            },
+            onCancel: { Task { await self.cancel(id) } }
+        )
     }
+
     private func cancel(_ id: UUID) {
         guard let index = waiters.firstIndex(where: { $0.0 == id }) else { return }
-        let waiter = waiters.remove(at: index); waiter.1.resume(throwing: CancellationError())
+        let waiter = waiters.remove(at: index)
+        waiter.1.resume(throwing: CancellationError())
     }
+
     func validate(_ id: UUID) throws {
         try Task.checkCancellation()
         guard owner == id else { throw PatchEngineStateError.operationNotHeld }
     }
+
     func release(_ id: UUID) {
         guard owner == id else { return }
-        if waiters.isEmpty { owner = nil }
-        else { let next = waiters.removeFirst(); owner = next.0; next.1.resume(returning: next.0) }
+        if waiters.isEmpty {
+            owner = nil
+        } else {
+            let next = waiters.removeFirst()
+            owner = next.0
+            next.1.resume(returning: next.0)
+        }
     }
 }
 
 @MainActor
-func withExclusivePatchOperation<T>(_ operation: @MainActor (UUID) async throws -> T) async throws -> T {
+func withExclusivePatchOperation<T>(
+    _ operation: @MainActor (UUID) async throws -> T
+) async throws -> T {
     let id = try await PatchFilesystemGate.shared.acquire()
     do {
         try await PatchFilesystemGate.shared.validate(id)
         let result = try await operation(id)
         await PatchFilesystemGate.shared.release(id)
         return result
-    } catch { await PatchFilesystemGate.shared.release(id); throw error }
+    } catch {
+        await PatchFilesystemGate.shared.release(id)
+        throw error
+    }
 }
-// END PATCH FILESYSTEM GATE
 
 /// Preferences associate catalog items with transaction journals, which own the
 /// backups. A missing preference flag must never hide an existing transaction.
 struct CatalogPatchApplicationRegistry {
     let defaults: UserDefaults
-    private let prefix = "patch_applied_"
+    private let prefix = "astra_patch_applied_"
     func projectID(for identity: String) -> UUID? {
         defaults.string(forKey: prefix + identity + "_projectID").flatMap(UUID.init(uuidString:))
     }
     func associate(_ projectID: UUID, with identity: String) {
         defaults.set(projectID.uuidString, forKey: prefix + identity + "_projectID")
+    }
+    /// Include hidden catalog entries: an item disappearing from the latest
+    /// catalog must not lose its saved project association during a mode switch.
+    func associations() -> [String: UUID] {
+        let suffix = "_projectID"
+        var values: [String: UUID] = [:]
+        for (key, value) in defaults.dictionaryRepresentation()
+            where key.hasPrefix(prefix) && key.hasSuffix(suffix) {
+            let identity = String(key.dropFirst(prefix.count).dropLast(suffix.count))
+            if !identity.isEmpty, let text = value as? String, let id = UUID(uuidString: text) {
+                values[identity] = id
+            }
+        }
+        return values
     }
     /// Adopt legacy slug-based preferences without deleting their journal or
     /// overwriting a newer stable association. Repeat calls are harmless.
@@ -391,10 +559,6 @@ struct CatalogPatchApplicationRegistry {
         for suffix in ["", "_recovery"] where defaults.bool(forKey: prefix + legacy + suffix) {
             defaults.set(true, forKey: prefix + stable + suffix)
         }
-        if let binding = defaults.string(forKey: prefix + legacy + "_disabledBinding"),
-           defaults.string(forKey: prefix + stable + "_disabledBinding") == nil {
-            defaults.set(binding, forKey: prefix + stable + "_disabledBinding")
-        }
         // Preference keys only; the transaction journal/backups are untouched.
         // Leaving old ON flags would resurrect them after a successful restore.
         clear(legacy)
@@ -402,23 +566,12 @@ struct CatalogPatchApplicationRegistry {
     func markApplied(_ identity: String) {
         defaults.set(true, forKey: prefix + identity)
         defaults.removeObject(forKey: prefix + identity + "_recovery")
-        defaults.removeObject(forKey: prefix + identity + "_disabledBinding")
     }
     func markRecoveryRequired(_ identity: String) {
         defaults.set(true, forKey: prefix + identity + "_recovery")
     }
-    func markDisabledWithoutRestore(_ identity: String, binding: String) {
-        defaults.set(binding, forKey: prefix + identity + "_disabledBinding")
-        markRecoveryRequired(identity)
-    }
-    func hasPendingDisable(_ identity: String) -> Bool {
-        defaults.string(forKey: prefix + identity + "_disabledBinding") != nil
-    }
-    func isDisabledWithoutRestore(_ identity: String, binding: String) -> Bool {
-        defaults.string(forKey: prefix + identity + "_disabledBinding") == binding
-    }
     func clear(_ identity: String) {
-        for suffix in ["", "_projectID", "_recovery", "_disabledBinding"] { defaults.removeObject(forKey: prefix + identity + suffix) }
+        for suffix in ["", "_projectID", "_recovery"] { defaults.removeObject(forKey: prefix + identity + suffix) }
     }
     func state(for identity: String, recordedState: (UUID) -> PatchApplicationState?) -> PatchApplicationState {
         if let id = projectID(for: identity), let state = recordedState(id) {
@@ -427,6 +580,284 @@ struct CatalogPatchApplicationRegistry {
         }
         return defaults.bool(forKey: prefix + identity) || defaults.bool(forKey: prefix + identity + "_recovery")
             ? .recoveryRequired : .off
+    }
+}
+
+enum CatalogFeatureModeError: LocalizedError {
+    case pendingOperation, invalidState, staleTransition, persistenceFailed
+    var errorDescription: String? {
+        switch self {
+        case .pendingOperation:
+            return "Một lần bật chức năng chưa hoàn tất. Hãy thử lại đúng chức năng đang cần khôi phục trước khi chuyển mục khác."
+        case .invalidState, .persistenceFailed:
+            return "Chưa lưu được trạng thái chức năng an toàn. Hãy mở lại ứng dụng rồi thử lại."
+        case .staleTransition:
+            return "Thao tác đã thay đổi. Hãy làm mới trạng thái chức năng rồi thử lại."
+        }
+    }
+}
+
+/// A catalog mode switch never deletes transaction journals or original backups.
+/// The durable pending record keeps an interrupted write visible until the same
+/// activation is retried. Only a successful write may commit the OFF overlays.
+struct CatalogFeatureModeRegistry {
+    struct Candidate {
+        let identity: String
+        let projectID: UUID
+        let isRestoration: Bool
+        let isActive: Bool
+    }
+    struct Transition: Codable, Equatable {
+        let id: UUID
+        let identity: String
+        let projectID: UUID
+        let isRestoration: Bool
+        let suppressedIdentities: [String]
+        let ignoredProjectIDs: Set<UUID>
+    }
+    private struct Entry: Codable {
+        let projectID: UUID
+        let isRestoration: Bool
+        var isActive: Bool
+        // Optional for documents created by build 15. A failed/uncertain write
+        // stays visible without blocking every other catalog operation.
+        var needsActivationRetry: Bool? = nil
+    }
+    private struct Pending: Codable {
+        let transition: Transition
+        let snapshot: [String: Entry]
+    }
+    private struct State: Codable {
+        var version = 1
+        var entries: [String: Entry] = [:]
+        var ignoredProjectIDs: Set<UUID> = []
+        var pending: Pending?
+    }
+
+    let defaults: UserDefaults
+    private let persistenceURL: URL?
+    private let key = "astra_catalog_feature_modes_v1"
+
+    init(defaults: UserDefaults, persistenceURL: URL? = nil) {
+        self.defaults = defaults
+        self.persistenceURL = persistenceURL
+    }
+
+    var pendingIdentity: String? { (try? load())?.pending?.transition.identity }
+    var ignoredProjectIDs: Set<UUID> {
+        guard let state = try? load() else { return [] }
+        return state.pending?.transition.ignoredProjectIDs ?? state.ignoredProjectIDs
+    }
+    func projectID(for identity: String) -> UUID? {
+        guard let state = try? load() else { return nil }
+        if let pending = state.pending {
+            if pending.transition.identity == identity { return pending.transition.projectID }
+            if let entry = pending.snapshot[identity] { return entry.projectID }
+        }
+        return state.entries[identity]?.projectID
+    }
+    /// The durable mode document can reconstruct catalog associations when an
+    /// old preference write was lost after a process interruption.
+    func associations() -> [String: UUID] {
+        guard let state = try? load() else { return [:] }
+        var values = state.entries.mapValues(\.projectID)
+        if let pending = state.pending {
+            for (identity, entry) in pending.snapshot { values[identity] = entry.projectID }
+            values[pending.transition.identity] = pending.transition.projectID
+        }
+        return values
+    }
+    func isRestoration(_ identity: String) -> Bool? {
+        guard let state = try? load() else { return nil }
+        if let pending = state.pending {
+            if pending.transition.identity == identity { return pending.transition.isRestoration }
+            if let entry = pending.snapshot[identity] { return entry.isRestoration }
+        }
+        return state.entries[identity]?.isRestoration
+    }
+    func isSuppressed(_ identity: String) -> Bool {
+        overrideState(for: identity) == .off
+    }
+    func requiresActivationRetry(_ identity: String) -> Bool {
+        guard let state = try? load() else { return false }
+        if state.pending?.transition.identity == identity { return true }
+        guard let entry = state.entries[identity] else { return false }
+        return entry.isActive && entry.needsActivationRetry == true
+    }
+    func overrideState(for identity: String) -> PatchApplicationState? {
+        guard let state = try? load() else { return .recoveryRequired }
+        if let pending = state.pending {
+            let transition = pending.transition
+            if transition.identity == identity || transition.suppressedIdentities.contains(identity) {
+                return .recoveryRequired
+            }
+        }
+        guard let entry = state.entries[identity] else { return nil }
+        if !entry.isActive { return .off }
+        return entry.needsActivationRetry == true ? .recoveryRequired : nil
+    }
+
+    func prepare(identity: String, isRestoration: Bool, candidates: [Candidate]) throws -> Transition {
+        guard validIdentity(identity) else { throw CatalogFeatureModeError.invalidState }
+        var state = try load()
+        if let pending = state.pending {
+            guard pending.transition.identity == identity,
+                  pending.transition.isRestoration == isRestoration else {
+                throw CatalogFeatureModeError.pendingOperation
+            }
+            // A pending record from older preference-only storage must be
+            // written atomically before its interrupted activation may retry.
+            try save(state)
+            return pending.transition
+        }
+        var snapshot = state.entries
+        var imported = Set<String>()
+        for candidate in candidates {
+            guard validIdentity(candidate.identity), imported.insert(candidate.identity).inserted else {
+                throw CatalogFeatureModeError.invalidState
+            }
+            if let entry = snapshot[candidate.identity] {
+                // Saved OFF overlays win over legacy ON flags, even after a
+                // relaunch or a later catalog refresh. Metadata may change role.
+                snapshot[candidate.identity] = Entry(projectID: entry.projectID,
+                    isRestoration: candidate.isRestoration, isActive: entry.isActive,
+                    needsActivationRetry: entry.needsActivationRetry)
+            } else {
+                snapshot[candidate.identity] = Entry(projectID: candidate.projectID,
+                    isRestoration: candidate.isRestoration, isActive: candidate.isActive)
+            }
+        }
+        let suppressed = snapshot.keys.filter { other in
+            other != identity && snapshot[other]!.isActive
+                && (isRestoration || snapshot[other]!.isRestoration)
+        }.sorted()
+        var ignored = state.ignoredProjectIDs
+        for (other, entry) in snapshot where !entry.isActive || suppressed.contains(other) || other == identity {
+            ignored.insert(entry.projectID)
+        }
+        let transition = Transition(id: UUID(), identity: identity, projectID: UUID(),
+            isRestoration: isRestoration, suppressedIdentities: suppressed, ignoredProjectIDs: ignored)
+        state.pending = Pending(transition: transition, snapshot: snapshot)
+        try save(state)
+        return transition
+    }
+
+    func commit(_ transition: Transition) throws {
+        var state = try load()
+        guard let pending = state.pending, pending.transition == transition else {
+            throw CatalogFeatureModeError.staleTransition
+        }
+        var entries = pending.snapshot
+        for identity in transition.suppressedIdentities {
+            entries[identity]?.isActive = false
+        }
+        entries[transition.identity] = Entry(projectID: transition.projectID,
+            isRestoration: transition.isRestoration, isActive: true)
+        state.entries = entries
+        state.ignoredProjectIDs = transition.ignoredProjectIDs
+        state.pending = nil
+        try save(state)
+    }
+
+    /// Resolve a failed activation without claiming that its files are restored.
+    /// Before I/O the old state can be retained exactly; after possible writes,
+    /// keep the selected/affected items as recovery-required, not false OFF.
+    func recordFailure(_ transition: Transition, writeMayHaveStarted: Bool) throws {
+        var state = try load()
+        guard let pending = state.pending, pending.transition == transition else {
+            throw CatalogFeatureModeError.staleTransition
+        }
+        var entries = pending.snapshot
+        if writeMayHaveStarted {
+            for identity in transition.suppressedIdentities {
+                entries[identity]?.needsActivationRetry = true
+            }
+            if let previous = entries[transition.identity] {
+                state.ignoredProjectIDs.insert(previous.projectID)
+            }
+            entries[transition.identity] = Entry(projectID: transition.projectID,
+                isRestoration: transition.isRestoration, isActive: true, needsActivationRetry: true)
+        }
+        state.entries = entries
+        state.pending = nil
+        try save(state)
+    }
+
+    /// On launch/retry no process from the old activation is still running.
+    /// Build-15 intent has no write-progress marker, so reconcile conservatively.
+    /// Backup journals are retained; the per-item warning survives re-launch.
+    @discardableResult
+    func recoverInterruptedActivation() throws -> Transition? {
+        guard let transition = try load().pending?.transition else { return nil }
+        try recordFailure(transition, writeMayHaveStarted: true)
+        return transition
+    }
+
+    /// Ending a mode changes catalog state only. It must never replay an old
+    /// modifier or remove the transaction's backups underneath the user's files.
+    func deactivate(_ identity: String, projectID: UUID? = nil, isRestoration: Bool? = nil) throws {
+        var state = try load()
+        guard state.pending == nil else { throw CatalogFeatureModeError.pendingOperation }
+        guard validIdentity(identity) else { throw CatalogFeatureModeError.invalidState }
+        guard let entry = state.entries[identity] ?? projectID.flatMap({ project in
+            isRestoration.map { Entry(projectID: project, isRestoration: $0, isActive: false) }
+        }) else { return }
+        state.entries[identity] = Entry(projectID: entry.projectID,
+            isRestoration: entry.isRestoration, isActive: false)
+        state.ignoredProjectIDs.insert(entry.projectID)
+        try save(state)
+    }
+
+    private func validIdentity(_ value: String) -> Bool {
+        !value.isEmpty && value.utf8.count <= 512
+            && !value.contains("\0") && !value.contains("\n") && !value.contains("\r")
+    }
+    private func load() throws -> State {
+        let data: Data
+        if let persistenceURL, FileManager.default.fileExists(atPath: persistenceURL.path) {
+            do {
+                let attributes = try FileManager.default.attributesOfItem(atPath: persistenceURL.path)
+                guard attributes[.type] as? FileAttributeType == .typeRegular,
+                      let size = attributes[.size] as? NSNumber, size.int64Value <= 4 * 1024 * 1024 else {
+                    throw CatalogFeatureModeError.invalidState
+                }
+                data = try Data(contentsOf: persistenceURL)
+            } catch { throw CatalogFeatureModeError.invalidState }
+        } else {
+            guard let object = defaults.object(forKey: key) else { return State() }
+            guard let stored = object as? Data else { throw CatalogFeatureModeError.invalidState }
+            data = stored
+        }
+        guard data.count <= 4 * 1024 * 1024,
+              let state = try? JSONDecoder().decode(State.self, from: data), state.version == 1,
+              state.entries.keys.allSatisfy(validIdentity),
+              state.pending.map({ pending in
+                  validIdentity(pending.transition.identity)
+                      && pending.snapshot.keys.allSatisfy(validIdentity)
+                      && Set(pending.transition.suppressedIdentities).count == pending.transition.suppressedIdentities.count
+                      && pending.transition.suppressedIdentities.allSatisfy({ pending.snapshot[$0]?.isActive == true })
+                      && !pending.transition.suppressedIdentities.contains(pending.transition.identity)
+              }) ?? true else { throw CatalogFeatureModeError.invalidState }
+        return state
+    }
+    private func save(_ state: State) throws {
+        guard let data = try? JSONEncoder().encode(state), data.count <= 4 * 1024 * 1024 else {
+            throw CatalogFeatureModeError.persistenceFailed
+        }
+        if let persistenceURL {
+            do {
+                try FileManager.default.createDirectory(at: persistenceURL.deletingLastPathComponent(),
+                    withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+                try data.write(to: persistenceURL, options: .atomic)
+                try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: persistenceURL.path)
+            } catch { throw CatalogFeatureModeError.persistenceFailed }
+        }
+        defaults.set(data, forKey: key)
+        // With a durable file, preferences are a compatibility cache. A lost
+        // cache write must never override or invalidate the committed document.
+        if persistenceURL == nil, defaults.data(forKey: key) != data {
+            throw CatalogFeatureModeError.persistenceFailed
+        }
     }
 }
 
@@ -500,9 +931,13 @@ enum PatchTransaction {
     private static let schemaVersion = 3
     private static let journalFilename = "journal.plist"
 
+    /// A catalog mode transition may acknowledge specific older project writes
+    /// as superseded. Exclusions affect occupancy only; their journals/backups
+    /// remain intact, and callers omitting them retain the normal collision gate.
     static func apply(
         project: PatchProject,
         backupRoot: URL,
+        ignoringProjectIDs: Set<UUID> = [],
         engine: PatchWriteEngine = .legacy3105,
         containerResolver: (String) throws -> URL,
         beforeWrite: ((Int) throws -> Void)? = nil,
@@ -520,18 +955,33 @@ enum PatchTransaction {
         ) == nil else {
             throw PatchPackageError.projectAlreadyApplied
         }
+
         let engineStore = PatchEngineApplicationStore(backupRoot: backupRoot)
         try engineStore.requireResolvedLegacyHistory()
         let previousEngine = try engineStore.read(project.id)
-        let legacyAirLift = UserDefaults.standard.bool(forKey: "airlift.applied.\(project.id.uuidString)")
-        if previousEngine == nil && legacyAirLift { throw PatchEngineStateError.airLiftNoBackup }
-        let engineTargets = (project.rules.map { $0.bundleID + "\0" + $0.relativePath }
-            + project.directories.map { $0.bundleID + "\0" + $0.relativePath }).sorted()
-        try engineStore.requireNoUnbackedOverlap(projectID: project.id, targetKeys: engineTargets)
+        let legacyAirLift = UserDefaults.standard.bool(
+            forKey: "airlift.applied.\(project.id.uuidString)"
+        )
+        if previousEngine == nil && legacyAirLift {
+            throw PatchEngineStateError.airLiftNoBackup
+        }
+        let engineTargets = (
+            project.rules.map { $0.bundleID + "\0" + $0.relativePath }
+                + project.directories.map { $0.bundleID + "\0" + $0.relativePath }
+        ).sorted()
+        try engineStore.requireNoUnbackedOverlap(
+            projectID: project.id,
+            targetKeys: engineTargets
+        )
         let transactionID = UUID()
-        var engineRecord = PatchEngineApplicationRecord(projectID: project.id, operationID: transactionID,
-            engine: engine, baseline: .capturedPriorState, targetKeys: engineTargets, journalID: transactionID)
-        // Reject an index the reader cannot consume before backup/journal I/O.
+        var engineRecord = PatchEngineApplicationRecord(
+            projectID: project.id,
+            operationID: transactionID,
+            engine: engine,
+            baseline: .capturedPriorState,
+            targetKeys: engineTargets,
+            journalID: transactionID
+        )
         _ = try PatchEngineApplicationStore.encodedRecord(engineRecord)
 
         var roots: [String: URL] = [:]
@@ -612,6 +1062,7 @@ enum PatchTransaction {
         let occupied = appliedTargetKeys(
             backupRoot: backupRoot,
             excludingProjectID: project.id,
+            excludingProjectIDs: ignoringProjectIDs,
             fileManager: fileManager
         )
         for resolved in resolvedRules {
@@ -652,14 +1103,22 @@ enum PatchTransaction {
                 var originalDigest: Data?
                 if let backupFilename {
                     let backupURL = transactionDirectory.appendingPathComponent(backupFilename)
-                    try fileOperation("backup-copy") { try fileManager.copyItem(at: resolved.target, to: backupURL) }
-                    originalDigest = try fileOperation("backup-read") { try digestFile(backupURL) }
+                    try fileOperation("backup-copy") {
+                        try fileManager.copyItem(at: resolved.target, to: backupURL)
+                    }
+                    originalDigest = try fileOperation("backup-read") {
+                        try digestFile(backupURL)
+                    }
                 }
                 let replacementDigest = digest(resolved.rule.replacementData)
                 if let appliedFilename {
                     let appliedURL = transactionDirectory.appendingPathComponent(appliedFilename)
-                    try fileOperation("applied-payload-write") { try resolved.rule.replacementData.write(to: appliedURL, options: .atomic) }
-                    guard try fileOperation("applied-payload-verify", { try digestFile(appliedURL) }) == replacementDigest else {
+                    try fileOperation("applied-payload-write") {
+                        try resolved.rule.replacementData.write(to: appliedURL, options: .atomic)
+                    }
+                    guard try fileOperation("applied-payload-verify", {
+                        try digestFile(appliedURL)
+                    }) == replacementDigest else {
                         throw PatchPackageError.applyFailed
                     }
                 }
@@ -698,8 +1157,8 @@ enum PatchTransaction {
             throw failedApply(error, operation: "journal-write")
         }
 
-        // The journal already owns the exact provenance. An interrupted project
-        // index write can be recovered without trusting an unrelated old index.
+        // The prepared journal already owns the exact provenance. If the
+        // mutable project index write is interrupted, it can be reconstructed.
         try fileOperation("provenance-write") {
             try beforeProvenanceWrite?()
             try engineStore.save(engineRecord)
@@ -709,7 +1168,10 @@ enum PatchTransaction {
             for resolved in resolvedDirectories where !fileManager.fileExists(atPath: resolved.target.path) {
                 try DirectPatchExecutionContext.check()
                 try fileOperation("target-directory-create") {
-                    try fileManager.createDirectory(at: resolved.target, withIntermediateDirectories: false)
+                    try fileManager.createDirectory(
+                        at: resolved.target,
+                        withIntermediateDirectories: false
+                    )
                 }
             }
             for (index, resolved) in resolvedRules.enumerated() {
@@ -721,7 +1183,9 @@ enum PatchTransaction {
                     preservingExistingAttributes: true,
                     fileManager: fileManager
                 )
-                guard try fileOperation("target-readback", { try digestFile(resolved.target) }) == records[index].replacementDigest else {
+                guard try fileOperation("target-readback", {
+                    try digestFile(resolved.target)
+                }) == records[index].replacementDigest else {
                     throw PatchPackageError.applyFailed
                 }
             }
@@ -729,7 +1193,9 @@ enum PatchTransaction {
             journal.status = .applied
             try writeJournal(journal, to: journalURL)
             engineRecord.phase = .applied
-            try fileOperation("provenance-write") { try engineStore.save(engineRecord) }
+            try fileOperation("provenance-write") {
+                try engineStore.save(engineRecord)
+            }
             return PatchTransactionReceipt(
                 id: transactionID,
                 projectID: project.id,
@@ -770,11 +1236,19 @@ enum PatchTransaction {
         containerResolver: (String) throws -> URL,
         fileManager: FileManager = .default
     ) throws -> PatchRestoreInspection {
-        let backupRoot = receipt.journalURL.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let backupRoot = receipt.journalURL
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
         let store = PatchEngineApplicationStore(backupRoot: backupRoot)
-        try PatchEngineApplicationStore.requireDirectRestore(record: try store.read(receipt.projectID), receiptID: receipt.id,
+        try PatchEngineApplicationStore.requireDirectRestore(
+            record: try store.read(receipt.projectID),
+            receiptID: receipt.id,
             journal: try recordedApplicationState(receipt: receipt),
-            legacyAirLift: UserDefaults.standard.bool(forKey: "airlift.applied.\(receipt.projectID.uuidString)"))
+            legacyAirLift: UserDefaults.standard.bool(
+                forKey: "airlift.applied.\(receipt.projectID.uuidString)"
+            )
+        )
         do {
             let journal = try activeJournal(for: receipt)
             guard journal.status == .applied else {
@@ -805,12 +1279,20 @@ enum PatchTransaction {
         beforeWrite: ((Int) throws -> Void)? = nil,
         fileManager: FileManager = .default
     ) throws {
-        let backupRoot = receipt.journalURL.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let backupRoot = receipt.journalURL
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
         let engineStore = PatchEngineApplicationStore(backupRoot: backupRoot)
         let engineRecord = try engineStore.read(receipt.projectID)
-        try PatchEngineApplicationStore.requireDirectRestore(record: engineRecord, receiptID: receipt.id,
+        try PatchEngineApplicationStore.requireDirectRestore(
+            record: engineRecord,
+            receiptID: receipt.id,
             journal: try recordedApplicationState(receipt: receipt),
-            legacyAirLift: UserDefaults.standard.bool(forKey: "airlift.applied.\(receipt.projectID.uuidString)"))
+            legacyAirLift: UserDefaults.standard.bool(
+                forKey: "airlift.applied.\(receipt.projectID.uuidString)"
+            )
+        )
         do {
             var journal = try activeJournal(for: receipt)
             let transactionDirectory = receipt.journalURL.deletingLastPathComponent()
@@ -861,10 +1343,17 @@ enum PatchTransaction {
             }
 
             removeEmptyCreatedDirectories(createdDirectoryURLs, fileManager: fileManager)
-            var restored = engineRecord ?? PatchEngineApplicationRecord(projectID: receipt.projectID,
-                operationID: receipt.id, engine: .legacy3105, baseline: .capturedPriorState,
+            var restored = engineRecord ?? PatchEngineApplicationRecord(
+                projectID: receipt.projectID,
+                operationID: receipt.id,
+                engine: .legacy3105,
+                baseline: .capturedPriorState,
                 targetKeys: journal.records.map { $0.bundleID + "\0" + $0.relativePath }
-                    + (journal.createdDirectories ?? []).map { $0.bundleID + "\0" + $0.relativePath }, journalID: receipt.id)
+                    + (journal.createdDirectories ?? []).map {
+                        $0.bundleID + "\0" + $0.relativePath
+                    },
+                journalID: receipt.id
+            )
             restored.phase = .restored
             try engineStore.save(restored)
         } catch let error as PatchPackageError {
@@ -882,11 +1371,19 @@ enum PatchTransaction {
         beforeWrite: ((Int) throws -> Void)? = nil,
         fileManager: FileManager = .default
     ) throws {
-        let backupRoot = receipt.journalURL.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let backupRoot = receipt.journalURL
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
         let store = PatchEngineApplicationStore(backupRoot: backupRoot)
-        try PatchEngineApplicationStore.requireDirectRestore(record: try store.read(receipt.projectID), receiptID: receipt.id,
+        try PatchEngineApplicationStore.requireDirectRestore(
+            record: try store.read(receipt.projectID),
+            receiptID: receipt.id,
             journal: try recordedApplicationState(receipt: receipt),
-            legacyAirLift: UserDefaults.standard.bool(forKey: "airlift.applied.\(receipt.projectID.uuidString)"))
+            legacyAirLift: UserDefaults.standard.bool(
+                forKey: "airlift.applied.\(receipt.projectID.uuidString)"
+            )
+        )
         do {
             let journal = try activeJournal(for: receipt)
             guard journal.status == .applied else {
@@ -930,6 +1427,7 @@ enum PatchTransaction {
                 fileManager: fileManager
             ) {
                 for (index, item) in resolved.enumerated() {
+                    try DirectPatchExecutionContext.check()
                     try beforeWrite?(index)
                     switch sources[index] {
                     case .file(let source):
@@ -951,6 +1449,7 @@ enum PatchTransaction {
                         throw PatchPackageError.resetFailed
                     }
                 }
+                try DirectPatchExecutionContext.check()
             }
         } catch {
             throw PatchPackageError.resetFailed
@@ -1039,6 +1538,7 @@ enum PatchTransaction {
     static func appliedTargetKeys(
         backupRoot: URL,
         excludingProjectID: UUID? = nil,
+        excludingProjectIDs: Set<UUID> = [],
         fileManager: FileManager = .default
     ) -> Set<String> {
         guard let projectDirectories = try? fileManager.contentsOfDirectory(
@@ -1051,6 +1551,7 @@ enum PatchTransaction {
         for directory in projectDirectories {
             guard let projectID = UUID(uuidString: directory.lastPathComponent),
                   projectID != excludingProjectID,
+                  !excludingProjectIDs.contains(projectID),
                   let receipt = latestReceipt(
                     projectID: projectID,
                     backupRoot: backupRoot,
@@ -1280,15 +1781,18 @@ enum PatchTransaction {
             var info = stat()
             let result = item.target.path.withCString { lstat($0, &info) }
             if item.record.originalExisted {
-                guard result == 0, (info.st_mode & mode_t(S_IFMT)) == mode_t(S_IFREG),
+                guard result == 0,
+                      (info.st_mode & mode_t(S_IFMT)) == mode_t(S_IFREG),
                       let expected = item.record.originalDigest,
-                      try fileOperation("restore-target-readback", { try digestFile(item.target) }) == expected else {
+                      try fileOperation("restore-target-readback", {
+                          try digestFile(item.target)
+                      }) == expected else {
                     throw PatchPackageError.restoreFailed
                 }
             } else {
-                // fileExists(false) also covers permission/stat failures. Only
-                // ENOENT proves a newly introduced target was actually removed.
-                guard result < 0, errno == ENOENT else { throw PatchPackageError.restoreFailed }
+                guard result < 0, errno == ENOENT else {
+                    throw PatchPackageError.restoreFailed
+                }
             }
         }
     }
@@ -1479,10 +1983,12 @@ enum PatchTransaction {
             attributes[.posixPermissions] = NSNumber(value: Int(created.defaultPermissions))
         }
         try fileOperation("staging-write") { try writeAll(data, to: descriptor) }
-        // The descriptor remains writable even when final metadata makes the
-        // file read-only. Never reopen a 0444 stage just to synchronize it.
+        // Keep the writable descriptor open even when final metadata makes the
+        // stage read-only. Reopening a 0444 stage would fail before fsync.
         if !attributes.isEmpty {
-            try fileOperation("staging-attributes") { try fileManager.setAttributes(attributes, ofItemAtPath: staging.path) }
+            try fileOperation("staging-attributes") {
+                try fileManager.setAttributes(attributes, ofItemAtPath: staging.path)
+            }
         }
         try synchronizeAndClose(&descriptor)
         try commitStage(staging, to: target)
@@ -1506,14 +2012,13 @@ enum PatchTransaction {
             guard sourceDescriptor >= 0 else { throw posixFailure() }
             defer { close(sourceDescriptor) }
 #if canImport(Darwin)
-            // Match FileManager.copyItem's metadata intent: retain source
-            // stat/ACL/xattrs and bytes while keeping the writable stage FD.
-            guard fcopyfile(sourceDescriptor, descriptor, nil, copyfile_flags_t(COPYFILE_ALL)) == 0 else {
-                throw posixFailure()
-            }
+            guard fcopyfile(
+                sourceDescriptor,
+                descriptor,
+                nil,
+                copyfile_flags_t(COPYFILE_ALL)
+            ) == 0 else { throw posixFailure() }
 #else
-            // Portable fixture path. Linux cannot validate Apple protection,
-            // ACL or xattr behavior; the iOS build always uses fcopyfile above.
             var buffer = [UInt8](repeating: 0, count: 1_024 * 1_024)
             while true {
                 let count = read(sourceDescriptor, &buffer, buffer.count)
@@ -1540,19 +2045,24 @@ enum PatchTransaction {
                 attributes[.protectionKey] = protection
             }
             if !attributes.isEmpty {
-                try fileOperation("restore-stage-attributes") { try fileManager.setAttributes(attributes, ofItemAtPath: staging.path) }
+                try fileOperation("restore-stage-attributes") {
+                    try fileManager.setAttributes(attributes, ofItemAtPath: staging.path)
+                }
             }
         }
         try synchronizeAndClose(&descriptor)
         try commitStage(staging, to: target)
     }
 
-    private static func createWritableStage(_ staging: URL) throws -> (descriptor: Int32, defaultPermissions: mode_t) {
+    private static func createWritableStage(
+        _ staging: URL
+    ) throws -> (descriptor: Int32, defaultPermissions: mode_t) {
         try fileOperation("staging-create") {
-            // Capture the kernel's normal creation mode without reading or
-            // changing the process-global umask. The empty stage is made private
-            // before any payload, then finalized to the intended target mode.
-            let descriptor = open(staging.path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, mode_t(0o666))
+            let descriptor = open(
+                staging.path,
+                O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW,
+                mode_t(0o666)
+            )
             guard descriptor >= 0 else { throw posixFailure() }
             do {
                 var metadata = stat()
@@ -1576,9 +2086,15 @@ enum PatchTransaction {
             guard let base = buffer.baseAddress else { return }
             var offset = 0
             while offset < buffer.count {
-                let count = write(descriptor, base.advanced(by: offset), buffer.count - offset)
+                let count = write(
+                    descriptor,
+                    base.advanced(by: offset),
+                    buffer.count - offset
+                )
                 if count < 0 && errno == EINTR { continue }
-                guard count > 0 else { throw posixFailure(count == 0 ? EIO : errno) }
+                guard count > 0 else {
+                    throw posixFailure(count == 0 ? EIO : errno)
+                }
                 offset += count
             }
         }
@@ -1592,7 +2108,7 @@ enum PatchTransaction {
             }
         }
         let current = descriptor
-        descriptor = -1 // A failed close must never close a reused FD in defer.
+        descriptor = -1
         try fileOperation("staging-close") {
             guard close(current) == 0 else { throw posixFailure() }
         }
@@ -1608,12 +2124,17 @@ enum PatchTransaction {
         NSError(domain: NSPOSIXErrorDomain, code: Int(code), userInfo: nil)
     }
 
-    private static func filesystemFailure(_ error: Error, operation: String) -> PatchFilesystemFailure? {
+    private static func filesystemFailure(
+        _ error: Error,
+        operation: String
+    ) -> PatchFilesystemFailure? {
         if let known = error as? PatchFilesystemFailure { return known }
         let underlying = error as NSError
-        guard underlying.domain == NSPOSIXErrorDomain || (underlying.domain == NSCocoaErrorDomain
-            && (underlying.code == NSFileNoSuchFileError || underlying.code == NSFileLockingError
-                || (256...1023).contains(underlying.code))) else { return nil }
+        guard underlying.domain == NSPOSIXErrorDomain ||
+            (underlying.domain == NSCocoaErrorDomain &&
+                (underlying.code == NSFileNoSuchFileError ||
+                    underlying.code == NSFileLockingError ||
+                    (256...1023).contains(underlying.code))) else { return nil }
         return PatchFilesystemFailure(operation: operation, underlying: underlying)
     }
 
@@ -1622,10 +2143,16 @@ enum PatchTransaction {
         return PatchPackageError.applyFailed
     }
 
-    private static func fileOperation<T>(_ operation: String, _ work: () throws -> T) throws -> T {
-        do { return try work() }
-        catch {
-            if let failure = filesystemFailure(error, operation: operation) { throw failure }
+    private static func fileOperation<T>(
+        _ operation: String,
+        _ work: () throws -> T
+    ) throws -> T {
+        do {
+            return try work()
+        } catch {
+            if let failure = filesystemFailure(error, operation: operation) {
+                throw failure
+            }
             throw error
         }
     }
@@ -1634,13 +2161,19 @@ enum PatchTransaction {
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .binary
         let data = try encoder.encode(journal)
-        guard data.count <= PatchEngineApplicationStore.maximumJournalBytes else { throw PatchEngineStateError.invalidRecord }
-        try fileOperation("journal-write") { try data.write(to: url, options: .atomic) }
+        guard data.count <= PatchEngineApplicationStore.maximumJournalBytes else {
+            throw PatchEngineStateError.invalidRecord
+        }
+        try fileOperation("journal-write") {
+            try data.write(to: url, options: .atomic)
+        }
     }
 
     private static func readJournal(_ url: URL) throws -> Journal {
         let data = try Data(contentsOf: url)
-        guard data.count <= PatchEngineApplicationStore.maximumJournalBytes else { throw PatchEngineStateError.invalidRecord }
+        guard data.count <= PatchEngineApplicationStore.maximumJournalBytes else {
+            throw PatchEngineStateError.invalidRecord
+        }
         return try PropertyListDecoder().decode(Journal.self, from: data)
     }
 
@@ -1667,11 +2200,17 @@ enum PatchTransaction {
 
 enum DevicePatchService {
     static func activeTargetKeys() throws -> Set<String> {
-        PatchTransaction.appliedTargetKeys(backupRoot: try PatchProjectLibrary.backupRootURL(), excludingProjectID: nil)
+        PatchTransaction.appliedTargetKeys(
+            backupRoot: try PatchProjectLibrary.backupRootURL(),
+            excludingProjectID: nil
+        )
     }
+
     static func prepareContainers(bundleIDs: [String]) async throws -> [String: URL] {
         if ExploitSupportPolicy.currentAccessProvider == .worseQuery {
-            try await IOS27ContainerPreparation.shared.prepareAdditionalTargets(bundleIDs: bundleIDs)
+            try await IOS27ContainerPreparation.shared.prepareAdditionalTargets(
+                bundleIDs: bundleIDs
+            )
         }
         let work = Task.detached(priority: .userInitiated) {
             var roots: [String: URL] = [:]
@@ -1685,12 +2224,18 @@ enum DevicePatchService {
             }
             return roots
         }
-        return try await withTaskCancellationHandler(operation: { try await work.value },
-                                                      onCancel: { work.cancel() })
+        return try await withTaskCancellationHandler(
+            operation: { try await work.value },
+            onCancel: { work.cancel() }
+        )
     }
 
-    static func prepareContainers(receipt: PatchTransactionReceipt) async throws -> [String: URL] {
-        try await prepareContainers(bundleIDs: PatchTransaction.requiredBundleIdentifiers(for: receipt))
+    static func prepareContainers(
+        receipt: PatchTransactionReceipt
+    ) async throws -> [String: URL] {
+        try await prepareContainers(
+            bundleIDs: PatchTransaction.requiredBundleIdentifiers(for: receipt)
+        )
     }
 
     static func recordedApplicationState(projectID: UUID) -> PatchApplicationState? {
@@ -1698,9 +2243,15 @@ enum DevicePatchService {
         return PatchTransaction.latestRecordedApplicationState(projectID: projectID, backupRoot: root)
     }
 
-    static func inspectExistingApplication(receipt: PatchTransactionReceipt, project: PatchProject,
-                                            preparedContainers: [String: URL]? = nil) throws -> PatchApplicationState {
-        try withResolvedContainers(bundleIDs: project.allBundleIdentifiers, prepared: preparedContainers) { roots in
+    static func inspectExistingApplication(
+        receipt: PatchTransactionReceipt,
+        project: PatchProject,
+        preparedContainers: [String: URL]? = nil
+    ) throws -> PatchApplicationState {
+        try withResolvedContainers(
+            bundleIDs: project.allBundleIdentifiers,
+            prepared: preparedContainers
+        ) { roots in
             try PatchTransaction.inspectExistingApplication(receipt: receipt, project: project, containerResolver: { bundleID in
                 guard let root = roots[bundleID] else { throw PatchPackageError.targetAppUnavailable(bundleID) }
                 return root
@@ -1708,12 +2259,20 @@ enum DevicePatchService {
         }
     }
 
-    static func apply(project: PatchProject, preparedContainers: [String: URL]? = nil) throws -> PatchTransactionReceipt {
+    static func apply(
+        project: PatchProject,
+        ignoringProjectIDs: Set<UUID> = [],
+        preparedContainers: [String: URL]? = nil
+    ) throws -> PatchTransactionReceipt {
         let bundleIDs = orderedBundleIdentifiers(in: project)
-        return try withResolvedContainers(bundleIDs: bundleIDs, prepared: preparedContainers) { roots in
+        return try withResolvedContainers(
+            bundleIDs: bundleIDs,
+            prepared: preparedContainers
+        ) { roots in
             try PatchTransaction.apply(
                 project: project,
                 backupRoot: try PatchProjectLibrary.backupRootURL(),
+                ignoringProjectIDs: ignoringProjectIDs,
                 engine: WorseQueryHelper.isAvailable ? .worseQuery : .legacy3105,
                 containerResolver: { bundleID in
                     guard let root = roots[bundleID] else {
@@ -1725,9 +2284,15 @@ enum DevicePatchService {
         }
     }
 
-    static func inspectRestore(receipt: PatchTransactionReceipt) throws -> PatchRestoreInspection {
+    static func inspectRestore(
+        receipt: PatchTransactionReceipt,
+        preparedContainers: [String: URL]? = nil
+    ) throws -> PatchRestoreInspection {
         let bundleIDs = try PatchTransaction.requiredBundleIdentifiers(for: receipt)
-        return try withResolvedContainers(bundleIDs: bundleIDs) { roots in
+        return try withResolvedContainers(
+            bundleIDs: bundleIDs,
+            prepared: preparedContainers
+        ) { roots in
             try PatchTransaction.inspectRestore(
                 receipt: receipt,
                 containerResolver: { bundleID in
@@ -1746,7 +2311,10 @@ enum DevicePatchService {
         preparedContainers: [String: URL]? = nil
     ) throws {
         let bundleIDs = try PatchTransaction.requiredBundleIdentifiers(for: receipt)
-        try withResolvedContainers(bundleIDs: bundleIDs, prepared: preparedContainers) { roots in
+        try withResolvedContainers(
+            bundleIDs: bundleIDs,
+            prepared: preparedContainers
+        ) { roots in
             try PatchTransaction.restore(
                 receipt: receipt,
                 allowChangedTargets: allowChangedTargets,
@@ -1795,13 +2363,17 @@ enum DevicePatchService {
     ) throws -> T {
         var roots: [String: URL] = [:]
         var handles: [Int64] = []
-        defer { handles.reversed().forEach { sandbox_extension_release_handle($0) } }
+        defer {
+            handles.reversed().forEach { sandbox_extension_release_handle($0) }
+        }
 
         for bundleID in bundleIDs {
             try DirectPatchExecutionContext.check()
             let path: String
             if let prepared {
-                guard let root = prepared[bundleID] else { throw PatchPackageError.targetAppUnavailable(bundleID) }
+                guard let root = prepared[bundleID] else {
+                    throw PatchPackageError.targetAppUnavailable(bundleID)
+                }
                 path = root.path
             } else {
                 path = try ContainerStore.resolveAppContainerForPatch(bundleID: bundleID)
@@ -1810,8 +2382,6 @@ enum DevicePatchService {
                 throw PatchPackageError.targetAppUnavailable(bundleID)
             }
             if WorseQueryHelper.isAvailable {
-                // Throw the actual daemon/token error and hold the grant through
-                // backup, writes, verification, rollback and restore.
                 handles.append(try WorseQueryHelper.acquireAccess(for: path))
             } else {
                 guard ExploitSupportPolicy.currentAccessProvider == .legacy3105 else {

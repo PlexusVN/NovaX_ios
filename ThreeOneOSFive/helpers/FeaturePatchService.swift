@@ -28,6 +28,23 @@ struct PatchCategory: Identifiable, Codable, Equatable {
     }
 }
 
+enum CatalogGameEdition: String, CaseIterable, Identifiable {
+    case ffth, ffmax
+    var id: String { rawValue }
+    var title: String { self == .ffth ? "Free Fire thường" : "Free Fire MAX" }
+}
+
+enum CatalogFeatureAccess {
+    static func allows(licenseType: String, requiredKeyType: String) -> Bool {
+        guard ["pro", "vip"].contains(requiredKeyType) else { return false }
+        switch licenseType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "vip", "admin": return true
+        case "pro": return requiredKeyType == "pro"
+        default: return false
+        }
+    }
+}
+
 struct PatchItem: Identifiable, Codable, Equatable {
     let id: Int
     let categoryId: Int
@@ -43,6 +60,14 @@ struct PatchItem: Identifiable, Codable, Equatable {
     let artifactID: String?
     let manifestDigest: String?
     let artifactVariant: String?
+    let displayVariant: String?
+    let requiredKeyType: String
+    // The display group never changes signed download identity or write target.
+    var gameEdition: CatalogGameEdition? {
+        if let displayVariant, let edition = CatalogGameEdition(rawValue: displayVariant) { return edition }
+        if artifactVariant == "ffvn" { return .ffth }
+        return artifactVariant.flatMap(CatalogGameEdition.init(rawValue:))
+    }
     // A catalog entry may publish separate game artifacts under one patch ID.
     var downloadIdentity: String { "\(id):\(artifactVariant ?? "legacy")" }
 
@@ -62,6 +87,8 @@ struct PatchItem: Identifiable, Codable, Equatable {
         artifactID = try container.decodeIfPresent(String.self, forKey: .artifactID)
         manifestDigest = try container.decodeIfPresent(String.self, forKey: .manifestDigest)
         artifactVariant = try container.decodeIfPresent(String.self, forKey: .artifactVariant)
+        displayVariant = try container.decodeIfPresent(String.self, forKey: .displayVariant)
+        requiredKeyType = try container.decodeIfPresent(String.self, forKey: .requiredKeyType) ?? "vip"
     }
 
     func encode(to encoder: Encoder) throws {
@@ -80,6 +107,8 @@ struct PatchItem: Identifiable, Codable, Equatable {
         try container.encodeIfPresent(artifactID, forKey: .artifactID)
         try container.encodeIfPresent(manifestDigest, forKey: .manifestDigest)
         try container.encodeIfPresent(artifactVariant, forKey: .artifactVariant)
+        try container.encodeIfPresent(displayVariant, forKey: .displayVariant)
+        try container.encode(requiredKeyType, forKey: .requiredKeyType)
     }
 
     enum CodingKeys: String, CodingKey {
@@ -92,6 +121,23 @@ struct PatchItem: Identifiable, Codable, Equatable {
         case artifactID = "artifact_id"
         case manifestDigest = "manifest_digest"
         case artifactVariant = "artifact_variant"
+        case displayVariant = "display_variant"
+        case requiredKeyType = "required_key_type"
+    }
+}
+
+enum CatalogGameGrouping {
+    static func editions(in patches: [PatchItem]) -> [CatalogGameEdition] {
+        CatalogGameEdition.allCases.filter { edition in patches.contains { $0.gameEdition == edition } }
+    }
+    static func pickerEditions(in patches: [PatchItem]) -> [CatalogGameEdition] {
+        // Keep both game choices visible even before this category publishes
+        // its first package for the other edition.
+        editions(in: patches).isEmpty ? [] : CatalogGameEdition.allCases
+    }
+    static func patches(_ patches: [PatchItem], for edition: CatalogGameEdition?) -> [PatchItem] {
+        guard let edition else { return patches }
+        return patches.filter { $0.gameEdition == edition }
     }
 }
 
@@ -389,6 +435,14 @@ final class FeaturePatchService: ObservableObject {
 
     private let defaults = UserDefaults.standard
     private let catalogApplications = CatalogPatchApplicationRegistry(defaults: .standard)
+    private let catalogModes: CatalogFeatureModeRegistry = {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+                .appendingPathComponent("Library/Application Support", isDirectory: true)
+        return CatalogFeatureModeRegistry(defaults: .standard,
+            persistenceURL: base.appendingPathComponent("CatalogModes/modes-v1.json"))
+    }()
+    @Published private(set) var isCatalogOperationInProgress = false
     @Published private(set) var applicationRevision: UInt64 = 0
     private var catalogSyncRevision: UInt64 = 0
     private var nativeSessionToken = ""
@@ -573,23 +627,95 @@ final class FeaturePatchService: ObservableObject {
 
     // MARK: - Apply / Restore
 
-    func applyPatch(_ patch: PatchItem, auth: AuthManager) async throws {
-        try await withExclusivePatchOperation { operationID in
-            try await self.applyPatchInOperation(patch, auth: auth, operationID: operationID)
+    func isRestorationPatch(_ patch: PatchItem) -> Bool {
+        if patch.categoryId == 18 { return true }
+        if let category = categories.first(where: { $0.id == patch.categoryId }) {
+            return category.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                .caseInsensitiveCompare("Khôi phục file gốc iOS 27") == .orderedSame
+        }
+        return catalogModes.isRestoration(patchStorageSlug(patch)) == true
+    }
+
+    func isPendingActivation(_ patch: PatchItem) -> Bool {
+        catalogModes.requiresActivationRetry(patchStorageSlug(patch))
+    }
+
+    func isSuppressedByCatalogMode(_ patch: PatchItem) -> Bool {
+        catalogModes.isSuppressed(patchStorageSlug(patch))
+    }
+
+    private func recordedCatalogState(_ identity: String) -> PatchApplicationState {
+        // The mode journal also owns the association, so a process interruption
+        // cannot lose it merely because the preference cache was not flushed.
+        if let projectID = catalogModes.projectID(for: identity) {
+            return StorageEngineCoordinator.shared.projectApplicationState(projectID)
+                ?? .recoveryRequired
+        }
+        return catalogApplications.state(for: identity) { projectID in
+            StorageEngineCoordinator.shared.projectApplicationState(projectID)
         }
     }
 
-    private func applyPatchInOperation(_ patch: PatchItem, auth: AuthManager, operationID: UUID) async throws {
+    private func catalogModeCandidates() -> [CatalogFeatureModeRegistry.Candidate] {
+        // Read the signed catalog plus retained catalog associations. An item
+        // removed from the current catalog must not escape the global OFF rule.
+        var restoration: [String: Bool] = [:]
+        for item in patches { restoration[patchStorageSlug(item)] = isRestorationPatch(item) }
+        let associations = catalogApplications.associations().merging(catalogModes.associations()) { _, journal in journal }
+        return associations.map { identity, projectID in
+            let state = catalogModes.overrideState(for: identity) ?? recordedCatalogState(identity)
+            return CatalogFeatureModeRegistry.Candidate(identity: identity, projectID: projectID,
+                isRestoration: restoration[identity] ?? catalogModes.isRestoration(identity) ?? false,
+                isActive: state.requiresRestore)
+        }
+    }
+
+    private func repairCatalogAssociation(_ transition: CatalogFeatureModeRegistry.Transition) {
+        if let retained = catalogModes.projectID(for: transition.identity) {
+            catalogApplications.associate(retained, with: transition.identity)
+        } else {
+            catalogApplications.clear(transition.identity)
+        }
+    }
+
+    func applyPatch(_ patch: PatchItem, auth: AuthManager) async throws {
+        try await withExclusivePatchOperation { operationID in
+            try await self.applyPatchInOperation(
+                patch,
+                auth: auth,
+                operationID: operationID
+            )
+        }
+    }
+
+    private func applyPatchInOperation(
+        _ patch: PatchItem,
+        auth: AuthManager,
+        operationID: UUID
+    ) async throws {
         try await PatchFilesystemGate.shared.validate(operationID)
+        guard !isCatalogOperationInProgress, !isNativeInjecting else {
+            throw NovaXControlError.message("Đang có thao tác ghi dữ liệu. Vui lòng chờ.")
+        }
         guard auth.authState == .verified else {
             throw FeaturePatchError.notAuthenticated
         }
+        guard CatalogFeatureAccess.allows(licenseType: auth.keyType.rawValue, requiredKeyType: patch.requiredKeyType) else {
+            throw ProtectedDownloadError.rejected(patch.requiredKeyType == "pro" ? "pro_required" : "vip_required")
+        }
 
-        try requirePatchEnableAllowed(patch)
+        isCatalogOperationInProgress = true
         let authRevision = auth.authenticationRevision
-        defer { applicationRevision &+= 1 }
+        defer { isCatalogOperationInProgress = false; applicationRevision &+= 1 }
         var stage = PatchOperationStage.download
+        var activation: CatalogFeatureModeRegistry.Transition?
+        var writeMayHaveStarted = false
         do {
+            // A previous task has already ended (global busy guard above). Do
+            // not leave build-15 write intent as a permanent global lock.
+            if let interrupted = try catalogModes.recoverInterruptedActivation() {
+                repairCatalogAssociation(interrupted)
+            }
             print("[FeaturePatch] applying patch: \(patch.name) (slug: \(patch.slug))")
             // Remove only this catalog item's old reusable download from pre-v2.
             try? FileManager.default.removeItem(at: localPatchURL(patch))
@@ -609,62 +735,105 @@ final class FeaturePatchService: ObservableObject {
                 throw ProtectedDownloadError.invalidResponse
             }
             stage = .access
-            log("patch engine: iOS=\(AppInfo.versionTuple) build=\(AppInfo.osBuild) worseQueryOS=\(WorseQueryHelper.isOSSupported) worseQueryReady=\(WorseQueryHelper.isAvailable) storage=\(ExploitSupportPolicy.currentStorageMode)")
-            guard ExploitSupportPolicy.currentStorageMode != .unsupported else {
-                throw WorseQueryError.unsupportedOS(AppInfo.osBuild)
+            let useAirLift = StorageEngineCoordinator.shared.isAirLiftActive
+            let preparedContainers: [String: URL]?
+            if useAirLift {
+                preparedContainers = nil
+            } else {
+                preparedContainers = try await DevicePatchService.prepareContainers(
+                    bundleIDs: project.allBundleIdentifiers
+                )
             }
             let networkGeneration = try await NetworkAccessGate.shared.requireAllowed()
             try Task.checkCancellation()
             try NetworkAccessGate.shared.validateGeneration(networkGeneration)
             guard auth.authState == .verified, auth.authenticationRevision == authRevision else { throw FeaturePatchError.notAuthenticated }
-            let useAirLift = StorageEngineCoordinator.shared.isAirLiftActive
-            let roots: [String: URL]?
-            if useAirLift {
-                roots = nil
-            } else {
-                stage = .target
-                // MainActor service calls hop back to MainActor even when the
-                // View used Task.detached. Discover before entering the commit.
-                roots = try await DevicePatchService.prepareContainers(bundleIDs: project.allBundleIdentifiers)
-                stage = .access
-                try Task.checkCancellation()
-                try NetworkAccessGate.shared.validateGeneration(networkGeneration)
-                guard auth.authState == .verified, auth.authenticationRevision == authRevision else {
-                    throw FeaturePatchError.notAuthenticated
-                }
-            }
+            stage = .write
             try await AppIntegrityRuntime.shared.requireAllowed(force:true)
             try Task.checkCancellation()
             try NetworkAccessGate.shared.validateGeneration(networkGeneration)
-            guard auth.authState == .verified, auth.authenticationRevision == authRevision else { throw FeaturePatchError.notAuthenticated }
-            stage = .write
+            guard auth.authState == .verified, auth.authenticationRevision == authRevision else {
+                throw FeaturePatchError.notAuthenticated
+            }
+            // Preferences record the intent before any write. Interrupted or
+            // partial writes remain visible as recovery, never as successful OFF.
+            let transition = try catalogModes.prepare(identity: slug,
+                isRestoration: isRestorationPatch(patch), candidates: catalogModeCandidates())
+            activation = transition
+            // Each activation has its own local transaction. Source package IDs
+            // and old backups are retained independently when switching modes.
+            project.id = transition.projectID
             // Store the verified project association before writing so an app
             // interruption cannot leave a journal that the OFF switch ignores.
             catalogApplications.associate(project.id, with: slug)
             if useAirLift {
-                try await StorageEngineCoordinator.shared.applyPatchProjectInOperation(project, operationID: operationID)
+                try await StorageEngineCoordinator.shared.applyPatchProjectInOperation(
+                    project,
+                    operationID: operationID,
+                    beforeWriting: {
+                    writeMayHaveStarted = true
+                    }
+                )
             } else {
-                let receipt = DevicePatchService.latestReceipt(projectID: project.id)
-                if receipt != nil { catalogApplications.markRecoveryRequired(slug) }
-                let commitProject = project
+                // The direct transaction may create its write journal before
+                // returning an error. Treat that attempt conservatively.
+                writeMayHaveStarted = true
                 try await DirectPatchExecutor.run(validation: {
                     try NetworkAccessGate.shared.validateGeneration(networkGeneration)
-                    guard auth.authState == .verified, auth.authenticationRevision == authRevision else { throw FeaturePatchError.notAuthenticated }
+                    guard auth.authState == .verified,
+                          auth.authenticationRevision == authRevision else {
+                        throw FeaturePatchError.notAuthenticated
+                    }
                 }) {
-                    if let receipt {
-                        guard try DevicePatchService.inspectExistingApplication(receipt: receipt, project: commitProject, preparedContainers: roots) == .applied else {
-                            throw PatchRestoreError.recoveryRequired
+                    if let receipt = DevicePatchService.latestReceipt(projectID: project.id) {
+                        if try DevicePatchService.inspectExistingApplication(
+                            receipt: receipt,
+                            project: project,
+                            preparedContainers: preparedContainers
+                        ) != .applied {
+                            try IntegrityCommitBarrier.withCommit {
+                                try DevicePatchService.restore(
+                                    receipt: receipt,
+                                    allowChangedTargets: true,
+                                    preparedContainers: preparedContainers
+                                )
+                                _ = try DevicePatchService.apply(
+                                    project: project,
+                                    ignoringProjectIDs: transition.ignoredProjectIDs,
+                                    preparedContainers: preparedContainers
+                                )
+                            }
                         }
                     } else {
-                        _ = try IntegrityCommitBarrier.withCommit { try DevicePatchService.apply(project: commitProject, preparedContainers: roots) }
+                        _ = try IntegrityCommitBarrier.withCommit {
+                            try DevicePatchService.apply(
+                                project: project,
+                                ignoringProjectIDs: transition.ignoredProjectIDs,
+                                preparedContainers: preparedContainers
+                            )
+                        }
                     }
                 }
-                try NetworkAccessGate.shared.validateGeneration(networkGeneration)
-                guard auth.authState == .verified, auth.authenticationRevision == authRevision else { throw FeaturePatchError.notAuthenticated }
+            }
+            try Task.checkCancellation()
+            try NetworkAccessGate.shared.validateGeneration(networkGeneration)
+            guard auth.authState == .verified, auth.authenticationRevision == authRevision else {
+                throw FeaturePatchError.notAuthenticated
             }
             catalogApplications.markApplied(slug)
+            try catalogModes.commit(transition)
             print("[FeaturePatch] protected patch applied successfully")
         } catch {
+            if let activation {
+                do {
+                    try catalogModes.recordFailure(activation, writeMayHaveStarted: writeMayHaveStarted)
+                    repairCatalogAssociation(activation)
+                } catch {
+                    // The persisted intent is kept if reconciliation cannot be
+                    // saved; never hide an uncertain write behind a false OFF.
+                    throw PatchOperationError.wrap(error, at: .write)
+                }
+            }
             let failure = PatchOperationError.wrap(error, at: stage)
             log("feature apply failed stage=\(failure.stage.rawValue), error=\(String(reflecting: type(of: failure.underlying)))")
             throw failure
@@ -673,125 +842,107 @@ final class FeaturePatchService: ObservableObject {
 
     func restorePatch(_ patch: PatchItem, auth: AuthManager) async throws {
         try await withExclusivePatchOperation { operationID in
-            try await self.restorePatchInOperation(patch, auth: auth, operationID: operationID)
+            try await self.restorePatchInOperation(
+                patch,
+                auth: auth,
+                operationID: operationID
+            )
         }
     }
 
-    /// Keep the restore API strict. An explicit OFF request can instead retain
-    /// recovery evidence and persist only the user's catalog toggle choice.
-    func disablePatch(_ patch: PatchItem, auth: AuthManager) async throws -> PatchDisableOutcome {
-        try await withExclusivePatchOperation { operationID in
-            guard auth.authState == .verified else { throw FeaturePatchError.notAuthenticated }
-            let authRevision = auth.authenticationRevision
-            do {
-                try await self.restorePatchInOperation(patch, auth: auth, operationID: operationID)
-                return .restored
-            } catch {
-                try Task.checkCancellation()
-                if error is CancellationError || (error as? URLError)?.code == .cancelled { throw error }
-                guard auth.authState == .verified, auth.authenticationRevision == authRevision else {
-                    throw FeaturePatchError.notAuthenticated
-                }
-                if case FeaturePatchError.notAuthenticated = error { throw error }
-                let failure = error as NSError
-                log("feature disable pending recovery: type=\(String(reflecting: type(of: error))) domain=\(failure.domain) code=\(failure.code)")
-                let slug = self.patchStorageSlug(patch)
-                self.catalogApplications.markDisabledWithoutRestore(slug, binding: self.patchDisableBinding(for: slug))
-                self.applicationRevision &+= 1
-                return .disabledWithoutRestore
-            }
-        }
-    }
-
-    private func patchDisableBinding(for slug: String) -> String {
-        guard let projectID = catalogApplications.projectID(for: slug) else { return "unresolved" }
-        // A known journal is the stable direct-transaction identity. Repairing
-        // its auxiliary sidecar must not undo the user's explicit OFF choice.
-        if let receipt = DevicePatchService.latestReceipt(projectID: projectID) {
-            return projectID.uuidString + ":journal:" + receipt.id.uuidString
-        }
-        let record = try? StorageEngineCoordinator.shared.applicationStore().read(projectID)
-        if let journalID = record?.journalID {
-            return projectID.uuidString + ":journal:" + journalID.uuidString
-        }
-        let operationID = record?.operationID.uuidString ?? "unknown-operation"
-        return projectID.uuidString + ":operation:" + operationID
-    }
-
-    func isPatchDisabledPendingRestore(_ patch: PatchItem) -> Bool {
-        let slug = patchStorageSlug(patch)
-        return catalogApplications.isDisabledWithoutRestore(slug, binding: patchDisableBinding(for: slug))
-            && patchApplicationState(patch).requiresRestore
-    }
-
-    func isPatchToggleOn(_ patch: PatchItem) -> Bool {
-        patchApplicationState(patch).requiresRestore && !isPatchDisabledPendingRestore(patch)
-    }
-
-    private func requirePatchEnableAllowed(_ patch: PatchItem) throws {
-        // Check before downloading/associating a new release. The old journal
-        // remains the owner of its backup until file recovery actually succeeds.
-        if catalogApplications.hasPendingDisable(patchStorageSlug(patch)),
-           patchApplicationState(patch).requiresRestore {
-            throw PatchRestoreError.disabledPendingRestore
-        }
-    }
-
-    private func restorePatchInOperation(_ patch: PatchItem, auth: AuthManager, operationID: UUID) async throws {
+    private func restorePatchInOperation(
+        _ patch: PatchItem,
+        auth: AuthManager,
+        operationID: UUID
+    ) async throws {
         try await PatchFilesystemGate.shared.validate(operationID)
+        guard !isCatalogOperationInProgress, !isNativeInjecting else {
+            throw NovaXControlError.message("Đang có thao tác ghi dữ liệu. Vui lòng chờ.")
+        }
         guard auth.authState == .verified else { throw FeaturePatchError.notAuthenticated }
+        isCatalogOperationInProgress = true
         let authRevision = auth.authenticationRevision
-        defer { applicationRevision &+= 1 }
+        defer { isCatalogOperationInProgress = false; applicationRevision &+= 1 }
+        if let interrupted = try catalogModes.recoverInterruptedActivation() {
+            repairCatalogAssociation(interrupted)
+        }
         let slug = patchStorageSlug(patch)
+        if isRestorationPatch(patch) {
+            // Ending restore mode must not replay the pre-restore backup: that
+            // could put the old mod back. The restored files stay as written.
+            guard let projectID = catalogModes.projectID(for: slug) ?? catalogApplications.projectID(for: slug) else {
+                throw PatchRestoreError.missingReceipt
+            }
+            try catalogModes.deactivate(slug, projectID: projectID, isRestoration: true)
+            return
+        }
         let destURL = patchProjectsDir.appendingPathComponent("\(slug).3105")
-        var projectID = catalogApplications.projectID(for: slug)
+        var projectID = catalogModes.projectID(for: slug) ?? catalogApplications.projectID(for: slug)
         if projectID == nil && FileManager.default.fileExists(atPath: destURL.path),
            let data = try? Data(contentsOf: destURL),
            let summary = try? PatchPackageCodec.inspect(data) {
             projectID = summary.packageID
         }
 
+        let isAirLift = StorageEngineCoordinator.shared.isAirLiftActive ||
+            (projectID != nil && StorageEngineCoordinator.shared.isProjectAppliedThroughAirLift(projectID!))
+
+        if isAirLift {
+            // No original bytes were restored: retain ON and its association.
+            throw PatchRestoreError.airLiftRestoreUnsupported
+        }
+
+        // Direct storage routes restore original bytes from the local receipt.
         guard let validProjectID = projectID else { throw PatchRestoreError.missingReceipt }
         let receipt = DevicePatchService.latestReceipt(projectID: validProjectID)
-        let record = try StorageEngineCoordinator.shared.applicationStore().read(validProjectID)
-        let journalState = DevicePatchService.recordedApplicationState(projectID: validProjectID)
-        try PatchEngineApplicationStore.requireDirectRestore(record: record, receiptID: receipt?.id,
-            journal: journalState,
-            legacyAirLift: defaults.bool(forKey: "airlift.applied.\(validProjectID.uuidString)"))
-        // Provenance chooses the restore mechanism. The current provider still
-        // must be able to execute that mechanism; no raw fallback is permitted.
-        guard !StorageEngineCoordinator.shared.isAirLiftActive else {
-            throw PatchEngineStateError.restoreProviderUnavailable
-        }
         let networkGeneration = try await NetworkAccessGate.shared.requireAllowed()
         try Task.checkCancellation()
         try NetworkAccessGate.shared.validateGeneration(networkGeneration)
         guard auth.authState == .verified, auth.authenticationRevision == authRevision else { throw FeaturePatchError.notAuthenticated }
         if let receipt {
             try await AppIntegrityRuntime.shared.requireAllowed(force:true)
-            let roots = try await DevicePatchService.prepareContainers(receipt: receipt)
+            let applicationStore = try StorageEngineCoordinator.shared.applicationStore()
+            try PatchEngineApplicationStore.requireDirectRestore(
+                record: try applicationStore.read(validProjectID),
+                receiptID: receipt.id,
+                journal: DevicePatchService.recordedApplicationState(projectID: validProjectID),
+                legacyAirLift: UserDefaults.standard.bool(
+                    forKey: "airlift.applied.\(validProjectID.uuidString)"
+                )
+            )
+            let preparedContainers = try await DevicePatchService.prepareContainers(receipt: receipt)
             try Task.checkCancellation()
             try NetworkAccessGate.shared.validateGeneration(networkGeneration)
-            guard auth.authState == .verified, auth.authenticationRevision == authRevision else {
+            guard auth.authState == .verified,
+                  auth.authenticationRevision == authRevision else {
                 throw FeaturePatchError.notAuthenticated
             }
             try await DirectPatchExecutor.run(validation: {
                 try NetworkAccessGate.shared.validateGeneration(networkGeneration)
-                guard auth.authState == .verified, auth.authenticationRevision == authRevision else { throw FeaturePatchError.notAuthenticated }
+                guard auth.authState == .verified,
+                      auth.authenticationRevision == authRevision else {
+                    throw FeaturePatchError.notAuthenticated
+                }
             }) {
                 try IntegrityCommitBarrier.withCommit {
-                    try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true, preparedContainers: roots)
+                    try DevicePatchService.restore(
+                        receipt: receipt,
+                        allowChangedTargets: true,
+                        preparedContainers: preparedContainers
+                    )
                 }
             }
         } else if DevicePatchService.recordedApplicationState(projectID: validProjectID) != .off {
             throw PatchRestoreError.missingReceipt
         }
-        if WorseQueryHelper.isAvailable && WorseQueryHelper.isScopeSupported(for: destURL.path) {
+        if WorseQueryHelper.isAvailable,
+           WorseQueryHelper.isScopeSupported(for: destURL.path) {
             try? WorseQueryHelper.removeItem(at: destURL.path)
         } else {
             try? FileManager.default.removeItem(at: destURL)
         }
         catalogApplications.clear(slug)
+        try catalogModes.deactivate(slug)
         print("[FeaturePatch] restored via DevicePatchService")
     }
 
@@ -800,9 +951,8 @@ final class FeaturePatchService: ObservableObject {
     }
 
     func patchApplicationState(_ patch: PatchItem) -> PatchApplicationState {
-        catalogApplications.state(for: patchStorageSlug(patch)) { projectID in
-            StorageEngineCoordinator.shared.projectApplicationState(projectID)
-        }
+        let identity = patchStorageSlug(patch)
+        return catalogModes.overrideState(for: identity) ?? recordedCatalogState(identity)
     }
 
     func isPatchDownloaded(_ patch: PatchItem) -> Bool {
@@ -1229,12 +1379,25 @@ final class FeaturePatchService: ObservableObject {
 
     func injectNativePatch(variant: GamePatchVariant, auth: AuthManager) async throws {
         try await withExclusivePatchOperation { operationID in
-            try await self.injectNativePatchInOperation(variant: variant, auth: auth, operationID: operationID)
+            try await self.injectNativePatchInOperation(
+                variant: variant,
+                auth: auth,
+                operationID: operationID
+            )
         }
     }
 
-    private func injectNativePatchInOperation(variant: GamePatchVariant, auth: AuthManager, operationID: UUID) async throws {
+    private func injectNativePatchInOperation(
+        variant: GamePatchVariant,
+        auth: AuthManager,
+        operationID: UUID
+    ) async throws {
         try await PatchFilesystemGate.shared.validate(operationID)
+        guard !isNativeInjecting, !isCatalogOperationInProgress else {
+            throw NovaXControlError.message("Đang có thao tác ghi dữ liệu. Vui lòng chờ.")
+        }
+        isNativeInjecting = true
+        defer { isNativeInjecting = false }
         try await requireSecureControlNetwork()
         guard let release = nativeReleaseByVariant[variant] else {
             throw NovaXControlError.message("Chưa có cheat \(variant.shortTitle) đang phát hành")
@@ -1243,9 +1406,6 @@ final class FeaturePatchService: ObservableObject {
         guard let url = URL(string: "\(baseURL)/api/novax/patches/\(release.id)/download") else {
             throw NovaXControlError.message("URL tải cheat không hợp lệ")
         }
-        isNativeInjecting = true
-        defer { isNativeInjecting = false }
-
         let (temporaryURL, response) = try await SecureAPIClient.shared.download(for: nativeRequest(url, auth: auth))
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             let body = (try? Data(contentsOf: temporaryURL)) ?? Data()
@@ -1272,18 +1432,34 @@ final class FeaturePatchService: ObservableObject {
         }
 
         if StorageEngineCoordinator.shared.isAirLiftActive {
-            try await StorageEngineCoordinator.shared.applyPatchProjectInOperation(decoded.project, operationID: operationID)
+            try await StorageEngineCoordinator.shared.applyPatchProjectInOperation(
+                decoded.project,
+                operationID: operationID
+            )
         } else {
-            let revision = auth.authenticationRevision
-            let roots = try await DevicePatchService.prepareContainers(bundleIDs: decoded.project.allBundleIdentifiers)
-            let generation = try await NetworkAccessGate.shared.requireAllowed()
-            try NetworkAccessGate.shared.validateGeneration(generation)
-            guard auth.authState == .verified, auth.authenticationRevision == revision else { throw FeaturePatchError.notAuthenticated }
+            let authRevision = auth.authenticationRevision
+            let roots = try await DevicePatchService.prepareContainers(
+                bundleIDs: decoded.project.allBundleIdentifiers
+            )
+            let networkGeneration = try await NetworkAccessGate.shared.requireAllowed()
+            try NetworkAccessGate.shared.validateGeneration(networkGeneration)
+            guard auth.authState == .verified,
+                  auth.authenticationRevision == authRevision else {
+                throw FeaturePatchError.notAuthenticated
+            }
             _ = try await DirectPatchExecutor.run(validation: {
-                try NetworkAccessGate.shared.validateGeneration(generation)
-                guard auth.authState == .verified, auth.authenticationRevision == revision else { throw FeaturePatchError.notAuthenticated }
+                try NetworkAccessGate.shared.validateGeneration(networkGeneration)
+                guard auth.authState == .verified,
+                      auth.authenticationRevision == authRevision else {
+                    throw FeaturePatchError.notAuthenticated
+                }
             }) {
-                try IntegrityCommitBarrier.withCommit { try DevicePatchService.apply(project: decoded.project, preparedContainers: roots) }
+                try IntegrityCommitBarrier.withCommit {
+                    try DevicePatchService.apply(
+                        project: decoded.project,
+                        preparedContainers: roots
+                    )
+                }
             }
         }
         defaults.set(release.id, forKey: "native_patch_release_\(variant.rawValue)")
@@ -1358,7 +1534,7 @@ final class FeaturePatchService: ObservableObject {
         let baseDir: String
         let bundleID = codePatchBundleID(for: variant)
         // Ưu tiên container path từ ContainerStore (hỗ trợ cả AirLift và direct)
-        if let container = ContainerStore.resolveAppContainerPath(bundleID: bundleID, allowMetadataScan: false) {
+        if let container = ContainerStore.resolveAppContainerPath(bundleID: bundleID) {
             baseDir = container
         } else {
             #if targetEnvironment(simulator)
@@ -1447,14 +1623,23 @@ final class FeaturePatchService: ObservableObject {
     private func installProtectedCodePatch(variant: GamePatchVariant, kind: CodePatchKind,
                                            auth: AuthManager) async throws {
         try await withExclusivePatchOperation { operationID in
-            try await self.installProtectedCodePatchInOperation(variant: variant, kind: kind, auth: auth, operationID: operationID)
+            try await self.installProtectedCodePatchInOperation(
+                variant: variant,
+                kind: kind,
+                auth: auth,
+                operationID: operationID
+            )
         }
     }
 
-    private func installProtectedCodePatchInOperation(variant: GamePatchVariant, kind: CodePatchKind,
-                                           auth: AuthManager, operationID: UUID) async throws {
+    private func installProtectedCodePatchInOperation(
+        variant: GamePatchVariant,
+        kind: CodePatchKind,
+        auth: AuthManager,
+        operationID: UUID
+    ) async throws {
         try await PatchFilesystemGate.shared.validate(operationID)
-        guard !isNativeInjecting else { throw NovaXControlError.message("Đang có thao tác ghi dữ liệu. Vui lòng chờ.") }
+        guard !isNativeInjecting, !isCatalogOperationInProgress else { throw NovaXControlError.message("Đang có thao tác ghi dữ liệu. Vui lòng chờ.") }
         guard auth.authState == .verified else { throw FeaturePatchError.notAuthenticated }
         guard ExploitSupportPolicy.currentStorageMode != .unsupported else {
             throw NovaXControlError.message("Phiên bản iOS này không nằm trong danh sách hỗ trợ ghi file của Astra.")
@@ -1471,12 +1656,19 @@ final class FeaturePatchService: ObservableObject {
             patchStepMessage = "Đang xác định thư mục \(variant.shortTitle)..."
             destinationDirectory = try await Self.airLiftCodePatchDirectory(variant: variant)
         } else if ExploitSupportPolicy.currentAccessProvider == .worseQuery {
-            guard WorseQueryHelper.isAvailable else { throw WorseQueryError.appGroupUnavailable }
+            guard WorseQueryHelper.isAvailable else {
+                throw WorseQueryError.appGroupUnavailable
+            }
             patchStepMessage = "Đang xác định thư mục \(variant.shortTitle)..."
             let bundleID = Self.codePatchBundleID(for: variant)
             let roots = try await DevicePatchService.prepareContainers(bundleIDs: [bundleID])
-            guard let root = roots[bundleID] else { throw WorseQueryError.containerDiscoveryFailed(bundleID) }
-            destinationDirectory = root.appendingPathComponent(Self.codePatchDirectoryPath, isDirectory: true)
+            guard let root = roots[bundleID] else {
+                throw WorseQueryError.containerDiscoveryFailed(bundleID)
+            }
+            destinationDirectory = root.appendingPathComponent(
+                Self.codePatchDirectoryPath,
+                isDirectory: true
+            )
         } else if ExploitSupportPolicy.currentAccessProvider == .legacy3105,
                   let directDirectory = Self.codePatchDirectory(variant: variant) {
             destinationDirectory = directDirectory
@@ -1497,7 +1689,11 @@ final class FeaturePatchService: ObservableObject {
         guard auth.authState == .verified, auth.authenticationRevision == authRevision else { throw FeaturePatchError.notAuthenticated }
         patchStepMessage = kind == .mod ? "Đang ghi dữ liệu vào game..." : "Đang khôi phục dữ liệu gốc..."
         do {
-            try await StorageEngineCoordinator.shared.writeFileInOperation(data: fileData, toPath: destination.path, operationID: operationID)
+            try await StorageEngineCoordinator.shared.writeFileInOperation(
+                data: fileData,
+                toPath: destination.path,
+                operationID: operationID
+            )
         } catch let error as AirLiftError {
             if error.requiresRePairing {
                 AirLiftGatekeeperManager.shared.triggerRePair(reason: error.localizedDescription)
@@ -1528,7 +1724,6 @@ enum PatchRestoreError: LocalizedError {
     case airLiftRestoreUnsupported
     case missingReceipt
     case recoveryRequired
-    case disabledPendingRestore
     var errorDescription: String? {
         switch self {
         case .airLiftRestoreUnsupported:
@@ -1537,8 +1732,6 @@ enum PatchRestoreError: LocalizedError {
             return "Không tìm thấy bản sao lưu để khôi phục. Trạng thái đang bật được giữ nguyên; hãy kiểm tra dữ liệu hoặc liên hệ hỗ trợ."
         case .recoveryRequired:
             return "Có giao dịch cũ hoặc dữ liệu đã thay đổi. Chức năng được đánh dấu cần khôi phục; hãy tắt để khôi phục bản gốc trước khi bật lại."
-        case .disabledPendingRestore:
-            return "Công tắc đã tắt nhưng file game chưa được khôi phục. Hãy chọn Thử khôi phục file trước khi bật lại."
         }
     }
 }

@@ -173,8 +173,8 @@ jobs:
           test -n "$APP_NAME"
           test -d "$APP_NAME"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$APP_NAME/Info.plist")" = "Astra"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_NAME/Info.plist")" = "2.4"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_NAME/Info.plist")" = "38"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_NAME/Info.plist")" = "2.5"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_NAME/Info.plist")" = "39"
           EXECUTABLE=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP_NAME/Info.plist")
           test -x "$APP_NAME/$EXECUTABLE"
           python3 ReleaseTools/verify_native_compatibility.py --app "$APP_NAME" --max-ios 16.0
@@ -186,6 +186,7 @@ jobs:
           nm -j "$APP_NAME/$EXECUTABLE" | grep -Fx "_worse_query_release"
           nm -j "$APP_NAME/$EXECUTABLE" | grep -Fx "_worse_query_group_path"
           nm -j "$APP_NAME/$EXECUTABLE" | grep -Fx "_AstraSignedApplicationGroups"
+          nm -j "$APP_NAME/$EXECUTABLE" | grep -Fx "_AstraBQAcquireAccess"
           strings "$APP_NAME/$EXECUTABLE" | grep -F "RemoteXPC timed out after 6s"
           strings "$APP_NAME/$EXECUTABLE" | grep -F "timeout fallback trying raw RPPairing"
           strings "$APP_NAME/$EXECUTABLE" | grep -F "AirTraffic write timed out after 180s; operation cancelled"
@@ -219,5 +220,11 @@ jobs:
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Astra-Unsigned-IPA-2.4-38
+          name: Astra-Unsigned-IPA-2.5-39
           path: build/Astra.ipa
+				B91900000000000000000011 /* Viet99BQCore.m */,
+				B91900000000000000000012 /* Viet99BQCore.h */,
+				B91900000000000000000013 /* VIET99-KAMUI-LICENSE.txt */,
+
+				B91900000000000000000001 /* Viet99BQCore.m in Sources */,
+				B91900000000000000000002 /* VIET99-KAMUI-LICENSE.txt in Resources */,

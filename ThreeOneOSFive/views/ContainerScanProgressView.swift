@@ -143,7 +143,7 @@ struct IOS27PreparationView: View {
                                 .stroke(AppTheme.gamingBorderGradient, lineWidth: 1))
                             .shadow(color: AppTheme.gamingBlue.opacity(0.20), radius: 28, y: 8)
                             .accessibilityLabel("Astra")
-                        Text("ASTRA")
+                        Text("ITECH")
                             .font(.system(size: 13, weight: .semibold)).tracking(5)
                             .foregroundColor(AppTheme.gamingTextSecondary)
                     }
@@ -154,6 +154,13 @@ struct IOS27PreparationView: View {
                             .multilineTextAlignment(.center)
                         Text(isReady ? "Astra đã sẵn sàng. Bạn có thể tiếp tục." : isPreparing ? "Vui lòng giữ Astra ở màn hình này." : "Hãy thử lại hoặc gửi thông tin lỗi để được hỗ trợ.")
                             .font(.subheadline)
+                            .foregroundColor(AppTheme.gamingTextSecondary)
+                            .multilineTextAlignment(.center)
+                    }
+
+                    if let note = ExploitSupportPolicy.currentAccessCompatibilityNote {
+                        Text(note)
+                            .font(.footnote)
                             .foregroundColor(AppTheme.gamingTextSecondary)
                             .multilineTextAlignment(.center)
                     }

@@ -2,7 +2,7 @@
 //  WorseQueryHelper.swift
 //  ThreeOneOSFive / Astra
 //
-//  Created for Astra No-Pairing Container Access Integration.
+//  Integrated for Astra no-pairing container access.
 //  Provides high-level Swift APIs for on-device sandbox escape via worse_query.
 //
 
@@ -88,6 +88,7 @@ public final class WorseQueryHelper {
             groups.append("group.\(bundleID)")
         }
         groups.append(contentsOf: [
+            "group.com.itech.app",
             "group.com.novax.app",
             "group.cc.forcequit.worse-query",
             "group.com.astra.app"
@@ -155,6 +156,8 @@ public final class WorseQueryHelper {
     static func preparationDiagnostics() throws -> String {
         guard !Thread.isMainThread else { throw WorseQueryError.mainThreadAccess }
         var reports = [preparationContext]
+        if let note = ExploitSupportPolicy.currentAccessCompatibilityNote { reports.append(note) }
+        reports.append("native_strategy=" + (ExploitSupportPolicy.currentUsesViet99BQCore ? "viet99_bqcore" : "worse_query"))
         // A Foundation group URL can exist even when the sandbox denies writes.
         // Do not pin the first readable directory or expose a half-tested group
         // to runtime routing while the worker checks the remaining candidates.
@@ -292,7 +295,18 @@ public final class WorseQueryHelper {
         let major = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
         let altFlags = (major == 26 && effectiveTarget.contains("/var/mobile/Containers/Shared/AppGroup"))
 
-        let handle = worse_query(effectiveTarget, group, altFlags, createDir)
+        let handle: Int64
+        if ExploitSupportPolicy.currentUsesViet99BQCore {
+            // The adapter only grants exact app-data roots. Existing read and
+            // identity validation still controls publication/ready state.
+            guard containerRoot(for: canonical) == effectiveTarget,
+                  effectiveTarget.hasPrefix("/private/var/mobile/Containers/Data/Application/") else {
+                throw WorseQueryError.invalidPath(targetPath)
+            }
+            handle = AstraBQAcquireAccess(effectiveTarget, group)
+        } else {
+            handle = worse_query(effectiveTarget, group, altFlags, createDir)
+        }
         if handle >= 0 {
             return handle
         }
@@ -315,6 +329,8 @@ public final class WorseQueryHelper {
             throw WorseQueryError.extensionConsumptionFailed
         case -8:
             throw WorseQueryError.nativeException
+        case -10:
+            throw WorseQueryError.invalidPath(effectiveTarget)
         case -255:
             throw WorseQueryError.targetNotFound(effectiveTarget)
         default:
@@ -418,4 +434,3 @@ public final class WorseQueryHelper {
         return list
     }
 }
-

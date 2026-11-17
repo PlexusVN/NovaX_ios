@@ -64,3 +64,9 @@ Astra dùng ứng dụng LocalDevVPN riêng cùng `AirliftFFI` để ghép đôi
 - Kiểm tra tĩnh trong workspace đã đạt; build/link và runtime vẫn phải được xác nhận bằng Xcode và iPhone thật.
 
 Nguồn `AirliftFFI`: AirCard-iOS commit `40640c4d827aeab8d798285b57d24fcf6be070d0`, giấy phép MIT. Xem `THIRD_PARTY_NOTICES.md`.
+## Astra 2.5 (39): iTech runtime port
+
+Port runtime flow từ iTech build 19: policy provider, BQCore candidate, Bundle-ID
+container preparation, catalog mode/recovery và transaction schema 3. Giữ server,
+signer, Keychain namespace và catalog Astra. Xem
+[ITECH_RUNTIME_PORT_20261118.md](docs/ITECH_RUNTIME_PORT_20261118.md).

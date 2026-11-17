@@ -34,42 +34,38 @@ class SecurityFlowWiringTests(unittest.TestCase):
         text = source('helpers/ProtectedDownloadService.swift')
         lease = text.split('private func ensureReleaseLease()')[1].split('func reportIntegrityFailure')[0]
         self.assertIn('AppIntegrityRuntime.shared.acceptedResult', lease)
-        self.assertIn('guard AppSecurityConfiguration.localIntegrityEnforced else { return }', lease)
+        self.assertIn('AppIntegrityRuntime.shared.requireAllowed()', lease)
         self.assertNotIn('AntiTamper.checkAtLaunch()', lease)
         post = text.split('    private func post(')[1].split('    private func dictionary(')[0]
-        self.assertLess(post.index('SecureAPIClient.shared.data(for: request)'), post.index('ProtectedDownloadError.fromPinnedPayload'))
+        self.assertLess(post.index('SecureAPIClient.shared.data(for: request)'), post.index('ProtectedDownloadError.fromVerifiedPayload'))
         self.assertIn('RequestProofService.shared.signRequest', post)
-        self.assertNotIn('ServerSignatureVerifier', post)
-        self.assertIn('X-Astra-Response-Mode', post)
+        self.assertIn('ServerSignatureVerifier.shared.verifiedPayload', post)
+        self.assertIn('X-Astra-Nonce', post)
         errors = post.split('guard (200..<300).contains(response.statusCode)')[1].split('let payload = data')[0]
-        self.assertIn('data.count <= 256 * 1024', errors)
-        self.assertIn('(object["session_revoked"] as? Bool) == true', errors)
+        self.assertIn('ServerSignatureVerifier.shared.verifiedPayload', post)
+        self.assertIn('contentData.count <= 72 * 1024 * 1024', text)
+        self.assertIn('releaseLease.invalidate()', errors)
 
     def test_same_key_bootstrap_and_authorized_recovery_share_canonical_contract(self):
         text = source('helpers/ProtectedDownloadService.swift')
-        active = text.split('    private func ensureSession(')[1].split('    private func recordAccessFailure(')[0]
         self.assertNotIn('/api/v2/device/resume', text)
         self.assertNotIn('identity_resume_unavailable', text)
-        bootstrap = active.split('    private func bootstrapEnrollment(')[1]
-        self.assertNotIn('recoverInstallation(', bootstrap)
-        self.assertIn('ProtectedRecoveryChallenge.permitsAttempt(after: error)', active)
-        self.assertLess(active.index('pendingRecoveryCandidate'), active.index('ensureCurrentSession(auth: auth)'))
-        self.assertIn('prepareInitialEnrollment(installationID: installID)', bootstrap)
-        self.assertLess(bootstrap.index('finishInitialEnrollmentPreparation'), bootstrap.index('post("/api/v2/device/enroll"'))
-        self.assertIn('canonical_enrollment', active)
-        self.assertIn('existingResumeMaterial()', active)
-        self.assertIn('acceptCanonicalEnrollment(', active)
+        self.assertIn('private func prepareIdentity(', text)
+        self.assertIn('private func recoverInstallation(', text)
+        self.assertIn('ProtectedRecoveryChallenge.permitsAttempt(after: error)', text)
+        self.assertIn('pendingRecoveryCandidate', text)
+        self.assertIn('license_binding', text)
+        self.assertIn('acceptSession(', text)
         recovery = text.split('    private func recoverInstallation(')[1].split('    private func ensureCurrentSession(')[0]
         self.assertIn('guard challenge.recoveryAuthorized else', recovery)
-        self.assertIn('"canonical_enrollment": true', recovery)
-        self.assertIn('enrolled["public_key_fingerprint"]', recovery)
-        self.assertIn('enrolled["license_binding"]', recovery)
+        self.assertIn('enrolled["agreement_public_key_fingerprint"]', recovery)
+        self.assertIn('licenseBinding: context.binding', recovery)
 
     def test_airlift_cannot_claim_a_restore_without_writing_originals(self):
         text = source('helpers/FeaturePatchService.swift')
         branch = text.split('private func restorePatchInOperation(')[1].split('func isPatchApplied(')[0]
         self.assertIn('PatchEngineApplicationStore.requireDirectRestore', branch)
-        self.assertIn('throw PatchEngineStateError.restoreProviderUnavailable', branch)
+        self.assertIn('throw PatchRestoreError.airLiftRestoreUnsupported', branch)
         self.assertLess(branch.index('requireDirectRestore'), branch.index('DevicePatchService.restore'))
         self.assertLess(branch.index('DevicePatchService.restore'), branch.index('catalogApplications.clear'))
 

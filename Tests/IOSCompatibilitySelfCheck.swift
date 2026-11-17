@@ -11,7 +11,7 @@ enum AppInfo {
         for (major,minor,patch,expected) in [(16,7,0,false),(17,0,0,false),(18,7,2,false),
             (26,0,0,false),(26,6,0,false),(26,6,1,false),(26,6,2,true),(26,6,9,true),
             (26,7,0,true),(26,7,1,true),(26,7,2,true),(26,7,3,false),(26,8,0,false),
-            (27,0,1,true),(27,1,0,true),(27,3,0,false)] {
+            (27,0,1,true),(27,1,0,true),(27,2,1,true),(27,3,0,true),(27,3,9,true),(27,4,0,false)] {
             precondition(Policy.requiresWorseQueryPreparation(major:major,minor:minor,patch:patch,build:"")==expected,
                          "preparation boundary changed: \(major).\(minor).\(patch)")
         }
@@ -39,8 +39,12 @@ enum AppInfo {
             precondition(Policy.supportsWorseQuery(major:27,minor:2,patch:0,build:build))
             precondition(Policy.accessProvider(major:27,minor:2,patch:0,build:build) == .worseQuery,
                          "AirLift beta restriction leaked into worse_query routing")
-            precondition(Policy.storageMode(major:27,minor:2,patch:1,build:build) == .unsupported)
-            precondition(Policy.storageMode(major:27,minor:3,patch:0,build:build) == .unsupported)
+            precondition(Policy.storageMode(major:27,minor:2,patch:1,build:build) == .direct)
+            precondition(Policy.storageMode(major:27,minor:3,patch:0,build:build) == .direct)
+            precondition(Policy.usesViet99BQCore(major:27,minor:2,patch:1))
+            precondition(Policy.usesViet99BQCore(major:27,minor:3,patch:99))
+            precondition(!Policy.usesViet99BQCore(major:27,minor:2,patch:0))
+            precondition(Policy.storageMode(major:27,minor:4,patch:0,build:build) == .unsupported)
         }
         var comparisons = 0
         let builds = ["", "24A5355q", "24A5370h", "24A5380h", "24A5390f", "24A435", "24B5084k", "24B5089g", "24B5099f"]
@@ -92,6 +96,6 @@ enum AppInfo {
         precondition(Policy.pairingMode(major:26, minor:8, patch:0, build:"") == .importedFile)
         precondition(Policy.storageMode(major:18, minor:7, patch:1, build:"") == .direct)
         precondition(Policy.pairingMode(major:18, minor:7, patch:2, build:"") == .importedFile)
-        print("[PASS] Strict 3105 / worse_query / imported-pairing AirLift routing, worse_query 27.2 is independent of the AirLift beta allowlist; 27.2.1+ blocked")
+        print("[PASS] Strict routing plus Viet99 candidate 27.2.1–27.3.x; preparation required, 27.4+ blocked")
     }
 }
