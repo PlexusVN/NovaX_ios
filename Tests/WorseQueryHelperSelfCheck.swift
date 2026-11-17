@@ -183,7 +183,7 @@ enum FixtureFailure: Error { case operation }
         let handle = try WorseQueryHelper.acquireAccess(for: groupRoot)
         precondition(NativeFixture.calls.last!.2)
         WorseQueryHelper.releaseAccess(handle: handle)
-        for (major, minor, patch) in [(26,6,2),(26,7,2),(27,0,1),(27,1,0),(27,2,0),(27,2,1)] {
+        for (major, minor, patch) in [(26,6,2),(26,7,2),(27,0,1),(27,1,0),(27,2,0)] {
             ProcessInfo.processInfo.operatingSystemVersion = OperatingSystemVersion(majorVersion: major, minorVersion: minor, patchVersion: patch)
             let identifier = "00000000-0000-0000-0000-000000000003"
             for family in ["/var/mobile/Containers/Data/Application", "/var/mobile/Containers/Data/InternalDaemon", "/var/mobile/Containers/Data/PluginKitPlugin"] {

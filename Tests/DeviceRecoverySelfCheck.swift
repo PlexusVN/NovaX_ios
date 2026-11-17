@@ -117,14 +117,14 @@ struct DeviceRecoverySelfCheck {
         }
         store.values = committed
         let generationPrefix = prefix + "generation.\(generation)."
-        for suffix in ["novax_software_p256_key", "novax_agreement_software_p256_v2", "recovery_record_v1"] {
+        for suffix in ["astra_software_p256_key", "astra_agreement_software_p256_v2", "recovery_record_v1"] {
             store.values.removeValue(forKey: generationPrefix + suffix)
             let before = store.values
             try rejects("missing published key/record") { _ = try store.selected(binding) }
             try require(store.values == before, "missing material never causes key creation")
             store.values = committed
         }
-        store.values[generationPrefix + "novax_agreement_software_p256_v2"] = P256.KeyAgreement.PrivateKey().rawRepresentation
+        store.values[generationPrefix + "astra_agreement_software_p256_v2"] = P256.KeyAgreement.PrivateKey().rawRepresentation
         let tampered = store.values
         try rejects("candidate material fingerprint differs from published record") { _ = try store.selected(binding) }
         try require(store.values == tampered, "fingerprint rejection is readonly")
@@ -178,14 +178,14 @@ struct DeviceRecoverySelfCheck {
         initial.failTag = nil
         try require(try retryInitial.prepareInitialEnrollment(installationID: initialInstall), "failed submission remains safely unsubmitted")
         try retryInitial.finishInitialEnrollmentPreparation(installationID: initialInstall)
-        initial.values.removeValue(forKey: prefix + "novax_agreement_software_p256_v2")
+        initial.values.removeValue(forKey: prefix + "astra_agreement_software_p256_v2")
         try require(try initial.identity(binding).prepareInitialEnrollment(installationID: initialInstall) == false, "submitted initial identity cannot create missing keys")
         try rejects("submitted missing material requires server recovery") { _ = try initial.identity(binding).existingResumeMaterial() }
 
         // Active generation key loss must not hide control metadata or pending
         // recovery. Reading a controller cannot parse or regenerate old keys.
         store.values = committed
-        store.values.removeValue(forKey: generationPrefix + "novax_agreement_software_p256_v2")
+        store.values.removeValue(forKey: generationPrefix + "astra_agreement_software_p256_v2")
         let controller = try DeviceIdentityService.recoveryController(for: binding, storage: store.storage, useSecureEnclave: false)
         let partial = store.values
         try require(try controller.recoveryExpectedServerKeyID() == 7, "active key loss preserves metadata-only server scope")

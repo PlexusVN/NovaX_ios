@@ -175,7 +175,7 @@ private final class ResumeMemory {
             let legacy=DeviceIdentityService(namespace:nil,storage:memory.storage,useSecureEnclave:false)
             _ = try legacy.installationID(); _ = try legacy.getOrCreateKey(); _ = try legacy.getOrCreateAgreementKey()
             try legacy.persistEnrollment(deviceKeyId:UUID().uuidString.lowercased())
-            memory.values["novax_software_p256_key"]=Data([0])
+            memory.values["astra_software_p256_key"]=Data([0])
             let archived=memory.values
             var scopedKeys: (String,String)?
             if scopedEnrolled {
@@ -200,7 +200,7 @@ private final class ResumeMemory {
         }
         do {
             let memory=ResumeMemory(),auth=AuthManager(),binding=DeviceIdentityService.binding(forLicense:"RESUME-FIXTURE")
-            memory.values["novax_device_key_id"]=Data("damaged-legacy-reference".utf8)
+            memory.values["astra_device_key_id"]=Data("damaged-legacy-reference".utf8)
             let selected=try DeviceIdentityService.scoped(to:binding,storage:memory.storage,useSecureEnclave:false)
             _ = try selected.installationID()
             let signer=try selected.getOrCreateKey().publicKeyX963Base64
@@ -213,9 +213,9 @@ private final class ResumeMemory {
             try require(try resumed.getOrCreateKey().publicKeyX963Base64==signer &&
                 resumed.getOrCreateAgreementKey().publicKeyX963Base64==recipient,
                 "damaged legacy reference cannot replace scoped keys waiting for canonical resume")
-            let savedKeys=before.filter { $0.key == "novax_device_key_id" ||
-                $0.key.hasSuffix("novax_software_p256_key") || $0.key.hasSuffix("novax_agreement_software_p256_v2") ||
-                $0.key.hasSuffix("novax_signing_backend_v2") || $0.key.hasSuffix("novax_agreement_backend_v2") }
+            let savedKeys=before.filter { $0.key == "astra_device_key_id" ||
+                $0.key.hasSuffix("astra_software_p256_key") || $0.key.hasSuffix("astra_agreement_software_p256_v2") ||
+                $0.key.hasSuffix("astra_signing_backend_v2") || $0.key.hasSuffix("astra_agreement_backend_v2") }
             try require(savedKeys.allSatisfy{memory.values[$0.key]==$0.value},"metadata-less scoped resume preserves key bytes and the broken legacy archive")
         }
         do {
@@ -243,10 +243,10 @@ private final class ResumeMemory {
             let legacy=DeviceIdentityService(namespace:nil,storage:memory.storage,useSecureEnclave:false)
             _ = try legacy.installationID(); _ = try legacy.getOrCreateKey(); _ = try legacy.getOrCreateAgreementKey()
             try legacy.persistEnrollment(deviceKeyId:UUID().uuidString.lowercased())
-            memory.values["novax_software_p256_key"]=Data([0])
+            memory.values["astra_software_p256_key"]=Data([0])
             let selected=try DeviceIdentityService.scoped(to:binding,storage:memory.storage,useSecureEnclave:false)
             _ = try selected.installationID(); _ = try selected.getOrCreateKey(); _ = try selected.getOrCreateAgreementKey()
-            memory.values["astra.identity.v3.\(binding).novax_software_p256_key"]=Data([0])
+            memory.values["astra.identity.v3.\(binding).astra_software_p256_key"]=Data([0])
             let before=memory.values,transport=ResumeTransport(binding:binding);SecureAPIClient.handler=transport.send
             let flow=IdentityResumeHarness(auth:auth,identity:nil,coldStorage:memory.storage,
                 legacyIdentity:DeviceIdentityService(namespace:nil,storage:memory.storage,useSecureEnclave:false))
@@ -260,7 +260,7 @@ private final class ResumeMemory {
             let legacy=DeviceIdentityService(namespace:nil,storage:memory.storage,useSecureEnclave:false)
             _ = try legacy.installationID(); _ = try legacy.getOrCreateKey(); _ = try legacy.getOrCreateAgreementKey()
             try legacy.persistEnrollment(deviceKeyId:UUID().uuidString.lowercased())
-            memory.readFailureTag="novax_signing_backend_v2";memory.readFailure=transient
+            memory.readFailureTag="astra_signing_backend_v2";memory.readFailure=transient
             let before=memory.values,transport=ResumeTransport(binding:binding);SecureAPIClient.handler=transport.send
             let flow=IdentityResumeHarness(auth:auth,identity:nil,coldStorage:memory.storage,
                 legacyIdentity:DeviceIdentityService(namespace:nil,storage:memory.storage,useSecureEnclave:false))
@@ -351,12 +351,12 @@ private final class ResumeMemory {
         }
         do {
             let (memory,identity,_,_,flow) = try fixture()
-            let tag = memory.values.keys.first{$0.hasSuffix("novax_device_install_id")}!
+            let tag = memory.values.keys.first{$0.hasSuffix("astra_device_install_id")}!
             memory.values.removeValue(forKey:tag)
             try await flow.session()
             try require(try identity.existingInstallationID() != nil,"lost metadata accepted with same proven keys")
         }
-        for suffix in ["novax_device_install_id","novax_device_key_id"] {
+        for suffix in ["astra_device_install_id","astra_device_key_id"] {
             let (memory,_,_,transport,flow) = try fixture(); let keys = memory.values.filter{$0.key.contains("p256_key")}
             memory.failTag = memory.values.keys.first{$0.hasSuffix(suffix)}!
             do { try await flow.session(); throw ResumeCheckError.failed("write interruption ignored") } catch ResumeCheckError.writeFailure {}
@@ -367,13 +367,13 @@ private final class ResumeMemory {
         }
         do {
             let (memory,_,_,transport,flow) = try fixture()
-            let tag = memory.values.keys.first{$0.hasSuffix("novax_software_p256_key")}!
+            let tag = memory.values.keys.first{$0.hasSuffix("astra_software_p256_key")}!
             memory.values.removeValue(forKey:tag); let before = memory.values
             do { try await flow.session(); throw ResumeCheckError.failed("lost private key regenerated") }
             catch ProtectedDownloadError.rejected("device_recovery_required") {}
             try require(memory.values == before && !transport.calls.contains("/api/v2/device/enroll"),"lost private keys need explicit authorization")
         }
-        for suffix in ["novax_software_p256_key","novax_signing_backend_v2","novax_agreement_software_p256_v2","novax_agreement_backend_v2"] {
+        for suffix in ["astra_software_p256_key","astra_signing_backend_v2","astra_agreement_software_p256_v2","astra_agreement_backend_v2"] {
             let (memory,identity,_,transport,flow)=try fixture(enrolled:false)
             let prefix="astra.identity.v3.\(identity.licenseBinding!)."
             memory.failTag=prefix+suffix
@@ -390,7 +390,7 @@ private final class ResumeMemory {
         }
         do {
             let(memory,identity,_,transport,flow)=try fixture(enrolled:false)
-            transport.onEnrollment={ memory.values.removeValue(forKey:"astra.identity.v3.\(identity.licenseBinding!).novax_agreement_software_p256_v2") }
+            transport.onEnrollment={ memory.values.removeValue(forKey:"astra.identity.v3.\(identity.licenseBinding!).astra_agreement_software_p256_v2") }
             do { try await flow.session();throw ResumeCheckError.failed("key lost after submission ignored") }
             catch ProtectedDownloadError.rejected("device_recovery_required") {}
             transport.onEnrollment=nil
@@ -433,7 +433,7 @@ private final class ResumeMemory {
             let(memory,old,_,transport,flow)=try fixture()
             let oldSigning=try old.getOrCreateKey().publicKeyX963Base64
             if missingOldKey {
-                memory.values.removeValue(forKey:"astra.identity.v3.\(old.licenseBinding!).novax_software_p256_key")
+                memory.values.removeValue(forKey:"astra.identity.v3.\(old.licenseBinding!).astra_software_p256_key")
             } else { transport.normalEnrollmentFailures=[.rejected("device_already_enrolled")] }
             transport.recoveryAuthorized=true
             try await flow.session()
@@ -441,7 +441,7 @@ private final class ResumeMemory {
             try require(try selected.getOrCreateKey().publicKeyX963Base64 != oldSigning,"actual ensureSession selects fresh authorized keys")
             try require(transport.openCount==1 && transport.recoveryInstallations.count==1,"actual missing/revoked identity reaches ticketed enrollment and session")
         }
-        for suffix in ["novax_software_p256_key","novax_agreement_software_p256_v2"] {
+        for suffix in ["astra_software_p256_key","astra_agreement_software_p256_v2"] {
             let(memory,old,auth,transport,_)=try fixture()
             memory.values["astra.identity.v3.\(old.licenseBinding!)."+suffix]=Data([1,2,3])
             let reloaded=try DeviceIdentityService.scoped(to:old.licenseBinding!,storage:memory.storage,useSecureEnclave:false)
@@ -462,7 +462,7 @@ private final class ResumeMemory {
             do { try await flow.session();throw ResumeCheckError.failed("committed recovery lost response ignored") }
             catch let error as URLError { try require(error.code == .networkConnectionLost,"recovery interruption propagates") }
             let recovery=transport.enrollments.last!
-            memory.values.removeValue(forKey:"astra.identity.v3.\(old.licenseBinding!).novax_software_p256_key")
+            memory.values.removeValue(forKey:"astra.identity.v3.\(old.licenseBinding!).astra_software_p256_key")
             let restarted=IdentityResumeHarness(auth:auth,identity:old)
             transport.recoveryAuthorized=false
             try await restarted.session()

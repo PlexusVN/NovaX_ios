@@ -126,13 +126,13 @@ private final class RecoveryMemoryStore {
             try require(flow.currentIdentity === old,"context invalidation prevents promotion")
             try require(flow.clearedSessionCount==0,"stale reply cannot clear a newer session")
         }
-        for corruptSuffix in ["missing", "novax_software_p256_key", "novax_agreement_software_p256_v2"] {
+        for corruptSuffix in ["missing", "astra_software_p256_key", "astra_agreement_software_p256_v2"] {
             let(memory,old,_,transport,flow)=try fixture()
             let candidate=try old.prepareRecoveryCandidate(installationID:UUID().uuidString.lowercased(),keyID:7,hwid:"hardware-A")
             let candidateID=try candidate.existingInstallationID()!
             let prefix="astra.identity.v3.\(old.licenseBinding!).generation.\(candidateID)."
             if corruptSuffix != "missing" { memory.values[prefix+corruptSuffix]=Data([1,2,3]) }
-            else { memory.values.removeValue(forKey:prefix+"novax_agreement_software_p256_v2") }
+            else { memory.values.removeValue(forKey:prefix+"astra_agreement_software_p256_v2") }
             let before=memory.values
             transport.authorized=false
             do { try await flow.recover();throw FlowCheckError.failed("broken pending replaced without ticket") }
