@@ -46,6 +46,10 @@ func worse_query(_ path: String, _ group: String, _ alt: Bool, _ create: Bool) -
     return NativeFixture.result
 }
 func worse_query_release(_ handle: Int64) { NativeFixture.released.append(handle) }
+func AstraBQAcquireAccess(_ target: String, _ group: String) -> Int64 {
+    NativeFixture.calls.append((target, group, false, false))
+    return NativeFixture.result
+}
 func worse_query_preflight(_ group: String) -> Bool {
     NativeFixture.preflightGroups.append(group)
     return NativeFixture.preflightReady && group == "group.esign.rewritten"
