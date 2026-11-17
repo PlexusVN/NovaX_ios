@@ -113,9 +113,6 @@ final class IOS27ContainerPreparation: ObservableObject {
             try Task.checkCancellation()
             guard revision == generation else { return }
             let verified = try validatedRoots(roots, requested: targetBundleIDs)
-            guard !verified.isEmpty || (loader != nil && targetBundleIDs.isEmpty) else {
-                throw WorseQueryError.preparationRequired
-            }
             IOS27ContainerSession.install(verified)
             state = .ready
         } catch {

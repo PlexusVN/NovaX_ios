@@ -130,10 +130,13 @@ struct ArbitraryTargetPreparationSelfCheck {
         let denied = IOS27ContainerPreparation(progress: ContainerScanProgress(), operation: { try deniedCalls.operation($0, $1) })
         denied.configureTargetLoader { [custom] }
         await denied.prepareIfNeeded()
-        try require(denied.state == .failed && !denied.didContinue,
-                    "nonempty catalog with no readable target was admitted")
+        try require(denied.state == .ready, "verified environment could not enter preparation")
         denied.enterApplication()
-        try require(!denied.didContinue, "failed native preparation could enter the app")
+        try require(denied.didContinue, "verified environment could not continue to app")
+        do {
+            try await denied.prepareAdditionalTargets(bundleIDs: [custom])
+            try require(false, "denied target succeeded during patch preparation")
+        } catch WorseQueryError.containerDiscoveryFailed {}
         print("[PASS] \(checks) production authenticated catalog/preparation checks with isolated native boundaries")
     }
 }

@@ -392,9 +392,13 @@ enum ContainerStore {
                 ContainerScanProgress.shared.checkpoint(sessionID,
                     message: "\(exhaustedWindow ? "Đã hết phạm vi inode ước lượng" : "Đã xác minh ứng dụng có thể dùng; các mục tùy chọn còn lại sẽ được dò khi cần"); chưa xác minh: \(targets.subtracting(found.keys).sorted().joined(separator: ", ")). Không kết luận ứng dụng chưa cài.")
             }
-            guard !found.isEmpty else {
+            if found.isEmpty {
                 if grants == 0, let lastGrantError { throw lastGrantError }
-                throw WorseQueryError.containerDiscoveryFailed(targets.sorted().joined(separator: ", "))
+                if candidates > 0 && readable == 0 {
+                    throw WorseQueryError.localFilesystemFailure("Quyền đọc thư mục container bị từ chối")
+                }
+                ContainerScanProgress.shared.checkpoint(sessionID,
+                    message: "Đã hoàn tất chuẩn bị môi trường worse_query; chưa tìm thấy ứng dụng đích trong phạm vi quét hiện tại.")
             }
             return found
         }
