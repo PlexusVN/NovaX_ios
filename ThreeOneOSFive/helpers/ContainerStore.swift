@@ -397,6 +397,9 @@ enum ContainerStore {
                 if candidates > 0 && readable == 0 {
                     throw WorseQueryError.localFilesystemFailure("Quyền đọc thư mục container bị từ chối")
                 }
+                if !conflictingTargets.isEmpty {
+                    throw WorseQueryError.containerDiscoveryFailed("IDENTITY conflict: xung đột định danh ứng dụng")
+                }
                 ContainerScanProgress.shared.checkpoint(sessionID,
                     message: "Đã hoàn tất chuẩn bị môi trường worse_query; chưa tìm thấy ứng dụng đích trong phạm vi quét hiện tại.")
             }
