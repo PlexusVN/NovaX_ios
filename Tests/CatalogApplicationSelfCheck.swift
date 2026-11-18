@@ -389,12 +389,17 @@ struct CatalogApplicationSelfCheck {
         migration.associate(migrationID, with: "old-name_ffth")
         migration.markApplied("old-name_ffth")
         migration.markRecoveryRequired("old-name_ffth")
+        migration.markDisabledWithoutRestore("old-name_ffth", binding: "retained-journal")
         migration.migrateIdentity(from: "old-name_ffth", to: "catalog_7_ffth")
+        try check(migration.isDisabledWithoutRestore("catalog_7_ffth", binding: "retained-journal"),
+                  "migration lost original Astra pending OFF choice")
+        try check(!migration.hasPendingDisable("old-name_ffth"), "legacy pending OFF preference was not consumed")
         try check(migration.projectID(for: "catalog_7_ffth") == migrationID, "legacy project association was lost")
         try check(migration.state(for: "catalog_7_ffth", recordedState: { _ in .applied }) == .recoveryRequired,
                   "migration lost recovery state")
         try check(migration.projectID(for: "old-name_ffth") == nil, "legacy preferences were not consumed")
         migration.clear("catalog_7_ffth")
+        try check(!migration.hasPendingDisable("catalog_7_ffth"), "restoration retained stale pending OFF")
         migration.migrateIdentity(from: "old-name_ffth", to: "catalog_7_ffth")
         try check(migration.state(for: "catalog_7_ffth", recordedState: { _ in nil }) == .off,
                   "legacy flags resurrected a restored patch")

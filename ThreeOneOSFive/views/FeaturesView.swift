@@ -5,7 +5,9 @@ private func userFacingFeatureText(_ raw: String, fallback: String) -> String {
     let cleaned = hiddenTerms.reduce(raw) { value, term in
         value.replacingOccurrences(of: term, with: "", options: .caseInsensitive)
     }
-    let normalized = cleaned.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+    let normalized = cleaned
+        .split(whereSeparator: { $0.isWhitespace })
+        .joined(separator: " ")
     return normalized.isEmpty ? fallback : normalized
 }
 
@@ -15,250 +17,404 @@ struct FeaturesView: View {
     @EnvironmentObject private var authManager: AuthManager
     @ObservedObject private var protectedDownloads = ProtectedDownloadService.shared
     @State private var selectedCategoryID: Int?
-    @State private var selectedEdition: CatalogGameEdition = .ffth
-    @State private var showsAllCategories = false
     @State private var showCategoryPicker = false
-    @State private var categorySearch = ""
-    @State private var searchText = ""
-    @State private var appliedOnly = false
     @State private var activeToast: ToastInfo?
-
-    private var selectedCategory: PatchCategory? {
-        guard let id = selectedCategoryID else { return nil }
-        return service.categories.first { $0.id == id }
-    }
-    private var categoryPatches: [PatchItem] {
-        guard let id = selectedCategoryID else { return service.patches }
-        return service.patches.filter { $0.categoryId == id }
-    }
-    private var filteredPatches: [PatchItem] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let editions = CatalogGameGrouping.editions(in: categoryPatches)
-        let gamePatches = CatalogGameGrouping.patches(categoryPatches, for: editions.isEmpty ? nil : selectedEdition)
-        return gamePatches.filter { patch in
-            (!appliedOnly || service.patchApplicationState(patch).requiresRestore)
-                && (query.isEmpty || patch.name.localizedStandardContains(query)
-                    || patch.description.localizedStandardContains(query))
-        }
-    }
-    private var searchedCategories: [PatchCategory] {
-        let query = categorySearch.trimmingCharacters(in: .whitespacesAndNewlines)
-        return service.categories.filter { query.isEmpty || $0.name.localizedStandardContains(query) }
-    }
-    private var hasSearchFilters: Bool { appliedOnly || !searchText.isEmpty }
-    private var availableEditions: [CatalogGameEdition] { CatalogGameGrouping.pickerEditions(in: categoryPatches) }
-    private var accessMessage: String? { protectedDownloads.accessNotice ?? service.catalogError }
-
-    private func categoryTint(_ category: PatchCategory?) -> Color {
-        switch category?.icon {
-        case "scope":
-            return AppTheme.gamingBlue
-        case "location.fill":
-            return AppTheme.statusSuccess
-        case "tshirt.fill":
-            return Color(hex: 0xFF9F2E)
-        default:
-            return AppTheme.gamingBlueBright
-        }
-    }
+    @State private var contentVisible = false
 
     var body: some View {
         NavigationStack {
             ZStack {
                 GamingBackdrop()
+
                 ScrollView {
-                    VStack(spacing: 16) {
+                    VStack(spacing: 20) {
                         categoryPanel
-                        if availableEditions.count > 1 { gameEditionPicker }
-                        searchAndFilter
-                        functionPanel
+                        patchPanel
                     }
-                    .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 24)
-                    .frame(maxWidth: 760).frame(maxWidth: .infinity)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .padding(.bottom, 120)
+                    .opacity(contentVisible ? 1 : 0)
+                    .offset(y: contentVisible ? 0 : 16)
+                    .animation(.easeOut(duration: 0.42), value: contentVisible)
                 }
-                .scrollDismissesKeyboard(.interactively)
             }
             .navigationTitle("Chức năng")
             .navigationBarTitleDisplayMode(.inline)
             .tint(AppTheme.gamingBlueBright)
             .toolbar {
-                if let showSystemDashboard {
+                if let showSystemDashboard = showSystemDashboard {
                     ToolbarItem(placement: .navigationBarTrailing) {
                         Button {
                             Haptics.soft()
                             showSystemDashboard.wrappedValue = true
                         } label: {
-                            Image(systemName: "gearshape.fill").font(.subheadline.weight(.semibold))
-                                .foregroundStyle(AppTheme.gamingBlueBright)
-                                .frame(width: 36, height: 36)
-                                .background(AppTheme.gamingBlue.opacity(0.10), in: Circle())
-                                .overlay(Circle().stroke(AppTheme.gamingBlue.opacity(0.25), lineWidth: 1))
-                                .frame(width: 44, height: 44)
+                            Image(systemName: "gearshape.fill")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundColor(AppTheme.gamingBlueBright)
+                                .frame(width: 32, height: 32)
+                                .background(Circle().fill(AppTheme.gamingSurface.opacity(0.8)))
+                                .overlay(Circle().stroke(AppTheme.gamingBlueBright.opacity(0.35), lineWidth: 1))
+                                .shadow(color: AppTheme.gamingBlueBright.opacity(0.3), radius: 6)
                         }
-                        .accessibilityLabel("Cài đặt thiết bị và ứng dụng")
                     }
                 }
             }
             .refreshable { await service.syncFromServer(auth: authManager) }
-            .onAppear { reconcileCategory(); service.preloadCategoryImages() }
-            .onChange(of: service.categories) { _ in reconcileCategory(); service.preloadCategoryImages() }
-            .onChange(of: service.patches) { _ in reconcileEdition() }
-            .onChange(of: selectedCategoryID) { _ in reconcileEdition() }
-            .sheet(isPresented: $showCategoryPicker) { categoryPicker }
+            .onAppear {
+                if selectedCategoryID == nil, let first = service.categories.first {
+                    selectedCategoryID = first.id
+                }
+                service.preloadCategoryImages()
+                withAnimation(.easeOut(duration: 0.42)) {
+                    contentVisible = true
+                }
+            }
+            .onChange(of: service.categories, perform: { categories in
+                if selectedCategoryID == nil, let first = categories.first {
+                    selectedCategoryID = first.id
+                }
+                service.preloadCategoryImages()
+            })
+        }
+        .glassToast(toast: $activeToast)
+        .overlay {
+            if showCategoryPicker {
+                ZStack {
+                    Color.black.opacity(0.72)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                showCategoryPicker = false
+                            }
+                        }
+
+                    customCategoryPicker
+                        .transition(.scale(scale: 0.95).combined(with: .opacity))
+                }
+                .zIndex(100)
+            }
         }
         .preferredColorScheme(.dark)
-        .glassToast(toast: $activeToast)
     }
+
+    // MARK: - Category Panel
 
     private var categoryPanel: some View {
-        let tint = categoryTint(selectedCategory)
-        return VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                Image(systemName: "gamecontroller.fill").foregroundStyle(AppTheme.gamingBlueBright)
-                Text("DANH MỤC").tracking(1.5).foregroundStyle(AppTheme.gamingTextSecondary)
+                Image(systemName: "gamecontroller.fill")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(AppTheme.gamingBlueBright)
+                    .shadow(color: AppTheme.gamingBlueBright.opacity(0.4), radius: 4)
+                Text("Danh mục")
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundColor(AppTheme.gamingText)
                 Spacer()
-                Text("ITECH").tracking(1.8).foregroundStyle(AppTheme.statusInfo)
-            }.font(.caption2.weight(.bold))
-            if service.categories.isEmpty && !showsAllCategories {
-                HStack(spacing: 14) {
-                    Image(systemName: "square.grid.2x2").font(.title2)
-                        .foregroundStyle(AppTheme.gamingBlueBright).frame(width: 54, height: 54)
-                        .background(AppTheme.gamingSurfaceRaised, in: RoundedRectangle(cornerRadius: 15))
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(service.isLoading ? "Đang tải danh mục…" : "Danh mục Astra")
-                            .font(.subheadline.weight(.semibold)).foregroundStyle(AppTheme.gamingText)
-                        Text(service.isLoading ? "Đang đồng bộ với máy chủ" : (accessMessage == nil ? "Chưa có danh mục được phát hành" : "Cần kiểm tra kết nối máy chủ"))
-                            .font(.caption).foregroundStyle(AppTheme.gamingTextSecondary)
+            }
+
+            if service.categories.isEmpty {
+                HStack {
+                    Spacer()
+                    VStack(spacing: 8) {
+                        if protectedDownloads.accessNotice == nil {
+                            ProgressView()
+                                .tint(AppTheme.gamingBlueBright)
+                        }
+                        Text(protectedDownloads.accessNotice ?? "Đang chuẩn bị...")
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundColor(AppTheme.gamingText.opacity(protectedDownloads.accessNotice == nil ? 0.3 : 0.8))
+                            .multilineTextAlignment(.center)
                     }
-                    Spacer(minLength: 0)
-                    if service.isLoading { ProgressView().tint(AppTheme.gamingBlueBright) }
+                    .padding(.vertical, 16)
+                    Spacer()
                 }
             } else {
-                Button {
-                    categorySearch = ""
-                    showCategoryPicker = service.categories.count > 1
-                    Haptics.soft()
-                } label: {
-                    HStack(spacing: 14) {
-                        categoryArtwork(selectedCategory, size: 56)
-                        VStack(alignment: .leading, spacing: 7) {
-                            Text(selectedCategory.map { userFacingFeatureText($0.name, fallback: "Danh mục") } ?? "Tất cả danh mục")
-                                .font(.headline).foregroundStyle(AppTheme.gamingText)
-                                .fixedSize(horizontal: false, vertical: true)
-                            HStack(spacing: 7) {
-                                Circle().fill(tint).frame(width: 4, height: 4)
-                                Text("\(categoryPatches.count) chức năng").font(.caption.weight(.medium))
-                            }.foregroundStyle(AppTheme.gamingTextSecondary)
-                        }
-                        Spacer(minLength: 4)
-                        if service.categories.count > 1 {
-                            Image(systemName: "chevron.down").font(.caption.weight(.bold))
-                                .foregroundStyle(tint).frame(width: 30, height: 30)
-                                .background(tint.opacity(0.12), in: Circle())
-                        } else {
-                            Image(systemName: "crown.fill").foregroundStyle(AppTheme.statusInfo)
-                        }
-                    }.contentShape(Rectangle())
-                }
-                .buttonStyle(GamingPressButtonStyle(scale: 0.99))
-                .accessibilityLabel(selectedCategory?.name ?? "Tất cả danh mục")
+                categorySelect
             }
         }
-        .padding(18)
+        .padding(16)
         .background(
-            LinearGradient(colors: [AppTheme.gamingSurfaceRaised, AppTheme.gamingSurface], startPoint: .topLeading, endPoint: .bottomTrailing),
-            in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(AppTheme.gamingSurface.opacity(0.65))
+                .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(.ultraThinMaterial))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(AppTheme.gamingBorderGradient, lineWidth: 1.2)
+                )
+                .shadow(color: AppTheme.gamingBlueBright.opacity(0.12), radius: 20, y: 8)
         )
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(tint.opacity(0.28), lineWidth: 1))
-        .shadow(color: tint.opacity(0.07), radius: 18, y: 6)
     }
 
-    private var gameEditionPicker: some View {
-        HStack(spacing: 6) {
-            ForEach(availableEditions) { edition in
-                let isSelected = selectedEdition == edition
-                Button {
-                    Haptics.selection()
-                    selectedEdition = edition
-                } label: {
-                    VStack(spacing: 5) {
-                        Text(edition.title).font(.subheadline.weight(.bold))
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text("\(CatalogGameGrouping.patches(categoryPatches, for: edition).count) chức năng")
-                            .font(.caption2)
+    private var categorySelect: some View {
+        Button {
+            Haptics.soft()
+            withAnimation(AppTheme.gamingTabSpring) {
+                showCategoryPicker = true
+            }
+        } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [AppTheme.gamingBlueBright.opacity(0.2), AppTheme.gamingViolet.opacity(0.2)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+
+                    if let cat = selectedCategory, let uiImage = service.categoryImage(for: cat.id) {
+                        Image(uiImage: uiImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 36, height: 36)
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    } else if let imageURL = selectedCategory?.imageUrl, !imageURL.isEmpty, let url = URL(string: imageURL) {
+                        AsyncImage(url: url) { phase in
+                            switch phase {
+                            case .success(let image):
+                                image.resizable().aspectRatio(contentMode: .fill)
+                            default:
+                                Image(systemName: selectedCategory?.icon.isEmpty == false ? selectedCategory!.icon : "gamecontroller.fill")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(AppTheme.gamingBlueBright)
+                            }
+                        }
+                        .frame(width: 36, height: 36)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    } else {
+                        Image(systemName: selectedCategory?.icon.isEmpty == false ? selectedCategory!.icon : "square.grid.2x2.fill")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(AppTheme.gamingBlueBright)
                     }
-                    .foregroundStyle(isSelected ? AppTheme.gamingBlueBright : AppTheme.gamingTextSecondary)
-                    .frame(maxWidth: .infinity, minHeight: 54).padding(.vertical, 5)
-                    .background(isSelected ? AppTheme.gamingBlue.opacity(0.17) : Color.clear,
-                                in: RoundedRectangle(cornerRadius: 13))
-                    .overlay(RoundedRectangle(cornerRadius: 13)
-                        .stroke(isSelected ? AppTheme.gamingBlue.opacity(0.4) : Color.clear, lineWidth: 1))
                 }
-                .buttonStyle(GamingPressButtonStyle(scale: 0.98))
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
-            }
-        }
-        .padding(5).background(AppTheme.gamingSurface, in: RoundedRectangle(cornerRadius: 17))
-        .overlay(RoundedRectangle(cornerRadius: 17).stroke(AppTheme.gamingBorder, lineWidth: 1))
-        .accessibilityElement(children: .contain).accessibilityLabel("Chọn phiên bản Free Fire")
-    }
+                .frame(width: 36, height: 36)
 
-    private var searchAndFilter: some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass").foregroundStyle(AppTheme.gamingTextSecondary).accessibilityHidden(true)
-                TextField("Tìm chức năng…", text: $searchText)
-                    .font(.subheadline).foregroundStyle(AppTheme.gamingText)
-                    .textInputAutocapitalization(.never).autocorrectionDisabled().submitLabel(.search)
-                    .accessibilityLabel("Tìm kiếm chức năng trong danh mục")
-                if !searchText.isEmpty {
-                    Button { searchText = "" } label: {
-                        Image(systemName: "xmark.circle.fill").foregroundStyle(AppTheme.gamingTextSecondary)
-                            .frame(width: 32, height: 44)
-                    }.accessibilityLabel("Xóa nội dung tìm kiếm")
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(selectedCategory.map { userFacingFeatureText($0.name, fallback: "Danh mục") } ?? "Chọn danh mục")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundColor(selectedCategory != nil ? AppTheme.gamingText : AppTheme.gamingText.opacity(0.4))
+
+                    if selectedCategory != nil {
+                        Text("\(filteredPatches.count) chức năng")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(AppTheme.gamingBlueBright.opacity(0.7))
+                    }
                 }
-            }
-            .padding(.horizontal, 13).frame(minHeight: 46)
-            .background(AppTheme.gamingSurface, in: RoundedRectangle(cornerRadius: 13))
-            .overlay(RoundedRectangle(cornerRadius: 13).stroke(AppTheme.gamingBorder, lineWidth: 1))
-            Menu {
-                Toggle("Chỉ hiện chức năng đang bật", isOn: $appliedOnly)
-                if hasSearchFilters { Button("Xóa bộ lọc") { clearSearchFilters() } }
-                if service.categories.count > 1 { Button("Chọn danh mục") { showCategoryPicker = true } }
-            } label: {
-                Image(systemName: "line.3.horizontal.decrease").font(.body.weight(.semibold))
-                    .foregroundStyle(appliedOnly ? AppTheme.statusInfo : AppTheme.gamingBlueBright)
-                    .frame(width: 46, height: 46)
-                    .background(appliedOnly ? AppTheme.statusInfo.opacity(0.10) : AppTheme.gamingSurface, in: RoundedRectangle(cornerRadius: 13))
-                    .overlay(RoundedRectangle(cornerRadius: 13).stroke(appliedOnly ? AppTheme.statusInfo.opacity(0.4) : AppTheme.gamingBorder, lineWidth: 1))
-            }.accessibilityLabel(appliedOnly ? "Bộ lọc, đang hiện chức năng bật" : "Lọc chức năng")
-        }
-    }
 
-    private var functionPanel: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 8) {
-                Image(systemName: "slider.horizontal.3").foregroundStyle(AppTheme.gamingBlueBright)
-                Text("CHỨC NĂNG").tracking(1.5).foregroundStyle(AppTheme.gamingText)
                 Spacer()
-                Text("\(filteredPatches.count)").font(.caption.monospaced().weight(.bold))
-                    .foregroundStyle(AppTheme.statusInfo).padding(.horizontal, 9).padding(.vertical, 5)
-                    .background(AppTheme.statusInfo.opacity(0.08), in: Capsule())
-                    .overlay(Capsule().stroke(AppTheme.statusInfo.opacity(0.23), lineWidth: 1))
-            }.font(.caption.weight(.bold))
-            if let message = accessMessage {
-                feedbackState(icon: "wifi.exclamationmark", title: "Chưa tải được chức năng", message: message, retry: true)
-            } else if service.isLoading && service.patches.isEmpty {
-                HStack(spacing: 12) {
-                    ProgressView().tint(AppTheme.gamingBlueBright)
-                    Text("Đang đồng bộ chức năng…").font(.subheadline).foregroundStyle(AppTheme.gamingTextSecondary)
-                }.frame(maxWidth: .infinity).padding(.vertical, 32)
-            } else if filteredPatches.isEmpty {
-                feedbackState(icon: hasSearchFilters ? "magnifyingglass" : "square.stack.3d.up", title: hasSearchFilters ? "Không tìm thấy chức năng" : "Chưa có chức năng", message: hasSearchFilters ? "Thử từ khóa khác hoặc xóa bộ lọc." : (availableEditions.isEmpty ? "Danh sách sẽ hiển thị khi máy chủ phát hành chức năng cho danh mục này." : "Danh mục này chưa có chức năng cho \(selectedEdition.title)."), retry: false)
-                if hasSearchFilters {
-                    Button("Xóa bộ lọc") { clearSearchFilters() }.font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity, minHeight: 44)
+
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(AppTheme.gamingBlueBright.opacity(0.7))
+                    .rotationEffect(.degrees(showCategoryPicker ? 180 : 0))
+                    .animation(.spring(response: 0.3), value: showCategoryPicker)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 14)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(AppTheme.gamingBackgroundRaised.opacity(0.6))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(
+                                LinearGradient(
+                                    colors: [AppTheme.gamingBlueBright.opacity(0.35), AppTheme.gamingViolet.opacity(0.2)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 1
+                            )
+                    )
+            )
+            .shadow(color: AppTheme.gamingBlueBright.opacity(0.08), radius: 8, y: 2)
+        }
+        .buttonStyle(GamingPressButtonStyle(scale: 0.98))
+    }
+
+    private var selectedCategory: PatchCategory? {
+        guard let id = selectedCategoryID else { return nil }
+        return service.categories.first { $0.id == id }
+    }
+
+    private var customCategoryPicker: some View {
+        VStack(spacing: 0) {
+            Text("Chọn danh mục")
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .foregroundColor(AppTheme.gamingText)
+                .padding(.vertical, 18)
+
+            Divider().background(Color.white.opacity(0.1))
+
+            ScrollView {
+                VStack(spacing: 12) {
+                    ForEach(service.categories) { cat in
+                        Button {
+                            Haptics.selection()
+                            withAnimation(AppTheme.gamingTabSpring) {
+                                selectedCategoryID = cat.id
+                                showCategoryPicker = false
+                            }
+                        } label: {
+                            HStack(spacing: 14) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .fill(
+                                            LinearGradient(
+                                                colors: [AppTheme.gamingBlueBright.opacity(0.2), AppTheme.gamingViolet.opacity(0.2)],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
+
+                                    if let uiImage = service.categoryImage(for: cat.id) {
+                                        Image(uiImage: uiImage)
+                                            .resizable()
+                                            .aspectRatio(contentMode: .fill)
+                                            .frame(width: 42, height: 42)
+                                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                    } else if !cat.imageUrl.isEmpty, let url = URL(string: cat.imageUrl) {
+                                        AsyncImage(url: url) { phase in
+                                            switch phase {
+                                            case .success(let image):
+                                                image.resizable().aspectRatio(contentMode: .fill)
+                                            default:
+                                                Image(systemName: cat.icon.isEmpty ? "gamecontroller.fill" : cat.icon)
+                                                    .foregroundColor(AppTheme.gamingBlueBright)
+                                            }
+                                        }
+                                        .frame(width: 42, height: 42)
+                                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                    } else {
+                                        Image(systemName: cat.icon.isEmpty ? "gamecontroller.fill" : cat.icon)
+                                            .font(.system(size: 20, weight: .medium))
+                                            .foregroundColor(AppTheme.gamingBlueBright)
+                                    }
+                                }
+                                .frame(width: 42, height: 42)
+
+                                Text(userFacingFeatureText(cat.name, fallback: "Danh mục"))
+                                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                    .foregroundColor(AppTheme.gamingText)
+
+                                Spacer()
+
+                                ZStack {
+                                    Circle()
+                                        .stroke(selectedCategoryID == cat.id ? AppTheme.gamingBlueBright : Color.white.opacity(0.2), lineWidth: 2)
+                                        .frame(width: 22, height: 22)
+
+                                    if selectedCategoryID == cat.id {
+                                        Circle()
+                                            .fill(AppTheme.gamingBlueBright)
+                                            .frame(width: 12, height: 12)
+                                            .shadow(color: AppTheme.gamingBlueBright.opacity(0.8), radius: 6)
+                                    }
+                                }
+                            }
+                            .padding(12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .fill(
+                                        selectedCategoryID == cat.id
+                                            ? LinearGradient(colors: [AppTheme.gamingBlueBright.opacity(0.18), AppTheme.gamingViolet.opacity(0.18)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                            : LinearGradient(colors: [Color.white.opacity(0.03), Color.white.opacity(0.03)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                    )
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .stroke(
+                                        selectedCategoryID == cat.id
+                                            ? AppTheme.gamingBorderGradient
+                                            : LinearGradient(colors: [Color.white.opacity(0.06), Color.white.opacity(0.02)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                                        lineWidth: 1
+                                    )
+                            )
+                        }
+                        .buttonStyle(GamingPressButtonStyle(scale: 0.98))
+                    }
                 }
+                .padding(16)
+            }
+            .frame(maxHeight: 350)
+
+            Divider().background(Color.white.opacity(0.1))
+
+            Button {
+                Haptics.soft()
+                withAnimation(AppTheme.gamingTabSpring) {
+                    showCategoryPicker = false
+                }
+            } label: {
+                Text("Hủy")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundColor(AppTheme.gamingText.opacity(0.6))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(AppTheme.gamingSurface.opacity(0.92))
+                .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(.ultraThinMaterial))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(AppTheme.gamingBorderGradient, lineWidth: 1.5)
+        )
+        .shadow(color: AppTheme.gamingBlueBright.opacity(0.25), radius: 35, x: 0, y: 15)
+        .padding(.horizontal, 24)
+    }
+
+    // MARK: - Patch Panel
+
+    private var patchPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "wand.and.stars")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(AppTheme.gamingBlueBright)
+                    .shadow(color: AppTheme.gamingBlueBright.opacity(0.4), radius: 4)
+                Text("Chức năng")
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundColor(AppTheme.gamingText)
+                Spacer()
+                Text("\(filteredPatches.count)")
+                    .font(.system(size: 12, weight: .heavy, design: .monospaced))
+                    .foregroundColor(AppTheme.gamingBlueBright)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(
+                                LinearGradient(
+                                    colors: [AppTheme.gamingBlueBright.opacity(0.2), AppTheme.gamingViolet.opacity(0.2)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .overlay(
+                                Capsule().stroke(AppTheme.gamingBlueBright.opacity(0.4), lineWidth: 1)
+                            )
+                    )
+            }
+
+            if service.isLoading && service.patches.isEmpty {
+                HStack {
+                    Spacer()
+                    VStack(spacing: 12) {
+                        ProgressView()
+                            .tint(AppTheme.gamingBlueBright)
+                        Text("Đang chuẩn bị chức năng...")
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundColor(AppTheme.gamingText.opacity(0.3))
+                    }
+                    .padding(.vertical, 40)
+                    Spacer()
+                }
+            } else if filteredPatches.isEmpty {
+                emptyState
             } else {
                 LazyVStack(spacing: 10) {
                     ForEach(filteredPatches, id: \.downloadIdentity) { patch in
@@ -268,266 +424,295 @@ struct FeaturesView: View {
             }
         }
         .padding(16)
-        .background(AppTheme.gamingSurface.opacity(0.9), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(AppTheme.gamingBorder, lineWidth: 1))
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(AppTheme.gamingSurface.opacity(0.65))
+                .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(.ultraThinMaterial))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(AppTheme.gamingBorderGradient, lineWidth: 1.2)
+                )
+                .shadow(color: AppTheme.gamingBlueBright.opacity(0.12), radius: 20, y: 8)
+        )
     }
 
-    private func feedbackState(icon: String, title: String, message: String, retry: Bool) -> some View {
-        VStack(spacing: 12) {
-            Image(systemName: icon).font(.system(size: 28, weight: .light)).foregroundStyle(AppTheme.gamingBlueBright)
-            Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(AppTheme.gamingText)
-            Text(message).font(.caption).foregroundStyle(AppTheme.gamingTextSecondary)
-                .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
-            if retry {
-                Button("Thử lại") { Task { await service.syncFromServer(auth: authManager) } }
-                    .font(.subheadline.weight(.semibold)).frame(minHeight: 44).disabled(service.isLoading)
-            }
-        }.frame(maxWidth: .infinity).padding(.vertical, 26)
-    }
-
-    private var categoryPicker: some View {
-        NavigationStack {
-            List {
-                if categorySearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    categoryPickerRow(category: nil)
+    private var emptyState: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "wand.and.stars")
+                .font(.system(size: 36, weight: .medium))
+                .foregroundColor(AppTheme.gamingBlueBright.opacity(0.3))
+            Text(service.catalogError == nil ? "Chưa có chức năng nào" : "Không thể tải danh sách chức năng")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(AppTheme.gamingText.opacity(0.5))
+            Text(service.catalogError ?? "Đang chuẩn bị chức năng...")
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundColor(AppTheme.gamingText.opacity(0.25))
+                .multilineTextAlignment(.center)
+            if service.catalogError != nil {
+                Button("Thử tải lại") {
+                    Task { await service.syncFromServer(auth: authManager) }
                 }
-                ForEach(searchedCategories) { category in categoryPickerRow(category: category) }
-            }
-            .listStyle(.insetGrouped).scrollContentBackground(.hidden).background(AppTheme.gamingBackground)
-            .navigationTitle("Chọn danh mục").navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $categorySearch, prompt: "Tìm danh mục")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Xong") { showCategoryPicker = false }.font(.subheadline.weight(.semibold))
-                }
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(AppTheme.gamingBlueBright)
+                .disabled(service.isLoading)
             }
         }
-        .tint(AppTheme.gamingBlueBright).preferredColorScheme(.dark)
-        .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
     }
 
-    private func categoryPickerRow(category: PatchCategory?) -> some View {
-        let selected = category.map { selectedCategoryID == $0.id } ?? showsAllCategories
-        return Button {
-            selectedCategoryID = category?.id
-            showsAllCategories = category == nil
-            showCategoryPicker = false
-            Haptics.selection()
-        } label: {
-            HStack(spacing: 12) {
-                categoryArtwork(category, size: 44)
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(category.map { userFacingFeatureText($0.name, fallback: "Danh mục") } ?? "Tất cả danh mục")
-                        .font(.subheadline.weight(.semibold)).foregroundStyle(AppTheme.gamingText)
-                    Text("\(category.map { category in service.patches.filter { $0.categoryId == category.id }.count } ?? service.patches.count) chức năng")
-                        .font(.caption).foregroundStyle(AppTheme.gamingTextSecondary)
-                }
-                Spacer(minLength: 4)
-                if selected { Image(systemName: "checkmark.circle.fill").foregroundStyle(categoryTint(category)) }
-            }.padding(.vertical, 6)
+    private var filteredPatches: [PatchItem] {
+        if let catID = selectedCategoryID {
+            return service.patches.filter { $0.categoryId == catID }
         }
-        .listRowBackground(AppTheme.gamingSurface)
-        .accessibilityAddTraits(selected ? .isSelected : [])
+        return service.patches
     }
-
-    @ViewBuilder private func categoryArtwork(_ category: PatchCategory?, size: CGFloat) -> some View {
-        if let category, !category.imageUrl.isEmpty, let image = service.categoryImage(for: category.id) {
-            Image(uiImage: image).resizable().scaledToFill().frame(width: size, height: size)
-                .clipShape(RoundedRectangle(cornerRadius: size * 0.26)).accessibilityHidden(true)
-        } else {
-            let tint = categoryTint(category)
-            Image(systemName: category?.icon.isEmpty == false ? category!.icon : "square.grid.2x2.fill")
-                .font(.system(size: size * 0.34, weight: .semibold)).foregroundStyle(tint)
-                .frame(width: size, height: size)
-                .background(tint.opacity(0.11), in: RoundedRectangle(cornerRadius: size * 0.26))
-                .overlay(RoundedRectangle(cornerRadius: size * 0.26).stroke(tint.opacity(0.25), lineWidth: 1))
-                .accessibilityHidden(true)
-        }
-    }
-    private func reconcileCategory() {
-        if let id = selectedCategoryID, service.categories.contains(where: { $0.id == id }) {
-            reconcileEdition()
-            return
-        }
-        selectedCategoryID = showsAllCategories && service.categories.count > 1 ? nil : service.categories.first?.id
-        reconcileEdition()
-    }
-    private func reconcileEdition() {
-        let editions = availableEditions
-        if !editions.contains(selectedEdition), let first = editions.first { selectedEdition = first }
-    }
-    private func clearSearchFilters() { searchText = ""; appliedOnly = false }
 }
+
+// MARK: - Patch Card View
 
 struct PatchCardView: View {
     let patch: PatchItem
     @ObservedObject var service: FeaturePatchService
     @ObservedObject var auth: AuthManager
-    @ObservedObject private var storage = StorageEngineCoordinator.shared
-    @Binding var activeToast: ToastInfo?
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.openURL) private var openURL
-    @State private var isWorking = false
-    @State private var showUpgradePrompt = false
-    private var isLocked: Bool {
-        !CatalogFeatureAccess.allows(licenseType: auth.keyType.rawValue, requiredKeyType: patch.requiredKeyType)
-    }
-    private var upgradeCode: String { patch.requiredKeyType == "pro" ? "pro_required" : "vip_required" }
     private var applicationState: PatchApplicationState { service.patchApplicationState(patch) }
-    private var isApplied: Bool { applicationState.requiresRestore }
-    private var stateTitle: String {
-        if service.isPendingActivation(patch) { return "Cần thử lại" }
-        if isLocked && !isApplied { return patch.requiredKeyType == "pro" ? "Yêu cầu key PRO" : "Dành cho key VIP" }
-        if service.isSuppressedByCatalogMode(patch) { return "Đã tắt theo chế độ" }
-        switch applicationState {
-        case .off: return "Sẵn sàng"
-        case .applied: return "Đang bật"
-        case .recoveryRequired: return "Cần khôi phục"
-        }
-    }
-    private var stateColor: Color {
-        if isLocked && !isApplied { return AppTheme.statusInfo }
-        switch applicationState {
-        case .off: return AppTheme.gamingTextSecondary
-        case .applied: return AppTheme.statusSuccess
-        case .recoveryRequired: return AppTheme.statusInfo
-        }
-    }
+    private var isApplied: Bool { service.isPatchToggleOn(patch) }
+    private var isRecoveryPending: Bool { service.isPatchDisabledPendingRestore(patch) }
+    @State private var isWorking = false
+    @Binding var activeToast: ToastInfo?
+    @State private var glowPulse = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack(spacing: 12) {
-                patchImage
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(userFacingFeatureText(patch.name, fallback: "Chức năng"))
-                        .font(.subheadline.weight(.semibold)).foregroundStyle(AppTheme.gamingText)
-                        .fixedSize(horizontal: false, vertical: true)
-                    HStack(spacing: 6) {
-                        Circle().fill(stateColor).frame(width: 5, height: 5)
-                        Text(stateTitle).font(.caption2.weight(.medium)).foregroundStyle(stateColor)
-                        Text("· v\(patch.version)").font(.caption2.monospaced()).foregroundStyle(AppTheme.gamingTextSecondary)
+        HStack(spacing: 14) {
+            patchImage
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(userFacingFeatureText(patch.name, fallback: "Chức năng"))
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundColor(AppTheme.gamingText)
+                    .lineLimit(1)
+
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(isApplied ? AppTheme.statusSuccess : AppTheme.gamingTextSecondary)
+                        .frame(width: 6, height: 6)
+                    Text(isRecoveryPending ? "Đã tắt · File chưa khôi phục" : (applicationState == .recoveryRequired ? "Cần khôi phục" : (isApplied ? "Chức năng đang bật" : "Sẵn sàng")))
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                }
+                .foregroundColor(isApplied ? AppTheme.statusSuccess : AppTheme.gamingTextSecondary)
+                if isRecoveryPending {
+                    Button("Thử khôi phục file") { togglePatch(restoreOnly: true) }
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundColor(AppTheme.gamingBlueBright)
+                        .disabled(isWorking)
+                }
+            }
+
+            Spacer()
+
+            toggleButton
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 14)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(isApplied ? AppTheme.gamingSurface.opacity(0.7) : AppTheme.gamingBackgroundRaised.opacity(0.4))
+
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(
+                        isApplied
+                            ? AppTheme.gamingBorderGradient
+                            : LinearGradient(
+                                colors: [Color.white.opacity(0.08), Color.white.opacity(0.02)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                              ),
+                        lineWidth: isApplied ? 1.5 : 0.5
+                    )
+
+                if isApplied {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [AppTheme.gamingBlueBright.opacity(glowPulse ? 0.08 : 0.02), AppTheme.gamingViolet.opacity(glowPulse ? 0.06 : 0.01)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .animation(.easeInOut(duration: 2).repeatForever(autoreverses: true), value: glowPulse)
+                }
+            }
+            .shadow(color: isApplied ? AppTheme.gamingBlueBright.opacity(0.25) : .clear, radius: 16, y: 4)
+        )
+        .onAppear {
+            if isApplied { startGlow() }
+        }
+        .onChange(of: isApplied) { applied in
+            if applied { startGlow() } else { glowPulse = false }
+        }
+    }
+
+    private func startGlow() {
+        glowPulse = true
+    }
+
+    // MARK: - Patch Image
+
+    @ViewBuilder
+    private var patchImage: some View {
+        if let uiImage = service.cachedImage(for: patch) ?? service.categoryImage(for: patch.categoryId) {
+            Image(uiImage: uiImage)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 52, height: 52)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(isApplied ? AppTheme.gamingBorderGradient : LinearGradient(colors: [Color.white.opacity(0.1), Color.clear], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
+                )
+                .shadow(color: isApplied ? AppTheme.gamingBlueBright.opacity(0.35) : .clear, radius: 8)
+        } else {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [AppTheme.gamingBlueBright.opacity(0.15), AppTheme.gamingViolet.opacity(0.1)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                Image(systemName: "puzzlepiece.fill")
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundColor(AppTheme.gamingBlueBright.opacity(0.7))
+            }
+            .frame(width: 52, height: 52)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(AppTheme.gamingBlueBright.opacity(0.25), lineWidth: 0.5)
+            )
+        }
+    }
+
+    // MARK: - Toggle
+
+    @ViewBuilder
+    private var toggleButton: some View {
+        if isWorking {
+            ZStack {
+                Capsule()
+                    .fill(AppTheme.gamingBlueBright.opacity(0.15))
+                    .frame(width: 56, height: 30)
+                    .overlay(
+                        Capsule()
+                            .stroke(AppTheme.gamingBlueBright.opacity(0.4), lineWidth: 1)
+                    )
+                ProgressView()
+                    .tint(AppTheme.gamingBlueBright)
+                    .scaleEffect(0.8)
+            }
+        } else {
+            Button(action: { togglePatch() }) {
+                ZStack {
+                    Capsule()
+                        .fill(
+                            isApplied
+                                ? LinearGradient(colors: [AppTheme.gamingBlueBright.opacity(0.25), AppTheme.gamingViolet.opacity(0.25)], startPoint: .leading, endPoint: .trailing)
+                                : LinearGradient(colors: [Color.white.opacity(0.06), Color.white.opacity(0.04)], startPoint: .leading, endPoint: .trailing)
+                        )
+                        .frame(width: 56, height: 30)
+                        .overlay(
+                            Capsule()
+                                .stroke(
+                                    isApplied ? AppTheme.gamingBorderGradient : LinearGradient(colors: [Color.white.opacity(0.1), Color.white.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                                    lineWidth: 1
+                                )
+                        )
+
+                    Circle()
+                        .fill(isApplied ? AppTheme.gamingAccentGradient : LinearGradient(colors: [Color.white, Color(white: 0.9)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 24, height: 24)
+                        .offset(x: isApplied ? 13 : -13)
+                        .shadow(color: isApplied ? AppTheme.gamingBlueBright.opacity(0.6) : .clear, radius: 6)
+
+                    if isApplied {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 10, weight: .black))
+                            .foregroundColor(.white)
+                            .offset(x: 13)
                     }
                 }
-                Spacer(minLength: 0)
-                if !dynamicTypeSize.isAccessibilitySize { toggleButton }
+                .animation(.spring(response: 0.35, dampingFraction: 0.65), value: isApplied)
             }
-            if !patch.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text(userFacingFeatureText(patch.description, fallback: "Chức năng Astra"))
-                    .font(.caption).foregroundStyle(AppTheme.gamingTextSecondary).lineLimit(2)
-            }
-            if service.isRestorationPatch(patch) {
-                Text("Bật mục này sẽ tắt công tắc các chức năng khác. Chỉ các file có trong gói được khôi phục.")
-                    .font(.caption2).foregroundStyle(AppTheme.statusInfo)
-            } else if isApplied && storage.isAirLiftActive {
-                Text("AirLift chưa hỗ trợ khôi phục dữ liệu gốc.").font(.caption2).foregroundStyle(AppTheme.statusInfo)
-            }
-            if patch.artifactVariant == "ffvn" {
-                Text("Đích: Free Fire Việt Nam").font(.caption2).foregroundStyle(AppTheme.statusInfo)
-            } else if let display = patch.displayVariant, let target = patch.artifactVariant,
-               display != target, let edition = CatalogGameEdition(rawValue: target) {
-                Text("Đích trong gói: \(edition.title)").font(.caption2).foregroundStyle(AppTheme.statusInfo)
-            }
-            if dynamicTypeSize.isAccessibilitySize { HStack { Spacer(); toggleButton } }
-        }
-        .padding(14)
-        .background(
-            LinearGradient(colors: [AppTheme.gamingSurfaceRaised.opacity(isApplied ? 0.95 : 0.7), AppTheme.gamingSurfaceRaised.opacity(0.45)], startPoint: .topLeading, endPoint: .bottomTrailing),
-            in: RoundedRectangle(cornerRadius: 15, style: .continuous)
-        )
-        .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
-            .stroke(isApplied ? AppTheme.gamingBlue.opacity(0.5) : AppTheme.gamingBorder.opacity(0.7), lineWidth: 1))
-        .overlay(alignment: .leading) {
-            if isApplied { Capsule().fill(AppTheme.statusInfo).frame(width: 2, height: 22) }
-        }
-        .shadow(color: isApplied ? AppTheme.gamingBlue.opacity(0.10) : .clear, radius: 12, y: 3)
-        .alert(patch.requiredKeyType == "pro" ? "Nâng cấp key PRO" : "Chức năng dành cho key VIP", isPresented: $showUpgradePrompt) {
-            Button("Liên hệ admin") {
-                if let url = URL(string: "https://t.me/trnmnhkh") { openURL(url) }
-            }
-            Button("Đóng", role: .cancel) {}
-        } message: {
-            Text(ProtectedDownloadError.rejected(upgradeCode).localizedDescription)
+            .buttonStyle(GamingPressButtonStyle(scale: 0.95))
         }
     }
 
-    @ViewBuilder private var patchImage: some View {
-        if let image = service.cachedImage(for: patch) ?? service.categoryImage(for: patch.categoryId) {
-            Image(uiImage: image).resizable().scaledToFill().frame(width: 44, height: 44)
-                .clipShape(RoundedRectangle(cornerRadius: 12)).accessibilityHidden(true)
-        } else {
-            Image(systemName: "puzzlepiece.fill").font(.body).foregroundStyle(AppTheme.gamingBlueBright)
-                .frame(width: 44, height: 44).background(AppTheme.gamingBlue.opacity(0.10), in: RoundedRectangle(cornerRadius: 12))
-                .accessibilityHidden(true)
-        }
-    }
+    // MARK: - Actions
 
-    private var toggleButton: some View {
-        Button { togglePatch() } label: {
-            ZStack {
-                Capsule().fill(isApplied ? AppTheme.gamingBlue.opacity(0.24) : AppTheme.gamingBackground)
-                    .overlay(Capsule().stroke(isApplied ? AppTheme.gamingBlueBright.opacity(0.55) : AppTheme.gamingBorder, lineWidth: 1))
-                if isWorking {
-                    ProgressView().tint(AppTheme.gamingBlueBright).scaleEffect(0.8)
-                } else {
-                    Circle().fill(isApplied ? AppTheme.gamingBlue : AppTheme.gamingTextSecondary)
-                        .frame(width: 24, height: 24).offset(x: isApplied ? 12 : -12)
-                        .overlay {
-                            if isApplied {
-                                Image(systemName: "checkmark").font(.system(size: 10, weight: .black))
-                                    .foregroundStyle(.white).offset(x: 12)
-                            } else if isLocked {
-                                Image(systemName: "lock.fill").font(.system(size: 10, weight: .bold))
-                                    .foregroundStyle(AppTheme.gamingBackground).offset(x: -12)
-                            }
-                        }
-                }
-            }.frame(width: 56, height: 30).frame(minHeight: 44)
-        }
-        .buttonStyle(GamingPressButtonStyle(scale: 0.96))
-        .disabled(isWorking || service.isCatalogOperationInProgress)
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: isApplied)
-        .accessibilityLabel("\(service.isPendingActivation(patch) ? "Thử lại" : isApplied ? "Tắt" : "Bật") \(userFacingFeatureText(patch.name, fallback: "chức năng"))")
-        .accessibilityValue(isWorking ? "Đang xử lý" : stateTitle)
-        .accessibilityHint(isLocked && !isApplied ? "Nhấn để liên hệ admin nâng cấp và mở khóa." : (service.isRestorationPatch(patch) ? "Tắt chế độ vẫn giữ file đã khôi phục." : isApplied && storage.isAirLiftActive ? "AirLift chưa hỗ trợ khôi phục dữ liệu gốc." : ""))
-    }
-
-    private func togglePatch() {
-        guard !isWorking, !service.isCatalogOperationInProgress else { return }
-        if !isApplied && isLocked {
-            Haptics.soft()
-            showUpgradePrompt = true
-            return
-        }
+    private func togglePatch(restoreOnly: Bool = false) {
         Haptics.medium()
         isWorking = true
-        let restoring = isApplied && !service.isPendingActivation(patch)
-        Task { @MainActor in
-            defer { isWorking = false }
-            do {
-                if restoring { try await service.restorePatch(patch, auth: auth) }
-                else { try await service.applyPatch(patch, auth: auth) }
-                Haptics.success()
-                let message: String
-                if restoring {
-                    message = service.isRestorationPatch(patch)
-                        ? "Đã tắt chế độ khôi phục. Các file đã khôi phục được giữ nguyên."
-                        : "Đã hoàn lại dữ liệu trước lần bật chức năng này."
-                } else {
-                    message = service.isRestorationPatch(patch)
-                        ? "Đã áp dụng gói khôi phục và tắt công tắc các chức năng khác."
-                        : "Chức năng đã được áp dụng; chế độ khôi phục đã tắt."
+        activeToast = ToastInfo(
+            title: (isApplied || restoreOnly) ? "Chức năng đang tắt" : "Chức năng đang bật",
+            message: "Vui lòng chờ...",
+            isSuccess: true
+        )
+
+        let targetIsApplied = isApplied || restoreOnly
+        Task.detached(priority: .userInitiated) {
+            if targetIsApplied {
+                do {
+                    let outcome = try await service.disablePatch(patch, auth: auth)
+                    await MainActor.run {
+                        isWorking = false
+                        if outcome == .restored { Haptics.success() } else { Haptics.medium() }
+                        activeToast = ToastInfo(
+                            title: outcome == .restored ? "Tắt chức năng thành công" : "Đã tắt · File chưa khôi phục",
+                            message: outcome == .restored
+                                ? "Đã khôi phục dữ liệu đã sao lưu trước lần áp dụng này."
+                                : "Công tắc đã tắt trong Astra. File game chưa được khôi phục nên có thể vẫn còn tác dụng. Bản sao lưu được giữ lại; hãy chọn Thử khôi phục file để thử lại.",
+                            isSuccess: outcome == .restored
+                        )
+                    }
+                } catch {
+                    await MainActor.run {
+                        isWorking = false
+                        Haptics.error()
+                        activeToast = ToastInfo(
+                            title: "Không thể tắt chức năng",
+                            message: (error as? LocalizedError)?.errorDescription
+                                ?? "Không thể khôi phục dữ liệu (mã \((error as NSError).code)).",
+                            isSuccess: false
+                        )
+                    }
                 }
-                activeToast = ToastInfo(title: restoring ? "Đã tắt chức năng" : "Đã bật chức năng", message: message, isSuccess: true)
-            } catch {
-                Haptics.error()
-                if let protectedError = error as? ProtectedDownloadError,
-                   case .rejected(let code) = protectedError, ["vip_required", "pro_required"].contains(code) {
-                    showUpgradePrompt = true
-                    return
+            } else {
+                do {
+                    try await service.applyPatch(patch, auth: auth)
+                    await MainActor.run {
+                        isWorking = false
+                        Haptics.success()
+                        activeToast = ToastInfo(
+                            title: "Bật chức năng thành công",
+                            message: "Chức năng đang bật.",
+                            isSuccess: true
+                        )
+                    }
+                } catch {
+                    await MainActor.run {
+                        isWorking = false
+                        Haptics.error()
+                        activeToast = ToastInfo(
+                            title: "Không thể bật chức năng",
+                            message: (error as? LocalizedError)?.errorDescription
+                                ?? "Không thể hoàn tất thao tác (mã \((error as NSError).code)).",
+                            isSuccess: false
+                        )
+                    }
                 }
-                activeToast = ToastInfo(title: restoring ? "Chưa thể khôi phục" : "Chưa thể bật chức năng", message: (error as? LocalizedError)?.errorDescription ?? "Không thể hoàn tất thao tác (mã \((error as NSError).code)).", isSuccess: false)
             }
         }
     }
+
 }

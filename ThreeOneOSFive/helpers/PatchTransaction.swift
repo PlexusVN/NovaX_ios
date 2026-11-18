@@ -559,6 +559,10 @@ struct CatalogPatchApplicationRegistry {
         for suffix in ["", "_recovery"] where defaults.bool(forKey: prefix + legacy + suffix) {
             defaults.set(true, forKey: prefix + stable + suffix)
         }
+        if let binding = defaults.string(forKey: prefix + legacy + "_disabledBinding"),
+           defaults.string(forKey: prefix + stable + "_disabledBinding") == nil {
+            defaults.set(binding, forKey: prefix + stable + "_disabledBinding")
+        }
         // Preference keys only; the transaction journal/backups are untouched.
         // Leaving old ON flags would resurrect them after a successful restore.
         clear(legacy)
@@ -566,12 +570,23 @@ struct CatalogPatchApplicationRegistry {
     func markApplied(_ identity: String) {
         defaults.set(true, forKey: prefix + identity)
         defaults.removeObject(forKey: prefix + identity + "_recovery")
+        defaults.removeObject(forKey: prefix + identity + "_disabledBinding")
     }
     func markRecoveryRequired(_ identity: String) {
         defaults.set(true, forKey: prefix + identity + "_recovery")
     }
+    func markDisabledWithoutRestore(_ identity: String, binding: String) {
+        defaults.set(binding, forKey: prefix + identity + "_disabledBinding")
+        markRecoveryRequired(identity)
+    }
+    func hasPendingDisable(_ identity: String) -> Bool {
+        defaults.string(forKey: prefix + identity + "_disabledBinding") != nil
+    }
+    func isDisabledWithoutRestore(_ identity: String, binding: String) -> Bool {
+        defaults.string(forKey: prefix + identity + "_disabledBinding") == binding
+    }
     func clear(_ identity: String) {
-        for suffix in ["", "_projectID", "_recovery"] { defaults.removeObject(forKey: prefix + identity + suffix) }
+        for suffix in ["", "_projectID", "_recovery", "_disabledBinding"] { defaults.removeObject(forKey: prefix + identity + suffix) }
     }
     func state(for identity: String, recordedState: (UUID) -> PatchApplicationState?) -> PatchApplicationState {
         if let id = projectID(for: identity), let state = recordedState(id) {

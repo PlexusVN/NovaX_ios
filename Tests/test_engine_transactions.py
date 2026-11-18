@@ -1,8 +1,8 @@
 """Execute actual engine provenance, strict restore and filesystem gating.
 
 Production coordinator/state/gate bodies are extracted intact. Feature-service
-apply/restore wiring is checked against Astra's catalog contract without
-importing Astra's separate desired-OFF API. Direct transaction I/O is covered
+apply/restore wiring is checked against Astra's catalog contract, including
+the original UI's desired-OFF adapter. Direct transaction I/O is covered
 separately by DirectTransactionProvenanceSelfCheck.
 """
 from pathlib import Path
@@ -25,6 +25,7 @@ class EngineTransactions(unittest.TestCase):
         restore = extract_function(feature, 'private func restorePatchInOperation(')
         self.assertIn('withExclusivePatchOperation', public_apply)
         self.assertIn('withExclusivePatchOperation', public_restore)
+        self.assertLess(apply.index('requirePatchEnableAllowed(patch)'), apply.index('downloadPatch('))
         self.assertLess(
             apply.index('PatchFilesystemGate.shared.validate(operationID)'),
             apply.index('downloadPatch('),
@@ -80,6 +81,29 @@ func applicationStore() throws -> PatchEngineApplicationStore { Fixture.store }
         for signature in ['private func airLiftAppliedKey(', 'func isProjectAppliedThroughAirLift(',
                           'func projectApplicationState(', 'func applyPatchProject(', 'func applyPatchProjectInOperation(']:
             source += extract_function(coordinator, signature) + '\n'
+        source += '}\n'
+        source += '''
+@MainActor final class FeaturePatchService {
+    let defaults=UserDefaults(suiteName:"astra-ui-adapter-"+UUID().uuidString)!
+    var catalogApplications:CatalogPatchApplicationRegistry { CatalogPatchApplicationRegistry(defaults:defaults) }
+    var catalogModes:CatalogFeatureModeRegistry { CatalogFeatureModeRegistry(defaults:defaults) }
+    var applicationRevision=0
+    func patchStorageSlug(_ patch:PatchItem)->String { patch.identity }
+    func assertCanEnable(_ patch:PatchItem) throws { try requirePatchEnableAllowed(patch) }
+    func restorePatchInOperation(_ patch:PatchItem,auth:AuthManager,operationID:UUID) async throws {
+        try await PatchFilesystemGate.shared.validate(operationID)
+        try await Fixture.onPrepareReceipt?()
+        if let error=Fixture.restoreError { throw error }
+        Fixture.journal = .off
+        catalogApplications.clear(patch.identity)
+        try catalogModes.deactivate(patch.identity)
+    }
+'''
+        for signature in ['func disablePatch(', 'private func patchDisableBinding(',
+                          'func isPatchDisabledPendingRestore(', 'func isPatchToggleOn(',
+                          'private func requirePatchEnableAllowed(',
+                          'func patchApplicationState(', 'private func recordedCatalogState(']:
+            source += extract_function(feature, signature) + '\n'
         source += '}\n'
         with tempfile.TemporaryDirectory() as directory:
             actual = Path(directory) / 'ActualCoordinator.swift'

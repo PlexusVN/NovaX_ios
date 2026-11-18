@@ -24,7 +24,9 @@ class Viet99BQCoreTests(unittest.TestCase):
         preparation = (ROOT / 'ThreeOneOSFive/helpers/IOS27ContainerPreparation.swift').read_text(encoding='utf-8')
         self.assertIn('validatedRoots(roots, requested: targets)', preparation)
         self.assertLess(preparation.index('validatedRoots(roots, requested: targets)'), preparation.index('state = .ready'))
-        self.assertIn('currentAccessCompatibilityNote', (ROOT / 'ThreeOneOSFive/views/ContainerScanProgressView.swift').read_text(encoding='utf-8'))
+        # Compatibility diagnostics belong to the runtime report. Reusing the
+        # access engine does not require adopting the donor's preparation UI.
+        self.assertIn('if let note = ExploitSupportPolicy.currentAccessCompatibilityNote { reports.append(note) }', helper)
 
 
 if __name__ == '__main__':

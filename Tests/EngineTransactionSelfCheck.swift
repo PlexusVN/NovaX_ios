@@ -243,6 +243,48 @@ import Foundation
         await PatchFilesystemGate.shared.release(held)
         try check(Fixture.writes == 4, "cancelled waiter never dispatches")
 
-        print("Actual coordinator/provenance/gate: \(checks) checks passed")
+        setup()
+        let service = FeaturePatchService()
+        let item = PatchItem(identity: "fixture_disable_astra")
+        let auth = AuthManager()
+        let transition = try service.catalogModes.prepare(identity: item.identity, isRestoration: false, candidates: [])
+        try service.catalogModes.commit(transition)
+        let receiptID = UUID()
+        Fixture.receipt = PatchTransactionReceipt(id: receiptID, projectID: transition.projectID,
+            journalURL: root.appendingPathComponent("journal.plist"))
+        Fixture.journal = .applied
+        try Fixture.store.save(PatchEngineApplicationRecord(projectID: transition.projectID,
+            engine: .worseQuery, baseline: .capturedPriorState, targetKeys: targets,
+            journalID: receiptID, phase: .applied))
+        try check(service.isPatchToggleOn(item), "original Astra toggle reads durable mode association")
+        Fixture.restoreError = FixtureError.nativeFailure
+        let failedDisable = try await service.disablePatch(item, auth: auth)
+        try check(failedDisable == .disabledWithoutRestore, "failed restore records explicit OFF without claiming file restoration")
+        try check(service.isPatchDisabledPendingRestore(item) && !service.isPatchToggleOn(item),
+            "original UI exposes pending recovery for durable mode project")
+        try check(service.patchApplicationState(item) == .applied && Fixture.receipt?.id == receiptID,
+            "OFF adapter retains actual state and original receipt")
+        do {
+            try service.assertCanEnable(item)
+            throw FixtureError.failed("pending recovery allowed a new activation")
+        } catch PatchRestoreError.disabledPendingRestore {}
+        let freshService = FeaturePatchService()
+        freshService.defaults.set(service.defaults.dictionaryRepresentation()["astra_catalog_feature_modes_v1"],
+            forKey: "astra_catalog_feature_modes_v1")
+        freshService.catalogApplications.markDisabledWithoutRestore(item.identity,
+            binding: transition.projectID.uuidString + ":journal:" + receiptID.uuidString)
+        try check(freshService.isPatchDisabledPendingRestore(item), "durable mode association wins when preference association is absent")
+        Fixture.restoreError = CancellationError()
+        do {
+            _ = try await service.disablePatch(item, auth: auth)
+            throw FixtureError.failed("cancelled restore became successful OFF")
+        } catch is CancellationError {}
+        Fixture.restoreError = nil
+        let restored = try await service.disablePatch(item, auth: auth)
+        try check(restored == .restored && !service.isPatchToggleOn(item) && !service.isPatchDisabledPendingRestore(item),
+            "successful strict restore clears pending OFF and keeps UI off")
+        try service.assertCanEnable(item)
+
+        print("Actual coordinator/provenance/gate and original Astra toggle: \(checks) checks passed")
     }
 }
