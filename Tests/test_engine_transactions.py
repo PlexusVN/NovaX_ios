@@ -102,7 +102,8 @@ func applicationStore() throws -> PatchEngineApplicationStore { Fixture.store }
         for signature in ['func disablePatch(', 'private func patchDisableBinding(',
                           'func isPatchDisabledPendingRestore(', 'func isPatchToggleOn(',
                           'private func requirePatchEnableAllowed(',
-                          'func patchApplicationState(', 'private func recordedCatalogState(']:
+                          'func patchApplicationState(', 'private func recordedCatalogState(',
+                          'func isPendingActivation(']:
             source += extract_function(feature, signature) + '\n'
         source += '}\n'
         with tempfile.TemporaryDirectory() as directory:

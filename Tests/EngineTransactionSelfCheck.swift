@@ -285,6 +285,13 @@ import Foundation
             "successful strict restore clears pending OFF and keeps UI off")
         try service.assertCanEnable(item)
 
+        let retryService = FeaturePatchService()
+        let pending = try retryService.catalogModes.prepare(identity: item.identity, isRestoration: false, candidates: [])
+        try check(!retryService.isPatchToggleOn(item) && retryService.patchApplicationState(item) == .recoveryRequired,
+            "original Astra switch can retry an interrupted activation without clearing its recovery state")
+        try check(retryService.catalogModes.projectID(for: item.identity) == pending.projectID,
+            "retry keeps the interrupted activation's project association")
+
         print("Actual coordinator/provenance/gate and original Astra toggle: \(checks) checks passed")
     }
 }

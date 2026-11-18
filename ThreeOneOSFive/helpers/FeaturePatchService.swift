@@ -900,7 +900,12 @@ final class FeaturePatchService: ObservableObject {
     }
 
     func isPatchToggleOn(_ patch: PatchItem) -> Bool {
-        patchApplicationState(patch).requiresRestore && !isPatchDisabledPendingRestore(patch)
+        // The original Astra switch starts an activation when OFF. A failed
+        // activation must retry the retained mode transition on its next tap.
+        // Its recovery-required journal remains authoritative for file safety.
+        patchApplicationState(patch).requiresRestore
+            && !isPendingActivation(patch)
+            && !isPatchDisabledPendingRestore(patch)
     }
 
     private func requirePatchEnableAllowed(_ patch: PatchItem) throws {
