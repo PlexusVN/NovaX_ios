@@ -84,7 +84,7 @@ class SecurityBuildWiringTests(unittest.TestCase):
         self.assertIn('static let localIntegrityEnforced = false', config)
         download = (ROOT / 'ThreeOneOSFive/helpers/ProtectedDownloadService.swift').read_text(encoding='utf-8')
         lease = download.split('private func ensureReleaseLease()')[1].split('func reportIntegrityFailure')[0]
-        self.assertIn('AppIntegrityRuntime.shared.requireAllowed()', lease)
+        self.assertIn('guard AppSecurityConfiguration.localIntegrityEnforced else { return }', lease)
         self.assertIn('post("/api/v2/security/integrity-v2"', lease)
         self.assertIn('signed:true,purpose:"app-integrity-v2"', lease)
 

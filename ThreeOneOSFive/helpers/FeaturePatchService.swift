@@ -36,6 +36,7 @@ enum CatalogGameEdition: String, CaseIterable, Identifiable {
 
 enum CatalogFeatureAccess {
     static func allows(licenseType: String, requiredKeyType: String) -> Bool {
+        if requiredKeyType == "any" { return ["basic", "pro", "vip", "admin"].contains(licenseType.lowercased()) }
         guard ["pro", "vip"].contains(requiredKeyType) else { return false }
         switch licenseType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
         case "vip", "admin": return true
@@ -88,7 +89,7 @@ struct PatchItem: Identifiable, Codable, Equatable {
         manifestDigest = try container.decodeIfPresent(String.self, forKey: .manifestDigest)
         artifactVariant = try container.decodeIfPresent(String.self, forKey: .artifactVariant)
         displayVariant = try container.decodeIfPresent(String.self, forKey: .displayVariant)
-        requiredKeyType = try container.decodeIfPresent(String.self, forKey: .requiredKeyType) ?? "vip"
+        requiredKeyType = try container.decodeIfPresent(String.self, forKey: .requiredKeyType) ?? "any"
     }
 
     func encode(to encoder: Encoder) throws {
@@ -628,7 +629,6 @@ final class FeaturePatchService: ObservableObject {
     // MARK: - Apply / Restore
 
     func isRestorationPatch(_ patch: PatchItem) -> Bool {
-        if patch.categoryId == 18 { return true }
         if let category = categories.first(where: { $0.id == patch.categoryId }) {
             return category.name.trimmingCharacters(in: .whitespacesAndNewlines)
                 .caseInsensitiveCompare("Khôi phục file gốc iOS 27") == .orderedSame

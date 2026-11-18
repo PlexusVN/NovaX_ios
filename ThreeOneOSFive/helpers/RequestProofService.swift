@@ -6,7 +6,7 @@ import Security
 public final class RequestProofService {
     public static let shared = RequestProofService()
     private let counterQueue = DispatchQueue(label: "click.zynox.counterQueue")
-    private let counterKeychainKey = "astra_proof_monotonic_counter"
+    private let counterKeychainKey = "novax_proof_monotonic_counter"
     private var inMemoryCounter: Int64 = 0
     private init() {}
 
@@ -83,9 +83,6 @@ public final class RequestProofService {
             timestamp: timestamp, counter: counter)
 
         request.httpMethod = method
-        // These names are part of the version-2 wire contract.  The product
-        // identity is Astra, but the authenticated backend intentionally keeps
-        // the established X-Astra-* header namespace for protocol stability.
         request.setValue("2", forHTTPHeaderField: "X-Astra-Protocol")
         request.setValue(deviceKeyId, forHTTPHeaderField: "X-Astra-Device-Key")
         request.setValue(sessionId, forHTTPHeaderField: "X-Astra-Session")

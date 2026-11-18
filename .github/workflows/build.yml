@@ -1,41 +1,48 @@
 name: Build Astra Unsigned IPA
 
 on:
-  workflow_dispatch:
   push:
-    branches: ["main", "master", "build/**"]
-
-permissions:
-  contents: read
+    branches: [ "main", "master", "build/**" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: macos-15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      CARGO_BUILD_JOBS: 3
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Node for local release-tool verification
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
       - name: Set up Xcode version
         run: |
           xcodebuild -version
 
-      - name: Require configured independent Astra release identity
-        run: python3 ReleaseTools/check_production.py
+      - name: Verify production public configuration
+        run: |
+          python3 ReleaseTools/check_production.py
+          python3 Tests/test_license_verification_wiring.py
+          python3 Tests/test_security_flow_wiring.py
+          python3 Tests/test_ios16_compatibility.py
+          python3 Tests/test_worse_query_wiring.py
+          python3 Tests/test_worse_query_integration.py
+          python3 -m unittest discover -s Tests -p 'test_*.py'
 
-      - name: Verify local release sealing and signed fixture integrity
-        run: python3 -m unittest discover -s ReleaseTools -p test_release_tools.py -v
+      - name: Verify TLS pin allowlist has no trust-only fallback
+        run: |
+          swiftc ThreeOneOSFive/helpers/AppSecurityConfiguration.swift \
+            Tests/CertificatePinSelfCheck.swift -o "$RUNNER_TEMP/astra-pins-selfcheck"
+          "$RUNNER_TEMP/astra-pins-selfcheck"
 
-      - name: Verify actual Swift-to-Node HTTP proof and nonce contract
-        run: python3 Tests/check_wire_contract.py --http
-
-      - name: Verify catalog game grouping and cache metadata
-        run: python3 Tests/check_catalog_game_grouping.py
+      - name: Verify strict 3105, worse_query and AirLift OS/build routing
+        run: |
+          python3 Tests/extract_support_policy.py ThreeOneOSFive/helpers/KernelExploit.swift "$RUNNER_TEMP/SupportPolicy.swift"
+          swiftc "$RUNNER_TEMP/SupportPolicy.swift" Tests/IOSCompatibilitySelfCheck.swift Tests/Upstream3105SupportPolicy.swift -o "$RUNNER_TEMP/astra-os-routes-selfcheck"
+          "$RUNNER_TEMP/astra-os-routes-selfcheck"
 
       - name: Verify protected lease renewal under latency and clock skew
         run: |
@@ -54,6 +61,12 @@ jobs:
             ThreeOneOSFive/helpers/ProtectedArtifactDecoder.swift \
             Tests/ProtectedArtifactSelfCheck.swift -o "$RUNNER_TEMP/astra-security-selfcheck"
           "$RUNNER_TEMP/astra-security-selfcheck" Tests/Fixtures/artifact_crypto_v1.json
+
+      - name: Verify literal license transport and error handling
+        run: |
+          swiftc ThreeOneOSFive/helpers/LicenseVerification.swift \
+            Tests/LicenseVerificationSelfCheck.swift -o "$RUNNER_TEMP/astra-license-selfcheck"
+          "$RUNNER_TEMP/astra-license-selfcheck"
 
       - name: Verify license-scoped device identity and migration
         run: |
@@ -87,6 +100,16 @@ jobs:
             Tests/ProtectedRecoveryFlowSelfCheck.swift -o "$RUNNER_TEMP/astra-recovery-flow-selfcheck"
           "$RUNNER_TEMP/astra-recovery-flow-selfcheck"
 
+      - name: Verify pinned-TLS enrollment and bounded session retries
+        run: |
+          python3 Tests/extract_identity_resume.py \
+            ThreeOneOSFive/helpers "$RUNNER_TEMP/IdentityResume.swift"
+          swiftc ThreeOneOSFive/helpers/AppSecurityConfiguration.swift \
+            ThreeOneOSFive/helpers/DeviceIdentityService.swift \
+            "$RUNNER_TEMP/IdentityResume.swift" \
+            Tests/ProtectedIdentityResumeSelfCheck.swift -o "$RUNNER_TEMP/astra-identity-resume-selfcheck"
+          "$RUNNER_TEMP/astra-identity-resume-selfcheck"
+
       - name: Verify actual catalog decoding and apply restore transactions
         run: |
           swiftc ThreeOneOSFive/helpers/AppSecurityConfiguration.swift \
@@ -94,11 +117,21 @@ jobs:
             ThreeOneOSFive/helpers/ProtectedArtifactDecoder.swift \
             ThreeOneOSFive/helpers/PatchProjectModels.swift \
             ThreeOneOSFive/helpers/PatchPackageCodec.swift \
+            ThreeOneOSFive/helpers/DirectPatchExecutor.swift \
             ThreeOneOSFive/helpers/PatchTransaction.swift \
             Tests/CatalogApplicationSelfCheck.swift -o "$RUNNER_TEMP/astra-catalog-selfcheck"
           "$RUNNER_TEMP/astra-catalog-selfcheck" Tests/Fixtures/catalog
 
-      - name: Verify release integrity, jailbreak policy and native commit barrier
+      - name: Verify transaction crash recovery and final restore bytes
+        run: |
+          swiftc ThreeOneOSFive/helpers/PatchProjectModels.swift \
+            ThreeOneOSFive/helpers/DirectPatchExecutor.swift \
+            ThreeOneOSFive/helpers/PatchTransaction.swift \
+            Tests/DirectTransactionBoundaries.swift \
+            Tests/DirectTransactionProvenanceSelfCheck.swift -o "$RUNNER_TEMP/astra-direct-transaction-selfcheck"
+          "$RUNNER_TEMP/astra-direct-transaction-selfcheck"
+
+      - name: Verify network-only policy and legacy integrity regressions
         run: |
           swiftc ThreeOneOSFive/helpers/AppSecurityConfiguration.swift \
             ThreeOneOSFive/helpers/ServerSignatureVerifier.swift \
@@ -109,21 +142,18 @@ jobs:
             Tests/IntegritySelfCheck.swift -o "$RUNNER_TEMP/astra-integrity-selfcheck"
           "$RUNNER_TEMP/astra-integrity-selfcheck" Tests/Fixtures/integrity_release.json
 
-      - name: Verify committed patched AirliftFFI archives
-        run: |
-          set -euo pipefail
-          # Use the committed framework instead of rebuilding upstream Rust
-          # sources in CI. Post-Build Verification checks the linked executable
-          # for the required patch markers and rejects unsafe direct writes.
-          test -s Frameworks/AirliftFFI.xcframework/ios-arm64/libairlift_ffi.a
-          test -s Frameworks/AirliftFFI.xcframework/ios-arm64-simulator/libairlift_ffi.a
+      - name: Cache iOS 16 native compilation
+        uses: actions/cache@v4
+        with:
+          path: build/airlift-ios16-target
+          key: ${{ runner.os }}-${{ runner.arch }}-airlift-ios16-xcode164-${{ hashFiles('patches/airlift-source.lock.json', 'patches/airlift-rsd-timeout-fallback.patch', 'ReleaseTools/build_airlift_compat.sh') }}
+
+      - name: Rebuild pinned AirliftFFI for iOS 16 and preserve iOS 27 engine
+        timeout-minutes: 35
+        run: bash ReleaseTools/build_airlift_compat.sh
 
       - name: Verify AirLift pairing completion regression
         run: python3 Tests/check_airlift_pairing_finish.py
-
-      - name: Verify source contracts and native BQCore fixtures
-        run: |
-          python3 -m unittest Tests/test_viet99_bqcore.py Tests/test_worse_query_integration.py Tests/test_engine_policy.py Tests/test_strict_engine_routing.py Tests/test_engine_transactions.py -v
 
       - name: Build App (Unsigned)
         run: |
@@ -139,7 +169,7 @@ jobs:
 
       - name: Post-Build Verification
         run: |
-          APP_NAME="build/Astra.app"
+          APP_NAME=$(find build -maxdepth 1 -name "*.app" -type d | head -n 1)
           test -n "$APP_NAME"
           test -d "$APP_NAME"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$APP_NAME/Info.plist")" = "Astra"
@@ -147,7 +177,16 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_NAME/Info.plist")" = "39"
           EXECUTABLE=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP_NAME/Info.plist")
           test -x "$APP_NAME/$EXECUTABLE"
+          python3 ReleaseTools/verify_native_compatibility.py --app "$APP_NAME" --max-ios 16.0
           nm -gj "$APP_NAME/$EXECUTABLE" | grep -Fx "_ALGetGrappaToken"
+          # Release uses hidden C visibility. These bridges are internal app
+          # symbols, so include local symbols rather than requiring exports.
+          nm -j "$APP_NAME/$EXECUTABLE" | grep -Fx "_AstraUses3105ContainerAccess"
+          nm -j "$APP_NAME/$EXECUTABLE" | grep -Fx "_worse_query"
+          nm -j "$APP_NAME/$EXECUTABLE" | grep -Fx "_worse_query_release"
+          nm -j "$APP_NAME/$EXECUTABLE" | grep -Fx "_worse_query_group_path"
+          nm -j "$APP_NAME/$EXECUTABLE" | grep -Fx "_AstraSignedApplicationGroups"
+          nm -j "$APP_NAME/$EXECUTABLE" | grep -Fx "_AstraBQAcquireAccess"
           strings "$APP_NAME/$EXECUTABLE" | grep -F "RemoteXPC timed out after 6s"
           strings "$APP_NAME/$EXECUTABLE" | grep -F "timeout fallback trying raw RPPairing"
           strings "$APP_NAME/$EXECUTABLE" | grep -F "AirTraffic write timed out after 180s; operation cancelled"
@@ -159,9 +198,11 @@ jobs:
           python3 ReleaseTools/macho_release.py "$RUNNER_TEMP/resign-check.app/$EXECUTABLE" > "$RUNNER_TEMP/release-after.json"
           cmp "$RUNNER_TEMP/release-before.json" "$RUNNER_TEMP/release-after.json"
 
-      - name: Preserve Astra App Group entitlements
+      - name: Preserve App Group entitlements for external signing
         run: |
-          APP_NAME="build/Astra.app"
+          APP_NAME=$(find build -maxdepth 1 -name "*.app" -type d | head -n 1)
+          # No Apple identity is used. ESign must replace this ad-hoc signature
+          # with a profile which actually authorizes an accessible App Group.
           codesign --force --sign - --generate-entitlement-der \
             --entitlements ThreeOneOSFive/ThreeOneOSFive.entitlements "$APP_NAME"
           codesign -d --entitlements :- "$APP_NAME" > "$RUNNER_TEMP/astra-entitlements.plist"
@@ -170,7 +211,7 @@ jobs:
       - name: Package IPA
         run: |
           mkdir -p build/Payload
-          APP_NAME="build/Astra.app"
+          APP_NAME=$(find build -maxdepth 1 -name "*.app" -type d | head -n 1)
           cp -R "$APP_NAME" build/Payload/
 
           cd build

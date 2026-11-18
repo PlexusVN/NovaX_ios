@@ -109,4 +109,3 @@ enum DevicePatchService {
         if var record=try Fixture.store.read(receipt.projectID) { record.phase = .restored; try Fixture.store.save(record) }
     }
 }
-

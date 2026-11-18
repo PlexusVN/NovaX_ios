@@ -88,7 +88,7 @@ struct DeviceIdentitySelfCheck {
         _ = try old.getOrCreateKey(); _ = try old.getOrCreateAgreementKey(); _ = try old.installationID()
         let oldID = UUID().uuidString.lowercased()
         try old.persistEnrollment(deviceKeyId: oldID)
-        interrupted.failingTag = "astra.identity.v3.\(a).astra_signing_backend_v2"
+        interrupted.failingTag = "astra.identity.v3.\(a).novax_signing_backend_v2"
         try rejects("interrupted migration") { try old.migrateLegacy(to: a, expectedDeviceID: oldID, keyID: 7) }
         try require(try interrupted.identity(a).persistedEnrollmentID() == nil, "partial migration never publishes device ID")
         interrupted.failingTag = nil

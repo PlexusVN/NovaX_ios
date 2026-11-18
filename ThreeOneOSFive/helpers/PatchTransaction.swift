@@ -528,7 +528,7 @@ func withExclusivePatchOperation<T>(
 /// backups. A missing preference flag must never hide an existing transaction.
 struct CatalogPatchApplicationRegistry {
     let defaults: UserDefaults
-    private let prefix = "astra_patch_applied_"
+    private let prefix = "patch_applied_"
     func projectID(for identity: String) -> UUID? {
         defaults.string(forKey: prefix + identity + "_projectID").flatMap(UUID.init(uuidString:))
     }

@@ -117,7 +117,7 @@ struct FeaturesView: View {
                 Image(systemName: "gamecontroller.fill").foregroundStyle(AppTheme.gamingBlueBright)
                 Text("DANH MỤC").tracking(1.5).foregroundStyle(AppTheme.gamingTextSecondary)
                 Spacer()
-                Text("ITECH").tracking(1.8).foregroundStyle(AppTheme.gold)
+                Text("ITECH").tracking(1.8).foregroundStyle(AppTheme.statusInfo)
             }.font(.caption2.weight(.bold))
             if service.categories.isEmpty && !showsAllCategories {
                 HStack(spacing: 14) {
@@ -156,7 +156,7 @@ struct FeaturesView: View {
                                 .foregroundStyle(tint).frame(width: 30, height: 30)
                                 .background(tint.opacity(0.12), in: Circle())
                         } else {
-                            Image(systemName: "crown.fill").foregroundStyle(AppTheme.gold)
+                            Image(systemName: "crown.fill").foregroundStyle(AppTheme.statusInfo)
                         }
                     }.contentShape(Rectangle())
                 }
@@ -227,10 +227,10 @@ struct FeaturesView: View {
                 if service.categories.count > 1 { Button("Chọn danh mục") { showCategoryPicker = true } }
             } label: {
                 Image(systemName: "line.3.horizontal.decrease").font(.body.weight(.semibold))
-                    .foregroundStyle(appliedOnly ? AppTheme.gold : AppTheme.gamingBlueBright)
+                    .foregroundStyle(appliedOnly ? AppTheme.statusInfo : AppTheme.gamingBlueBright)
                     .frame(width: 46, height: 46)
-                    .background(appliedOnly ? AppTheme.gold.opacity(0.10) : AppTheme.gamingSurface, in: RoundedRectangle(cornerRadius: 13))
-                    .overlay(RoundedRectangle(cornerRadius: 13).stroke(appliedOnly ? AppTheme.gold.opacity(0.4) : AppTheme.gamingBorder, lineWidth: 1))
+                    .background(appliedOnly ? AppTheme.statusInfo.opacity(0.10) : AppTheme.gamingSurface, in: RoundedRectangle(cornerRadius: 13))
+                    .overlay(RoundedRectangle(cornerRadius: 13).stroke(appliedOnly ? AppTheme.statusInfo.opacity(0.4) : AppTheme.gamingBorder, lineWidth: 1))
             }.accessibilityLabel(appliedOnly ? "Bộ lọc, đang hiện chức năng bật" : "Lọc chức năng")
         }
     }
@@ -242,9 +242,9 @@ struct FeaturesView: View {
                 Text("CHỨC NĂNG").tracking(1.5).foregroundStyle(AppTheme.gamingText)
                 Spacer()
                 Text("\(filteredPatches.count)").font(.caption.monospaced().weight(.bold))
-                    .foregroundStyle(AppTheme.gold).padding(.horizontal, 9).padding(.vertical, 5)
-                    .background(AppTheme.gold.opacity(0.08), in: Capsule())
-                    .overlay(Capsule().stroke(AppTheme.gold.opacity(0.23), lineWidth: 1))
+                    .foregroundStyle(AppTheme.statusInfo).padding(.horizontal, 9).padding(.vertical, 5)
+                    .background(AppTheme.statusInfo.opacity(0.08), in: Capsule())
+                    .overlay(Capsule().stroke(AppTheme.statusInfo.opacity(0.23), lineWidth: 1))
             }.font(.caption.weight(.bold))
             if let message = accessMessage {
                 feedbackState(icon: "wifi.exclamationmark", title: "Chưa tải được chức năng", message: message, retry: true)
@@ -387,11 +387,11 @@ struct PatchCardView: View {
         }
     }
     private var stateColor: Color {
-        if isLocked && !isApplied { return AppTheme.gold }
+        if isLocked && !isApplied { return AppTheme.statusInfo }
         switch applicationState {
         case .off: return AppTheme.gamingTextSecondary
         case .applied: return AppTheme.statusSuccess
-        case .recoveryRequired: return AppTheme.gold
+        case .recoveryRequired: return AppTheme.statusInfo
         }
     }
 
@@ -418,15 +418,15 @@ struct PatchCardView: View {
             }
             if service.isRestorationPatch(patch) {
                 Text("Bật mục này sẽ tắt công tắc các chức năng khác. Chỉ các file có trong gói được khôi phục.")
-                    .font(.caption2).foregroundStyle(AppTheme.gold)
+                    .font(.caption2).foregroundStyle(AppTheme.statusInfo)
             } else if isApplied && storage.isAirLiftActive {
-                Text("AirLift chưa hỗ trợ khôi phục dữ liệu gốc.").font(.caption2).foregroundStyle(AppTheme.gold)
+                Text("AirLift chưa hỗ trợ khôi phục dữ liệu gốc.").font(.caption2).foregroundStyle(AppTheme.statusInfo)
             }
             if patch.artifactVariant == "ffvn" {
-                Text("Đích: Free Fire Việt Nam").font(.caption2).foregroundStyle(AppTheme.gold)
+                Text("Đích: Free Fire Việt Nam").font(.caption2).foregroundStyle(AppTheme.statusInfo)
             } else if let display = patch.displayVariant, let target = patch.artifactVariant,
                display != target, let edition = CatalogGameEdition(rawValue: target) {
-                Text("Đích trong gói: \(edition.title)").font(.caption2).foregroundStyle(AppTheme.gold)
+                Text("Đích trong gói: \(edition.title)").font(.caption2).foregroundStyle(AppTheme.statusInfo)
             }
             if dynamicTypeSize.isAccessibilitySize { HStack { Spacer(); toggleButton } }
         }
@@ -438,12 +438,12 @@ struct PatchCardView: View {
         .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
             .stroke(isApplied ? AppTheme.gamingBlue.opacity(0.5) : AppTheme.gamingBorder.opacity(0.7), lineWidth: 1))
         .overlay(alignment: .leading) {
-            if isApplied { Capsule().fill(AppTheme.gold).frame(width: 2, height: 22) }
+            if isApplied { Capsule().fill(AppTheme.statusInfo).frame(width: 2, height: 22) }
         }
         .shadow(color: isApplied ? AppTheme.gamingBlue.opacity(0.10) : .clear, radius: 12, y: 3)
         .alert(patch.requiredKeyType == "pro" ? "Nâng cấp key PRO" : "Chức năng dành cho key VIP", isPresented: $showUpgradePrompt) {
             Button("Liên hệ admin") {
-                if let url = URL(string: AppSecurityConfiguration.supportURL) { openURL(url) }
+                if let url = URL(string: "https://t.me/trnmnhkh") { openURL(url) }
             }
             Button("Đóng", role: .cancel) {}
         } message: {

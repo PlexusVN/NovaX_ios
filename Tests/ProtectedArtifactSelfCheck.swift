@@ -122,6 +122,18 @@ struct ProtectedArtifactSelfCheck {
         try rejects("different grant") { _ = try decrypt(expectedGrant: "00000000-0000-4000-8000-000000000099") }
         try rejects("expired grant") { _ = try decrypt(at: Date(timeIntervalSince1970: (grantBody["expiresAt"] as! NSNumber).doubleValue)) }
         try rejects("future grant") { _ = try decrypt(at: Date(timeIntervalSince1970: (grantBody["issuedAt"] as! NSNumber).doubleValue - 1)) }
+        do {
+            _ = try decrypt(at: Date(timeIntervalSince1970: (grantBody["issuedAt"] as! NSNumber).doubleValue - 1))
+            throw SelfCheckFailure.failed("clock mismatch accepted")
+        } catch ProtectedArtifactError.clockNotSynchronized {
+            checks += 1
+        }
+        do {
+            _ = try decrypt(at: Date(timeIntervalSince1970: (grantBody["expiresAt"] as! NSNumber).doubleValue))
+            throw SelfCheckFailure.failed("expired grant accepted")
+        } catch ProtectedArtifactError.grantExpired {
+            checks += 1
+        }
         var changedManifest = manifestObject
         var changedBody = changedManifest["body"] as! [String: Any]
         changedBody["plaintextSHA256"] = String(repeating: "0", count: 64)
