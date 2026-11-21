@@ -224,6 +224,15 @@ public final class DeviceIdentityService {
             try saveData(JSONEncoder().encode(submitted), tag: storageTag("initial_enrollment_v1"))
         }
     }
+    public func resetIdentity() throws {
+        try locked {
+            for tag in Self.identityTags + ["server_license_key_id", "initial_enrollment_v1", "active_generation_v1"] {
+                try? removeData(tag: storageTag(tag))
+            }
+            signingKey = nil
+            agreementKey = nil
+        }
+    }
     private func storageTag(_ base: String) -> String {
         guard let licenseBinding else { return base }
         let prefix = "astra.identity.v3.\(licenseBinding)"

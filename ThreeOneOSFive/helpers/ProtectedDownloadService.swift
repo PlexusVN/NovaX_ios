@@ -621,7 +621,17 @@ final class ProtectedDownloadService: ObservableObject {
             return
         }
         clearSession()
-        let identity = try await bootstrapEnrollment(context, epoch: contextEpoch)
+        let identity: DeviceIdentityService
+        do {
+            identity = try await bootstrapEnrollment(context, epoch: contextEpoch)
+        } catch ProtectedDownloadError.rejected(let code) where code == "device_enrollment_conflict" {
+            // Auto-recovery: Stale Keychain identity conflict after re-install or restore.
+            // Reset cached Keychain identity for this license and retry once with fresh generation.
+            let selected = try await prepareIdentity(context)
+            try selected.resetIdentity()
+            clearSession()
+            identity = try await bootstrapEnrollment(context, epoch: contextEpoch)
+        }
         self.identity = identity
         let (loginData, _) = try await post("/api/v2/novax/session/open", body: [
             "app_release": Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "",
