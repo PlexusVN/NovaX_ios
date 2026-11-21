@@ -26,7 +26,8 @@ def source() -> str:
                             decoder.index('struct ProtectedArtifactManifest:')]
     canonical = extract_function(decoder, 'private static func canonicalJSON(')
     methods = '\n'.join(extract_function(download, signature) for signature in [
-        'private func dictionary(', 'private func downloadArtifact(', 'private func validateDescriptor('])
+        'private func dictionary(', 'private func downloadArtifact(', 'private func validateDescriptor(',
+        'private func serverGrantDate('])
     return '''import Foundation
 import CoreFoundation
 
