@@ -100,4 +100,5 @@ release-registry.json
 !/Tests/Fixtures/EngineTransactionHarness.swift
 !/Tests/DirectTransactionProvenanceSelfCheck.swift
 !/Tests/test_wq_identity_evidence.py
+!/Tests/test_patch_avatar_isolation.py
 !/Tests/ContainerIdentityEvidenceSelfCheck.swift

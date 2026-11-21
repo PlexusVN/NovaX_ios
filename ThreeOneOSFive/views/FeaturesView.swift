@@ -66,6 +66,7 @@ struct FeaturesView: View {
                     selectedCategoryID = first.id
                 }
                 service.preloadCategoryImages()
+                service.preloadPatchImages()
                 withAnimation(.easeOut(duration: 0.42)) {
                     contentVisible = true
                 }
@@ -75,6 +76,10 @@ struct FeaturesView: View {
                     selectedCategoryID = first.id
                 }
                 service.preloadCategoryImages()
+                service.preloadPatchImages()
+            })
+            .onChange(of: service.patches, perform: { _ in
+                service.preloadPatchImages()
             })
         }
         .glassToast(toast: $activeToast)
