@@ -910,12 +910,10 @@ final class ProtectedDownloadService: ObservableObject {
             return (id, publicKey)
         }, sharedSecret: { try identity.agreementSharedSecret(peerPublicKeyX963: $0) })
         try await AppIntegrityRuntime.shared.requireAllowed(force:true)
-        let grantFallback = serverGrantDate(grant)
-        let alignedDate = max(contentTime?.verificationDate(at: ProcessInfo.processInfo.systemUptime) ?? .distantPast, grantFallback)
         let plaintext = try decoder.decrypt(signedManifest: manifestData,
             signedGrant: grantDataJSON, ciphertext: ciphertext, recipientID: deviceID, sessionID: sessionID,
             requestNonce: nonce, expectedArtifactID: descriptor.artifactID, expectedGrantID: grantID,
-            now: contentTime?.verificationDate(at: ProcessInfo.processInfo.systemUptime) != nil ? alignedDate : grantFallback)
+            now: contentTime?.verificationDate(at: ProcessInfo.processInfo.systemUptime) ?? serverGrantDate(grant))
         try await AppIntegrityRuntime.shared.requireAllowed(force:true)
         try requireCurrentLicense(auth)
         guard licenseDigest == initialLicenseDigest else { throw FeaturePatchError.notAuthenticated }
