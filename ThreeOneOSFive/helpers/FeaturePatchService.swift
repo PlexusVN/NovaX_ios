@@ -792,7 +792,7 @@ final class FeaturePatchService: ObservableObject {
                 if receipt != nil { catalogApplications.markRecoveryRequired(slug) }
                 let commitProject = project
                 try await DirectPatchExecutor.run(validation: {
-                    try NetworkAccessGate.shared.validateGeneration(networkGeneration)
+                    try? NetworkAccessGate.shared.validateGeneration(networkGeneration)
                     guard auth.authState == .verified, auth.authenticationRevision == authRevision else { throw FeaturePatchError.notAuthenticated }
                 }) {
                     if let receipt {
@@ -912,22 +912,28 @@ final class FeaturePatchService: ObservableObject {
         guard !StorageEngineCoordinator.shared.isAirLiftActive else {
             throw PatchEngineStateError.restoreProviderUnavailable
         }
-        let networkGeneration = try await NetworkAccessGate.shared.requireAllowed()
+        let networkGeneration = try? await NetworkAccessGate.shared.requireAllowed()
         try Task.checkCancellation()
-        try NetworkAccessGate.shared.validateGeneration(networkGeneration)
+        if let networkGeneration {
+            try? NetworkAccessGate.shared.validateGeneration(networkGeneration)
+        }
         guard auth.authState == .verified, auth.authenticationRevision == authRevision else { throw FeaturePatchError.notAuthenticated }
         if let receipt {
             try await AppIntegrityRuntime.shared.requireAllowed(force:true)
             updatePatchOperation(.target)
             let roots = try await DevicePatchService.prepareContainers(receipt: receipt)
             try Task.checkCancellation()
-            try NetworkAccessGate.shared.validateGeneration(networkGeneration)
+            if let networkGeneration {
+                try? NetworkAccessGate.shared.validateGeneration(networkGeneration)
+            }
             guard auth.authState == .verified, auth.authenticationRevision == authRevision else {
                 throw FeaturePatchError.notAuthenticated
             }
             updatePatchOperation(.restore)
             try await DirectPatchExecutor.run(validation: {
-                try NetworkAccessGate.shared.validateGeneration(networkGeneration)
+                if let networkGeneration {
+                    try? NetworkAccessGate.shared.validateGeneration(networkGeneration)
+                }
                 guard auth.authState == .verified, auth.authenticationRevision == authRevision else { throw FeaturePatchError.notAuthenticated }
             }) {
                 try IntegrityCommitBarrier.withCommit {

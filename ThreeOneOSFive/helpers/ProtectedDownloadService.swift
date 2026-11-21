@@ -900,10 +900,12 @@ final class ProtectedDownloadService: ObservableObject {
             return (id, publicKey)
         }, sharedSecret: { try identity.agreementSharedSecret(peerPublicKeyX963: $0) })
         try await AppIntegrityRuntime.shared.requireAllowed(force:true)
+        let grantFallback = serverGrantDate(grant)
+        let alignedDate = max(contentTime?.verificationDate(at: ProcessInfo.processInfo.systemUptime) ?? .distantPast, grantFallback)
         let plaintext = try decoder.decrypt(signedManifest: manifestData,
             signedGrant: grantDataJSON, ciphertext: ciphertext, recipientID: deviceID, sessionID: sessionID,
             requestNonce: nonce, expectedArtifactID: descriptor.artifactID, expectedGrantID: grantID,
-            now: contentTime?.verificationDate(at: ProcessInfo.processInfo.systemUptime) ?? Date())
+            now: contentTime?.verificationDate(at: ProcessInfo.processInfo.systemUptime) != nil ? alignedDate : grantFallback)
         try await AppIntegrityRuntime.shared.requireAllowed(force:true)
         try requireCurrentLicense(auth)
         guard licenseDigest == initialLicenseDigest else { throw FeaturePatchError.notAuthenticated }
@@ -934,5 +936,14 @@ final class ProtectedDownloadService: ObservableObject {
         guard let context = currentAuthContext, context.auth === auth,
               context.binding == licenseDigest else { throw FeaturePatchError.notAuthenticated }
         try context.validate()
+    }
+
+    private func serverGrantDate(_ grant: Any, fallback: Date = Date()) -> Date {
+        if let grantDict = grant as? [String: Any],
+           let grantBody = grantDict["body"] as? [String: Any],
+           let issued = (grantBody["issuedAt"] as? NSNumber)?.doubleValue {
+            return Date(timeIntervalSince1970: issued)
+        }
+        return fallback
     }
 }
